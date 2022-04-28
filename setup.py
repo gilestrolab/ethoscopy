@@ -20,7 +20,7 @@ setup(
         install_requires=['pandas >= 1.4', 'numpy >= 1.22',],
         keywords=['python', 'ethomics', 'ethoscope', 'sleep'],
         classifiers= [
-            "Development Status :: 1 - Alpha",
+            "Development Status :: 3 - Alpha",
             "Intended Audience :: Education",
             "Programming Language :: Python :: 3",
             "Operating System :: Microsoft :: Windows",

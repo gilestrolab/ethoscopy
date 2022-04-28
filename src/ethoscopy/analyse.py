@@ -59,7 +59,7 @@ def max_velocity_detector(data,
     dt.loc[(dt.mask == True) & (dt.interaction_id != 0), 'velocity'] = 0
 
     dt['beam_cross'] = dt['beam_cross'] & ~dt['mask']
-    dt = dt.drop(['interaction_id', 'mask'], axis = 1)
+    dt = dt.drop(columns = ['interaction_id', 'mask'])
 
     if raw == False:
         d_small = dt.groupby('t_round').agg(
@@ -119,10 +119,10 @@ def prep_data_motion_detector(data,
     
         if isinstance(optional_columns, str):
             check_optional_columns = set(data.columns.tolist()).intersection(list([optional_columns]))
-            needed_columns = set(list(check_optional_columns) + needed_columns) 
+            needed_columns = list(set(list(check_optional_columns) + needed_columns)) 
         else:
             check_optional_columns = set(data.columns.tolist()).intersection(optional_columns)
-            needed_columns = set(list(check_optional_columns) + needed_columns)
+            needed_columns = list(set(list(check_optional_columns) + needed_columns))
 
     dc = copy.deepcopy(data[needed_columns])
     dc['t_round'] = dc['t'].map(lambda t: time_window_length * floor(t / time_window_length)) 
@@ -236,7 +236,7 @@ def puff_mago(data, response_window = 10, velocity_correction_coef = 3e-3):
     data['deltaT'] = data.t.diff()
     data['dist'] = 10 ** (data.xy_dist_log10x1000 / 1000)
     data['velocity'] = data.dist / velocity_correction_coef
-    data.drop(['deltaT', 'dist'], axis = 1, inplace = True)
+    data.drop(columns = ['deltaT', 'dist'], inplace = True)
 
     #isolate interaction times
     interaction_dt = data['t'][(data['has_interacted'] == 1) | (data['has_interacted'] == 2)].to_frame()
@@ -262,7 +262,7 @@ def puff_mago(data, response_window = 10, velocity_correction_coef = 3e-3):
     df.rename(columns = {'int_t' : 'interaction_t'}, inplace = True)
     df['has_responded'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 1), True, False)
     df['has_walked'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 2.5), True, False)
-    df.drop(['xy_dist_log10x1000', 'start', 'end'], axis = 1, inplace = True)
+    df.drop(columns = ['xy_dist_log10x1000', 'start', 'end'], inplace = True)
     
     # filter by response_window ahead of interaction time and find any postive response, return new df with only interaction time == 0 rows with response
     df['t'] = np.floor(df['t'])
@@ -314,7 +314,7 @@ def find_motifs(data, window = 300, velocity_correction_coef = 3e-3):
     data['deltaT'] = data.t.diff()
     data['dist'] = 10 ** (data.xy_dist_log10x1000 / 1000)
     data['velocity'] = data.dist / velocity_correction_coef
-    data.drop(['deltaT', 'dist'], axis = 1, inplace = True)
+    data.drop(columns = ['deltaT', 'dist'], inplace = True)
 
     #isolate interaction times
     interaction_dt = data['t'][data['has_interacted'] == 1].to_frame()
@@ -341,7 +341,7 @@ def find_motifs(data, window = 300, velocity_correction_coef = 3e-3):
     df.rename(columns = {'int_t' : 'interaction_t'}, inplace = True)
     df['has_responded'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 1), True, False)
     df['has_walked'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 2.5), True, False)
-    df.drop(['start', 'end'], axis = 1, inplace = True)
+    df.drop(columns = ['start', 'end'], inplace = True)
     
     # filter by window ahead of interaction time and find any postive response, return new df with only interaction time == 0 rows with response
     df['t'] = np.floor(df['t'])
@@ -377,7 +377,7 @@ def find_motifs(data, window = 300, velocity_correction_coef = 3e-3):
         if len(d_small) != window + 1:
             return None
         else:
-            d_small.drop('has_responded', axis = 1,  inplace=True)
+            d_small.drop(columns = ['has_responded'],  inplace=True)
             d_small['response'] = [response] * len(d_small)
             id = f'{c}_{r}'
             d_small['run_id'] = [id] * len(d_small)
@@ -419,7 +419,7 @@ def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_
     data['deltaT'] = data.t.diff()
     data['dist'] = 10 ** (data.xy_dist_log10x1000 / 1000)
     data['velocity'] = data.dist / velocity_correction_coef
-    data.drop(['deltaT', 'dist'], axis = 1, inplace = True)
+    data.drop(columns = ['deltaT', 'dist'], inplace = True)
     data['t'] = np.floor(data['t'])
     data = data.groupby('t').agg(**{
                 'x' : ('x', 'mean'),
@@ -491,7 +491,7 @@ def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_
             np.column_stack([data.values[i], interaction_dt.values[j]]),
             columns = data.columns.append(interaction_dt.columns)
         )
-        df.drop(['end', 'int_t', 'moving', 'inactive_count'], axis = 1, inplace = True)
+        df.drop(columns = ['end', 'int_t', 'moving', 'inactive_count'], inplace = True)
 
         gb = df.groupby('start').size()
         filt_gb = gb[gb == window]

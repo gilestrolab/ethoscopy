@@ -7,7 +7,7 @@ Author-email: l.blackhurst19@imperial.ac.uk
 License: UNKNOWN
 Keywords: python,ethomics,ethoscope,sleep
 Platform: UNKNOWN
-Classifier: Development Status :: 1 - Alpha
+Classifier: Development Status :: 3 - Alpha
 Classifier: Intended Audience :: Education
 Classifier: Programming Language :: Python :: 3
 Classifier: Operating System :: Microsoft :: Windows

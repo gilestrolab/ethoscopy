@@ -332,7 +332,7 @@ def link_meta_index(metadata, remote_dir, local_dir):
         split_path = path[0].split('/')
         split_series = pd.Series(split_path, index = ['machine_id', 'machine_name', 'date_time', 'file_name'])
         split_series['file_size'] = path[1]
-        split_df = split_df.append(split_series, ignore_index = True)
+        split_df = pd.concat([split_df, split_series], ignore_index = True)
 
     #split the date_time column and add back to df
     split_df[['date', 'time']] = split_df.date_time.str.split('_', expand = True)
@@ -412,7 +412,7 @@ def load_ethoscope(metadata, min_time = 0 , max_time = float('inf'), reference_h
                 print('ROI_{} from {} was unable to load due to an error in applying the function'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
                 continue
             roi_1.insert(0, 'id', metadata['id'].iloc[i])
-            data = data.append(roi_1, ignore_index= True)
+            data = pd.concat([data, roi_1], ignore_index= True)
         except:
             print('ROI_{} from {} was unable to load due to error loading roi'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
             continue
@@ -472,7 +472,7 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
         data = pd.read_sql_query(sql_query, conn)
         
         if 'id' in data.columns:
-            data = data.drop('id', 1)
+            data = data.drop(columns = ['id'])
 
         if reference_hour != None:
             t = exp_meta['value'].loc[exp_meta['field'] == 'date_time']
