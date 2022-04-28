@@ -38,7 +38,7 @@ def set_behavpy(metadata, data, skip = False):
 
     # drop some left over columns from loading that arean't needed in analysis
     drop_col_names = ['path', 'file_name', 'file_size', 'machine_id']
-    metadata.drop(columns=[col for col in metadata if col in drop_col_names], axis = 1, inplace =True)
+    metadata.drop(columns=[col for col in metadata if col in drop_col_names], inplace =True)
 
     # make instance of behavpy class and set metadata as attribute
     df = behavpy(data)
