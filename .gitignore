@@ -8,7 +8,6 @@
 _pycache_
 *.csv
 *.RDS
-test.py
-hmm_train.py
-rough.py
-download_template.py
+scr/ethoscopy/ethoscopy.egg-info/
+*.toml
+dist/
