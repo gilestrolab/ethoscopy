@@ -1,13 +1,8 @@
-*.ipynb
 *.txt
-*.pkl
-*/__pycache__/*
-*pyc
+*.pyc
 *venv
+dist/
 *vscode
-_pycache_
-*.csv
-*.RDS
+src/ethoscopy/__pycache__/
 scr/ethoscopy/ethoscopy.egg-info/
 *.toml
-dist/
