@@ -1,0 +1,14 @@
+*.ipynb
+*.txt
+*.pkl
+*/__pycache__/*
+*pyc
+*venv
+*vscode
+_pycache_
+*.csv
+*.RDS
+test.py
+hmm_train.py
+rough.py
+download_template.py
