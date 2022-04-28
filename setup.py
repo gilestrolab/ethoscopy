@@ -2,7 +2,7 @@
 
 from setuptools import setup, find_packages
 
-VERSION = '0.1.0' 
+VERSION = '1.0.0' 
 DESCRIPTION = 'ethoscopy - a python toolbox for the Ethoscope'
 
 with open("README.md", "r", encoding="utf-8") as fh:
