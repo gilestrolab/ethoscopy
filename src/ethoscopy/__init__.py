@@ -1,1 +1,1 @@
-from behavpy import set_behavpy
+from ethoscopy.behavpy import set_behavpy

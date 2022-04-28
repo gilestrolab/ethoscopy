@@ -8,6 +8,7 @@ from math import floor
 
 # from ethoscopy.behavpy import check_conform
 from ethoscopy.misc.format_warning import format_warning
+from ethoscopy.misc.check_conform import check_conform
 from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
 
@@ -110,22 +111,22 @@ class behavpy(pd.DataFrame):
 
         return t_filter_df
 
-    # def rejoin(self, new_column):
-    #     """
-    #     Joins a new column to the metadata
+    def rejoin(self, new_column):
+        """
+        Joins a new column to the metadata
 
-    #     Params:
-    #     @new_column = pandas dataframe. The column to be added, must contain an index called 'id' to match original metadata
+        Params:
+        @new_column = pandas dataframe. The column to be added, must contain an index called 'id' to match original metadata
 
-    #     augments the metadata in place
-    #     """
+        augments the metadata in place
+        """
 
-    #     check_conform(new_column)
+        check_conform(new_column)
 
-    #     m = pd.DataFrame(self.meta)
-    #     new_m = m.join(new_column, on = 'id')
+        m = pd.DataFrame(self.meta)
+        new_m = m.join(new_column, on = 'id')
 
-    #     self.meta = new_m
+        self.meta = new_m
 
     def concat(self, *args):
         """
