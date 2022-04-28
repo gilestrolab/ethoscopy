@@ -3,6 +3,6 @@
 *venv
 dist/
 *vscode
-src/ethoscopy/__pycache__/
-scr/ethoscopy/ethoscopy.egg-info/
+__pycache__/
+ethoscopy.egg-info/
 *.toml
