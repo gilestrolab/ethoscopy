@@ -164,7 +164,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
                 raise
 
         file_path = win_path / file_name
-        
+
         if os.access(file_path, os.R_OK):
             if os.path.getsize(file_path) < file_size:
                 ftp = ftplib.FTP(remote_dir)
@@ -180,7 +180,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
         else:
             ftp = ftplib.FTP(remote_dir)
             ftp.login()
-            ftp.cwd(work_dir)
+            ftp.cwd(str(work_dir))
 
             localfile = open(file_path, 'wb')
             ftp.retrbinary('RETR ' + file_name, localfile.write)
@@ -197,7 +197,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
         print('Downloading {}... {}/{}'.format(j[0].split('/')[1], counter, len(paths)))
         if counter == 0:
             start = time.time()
-            p = Path(j[0])
+            p = PurePosixPath(j[0])
             download(work_dir = parse.path[1:] / p.parents[0], file_name = p.name, file_size = j[1])
             stop = time.time()
             t = stop - start
@@ -207,7 +207,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
             av_time = round((np.mean(times)/60) * (len(paths)-(counter+1)))
             print(f'Estimated finish time: {av_time} mins') 
             start = time.time()
-            p = Path(j[0])
+            p = PurePosixPath(j[0])
             download(work_dir = parse.path[1:] / p.parents[0], file_name = p.name, file_size = j[1])
             stop = time.time()
             t = stop - start
@@ -365,7 +365,7 @@ def link_meta_index(metadata, remote_dir, local_dir):
     for j in path_list:
         win_path = Path(j)
         full_path = local_dir / os_work_dir / win_path
-        full_path_list.append(full_path)
+        full_path_list.append(str(full_path))
     
     #create a unique id for each row, consists of first 25 char of file_name and region_id, inserted at index 0
     merge_df.insert(0, 'path', full_path_list)
@@ -381,14 +381,17 @@ def load_ethoscope(metadata, min_time = 0 , max_time = float('inf'), reference_h
 
     Params:
     metadata = pd.DataFrame object, metadata df as returned from link_meta_index function
-    min_time = int, the minimum time you want to load data from, for all experiments
-    max_time = int, the maximum time you want to load data from, for all experiments
+    min_time = int, the minimum time you want to load data from with 0 being the experiment start or first reference hour (in hours), for all experiments
+    max_time = int, same as above
     reference_hour = int, the hour at which lights on occurs when the experiment is begun. None equals the start of the experiment
     cache = string, the local path to find and store cached versions of each ROI per database. Cached files are in the pickle format
     FUN = function, a function to apply indiviual curatation to each ROI, if None the data remains as found in the database
 
     returns a pandas DataFrame object containing the database data and unique ids per fly as the index
     """  
+
+    max_time = max_time * 60 * 60
+    min_time = min_time * 60 * 60
 
     data = pd.DataFrame()
     # iterate over the ROI of each ethoscope in the metadata df
@@ -427,8 +430,8 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
     
     Params: 
     @ file = row in a metadata pd.DataFrane containing a column 'path' with .db file Location
-    @ min_time = time constraint with which to query database, set to 0
-    @ max_time = same as above, but for maximum
+    @ min_time = time constraint with which to query database (in hours), default is 0
+    @ max_time = same as above
     @ reference_hour = the time in hours when the light begins in the experiment, i.e. the beginning of a 24 hour session
     @ cache = if not None provide path for folder with saved caches or folder to be saved to
     
@@ -471,7 +474,7 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
         #sql_query takes roughyl 2.8 seconds for 2.5 days of data
         sql_query = 'SELECT * FROM ROI_{} WHERE t >= {} {}'.format(file['region_id'], min_time, max_time_condtion)
         data = pd.read_sql_query(sql_query, conn)
-        
+        print(data)
         if 'id' in data.columns:
             data = data.drop(columns = ['id'])
 
@@ -500,12 +503,12 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
             # check if has_interacted is all false / 0, drop if so
             interacted_list = data['has_interacted'].to_numpy()
             if (0 == interacted_list[:]).all() == True:
-                data = data.drop('has_interacted', 1)
-                data = data.drop('is_inferred', 1)
+                data = data.drop(columns = ['has_interacted'])
+                data = data.drop(columns = ['is_inferred'])
         
         elif 'is_inferred' in data.columns:
             data = data[data['is_inferred'] == False]
-            data = data.drop('is_inferred', 1)
+            data = data.drop(columns = ['is_inferred'])
 
         if cache is not None:
             data.to_pickle(path)
