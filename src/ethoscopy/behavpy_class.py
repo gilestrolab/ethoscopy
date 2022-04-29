@@ -527,7 +527,7 @@ class behavpy(pd.DataFrame):
         hours_in_seconds = wrap_time * 60 * 60
         self[time_column] = self[time_column].map(lambda t: t % hours_in_seconds)
 
-    # def hmm_train(self, states, observables, random = True, trans_probs = None, emiss_probs = None, start_probs = None, mov_column = 'moving', iterations = 10, hmm_iterations = 100, tol = 50, t_column = 't', bin_time = 60, file_name = '', verbose = False):
+    # def hmm_train(self, states, observables, var_column, random = True, trans_probs = None, emiss_probs = None, start_probs = None, iterations = 10, hmm_iterations = 100, tol = 50, t_column = 't', bin_time = 60, file_name = '', verbose = False):
     #     """
     #     Behavpy wrapper for the hmmlearn package which generates a Hidden Markov Model using the movement data from ethoscope data.
     #     If users want a restricted framework ,
@@ -544,7 +544,7 @@ class behavpy(pd.DataFrame):
     #     @trans_probs = numpy array, transtion probability matrix with shape 'len(states) x len(states)', 0's restrict the model from training any tranisitons between those states
     #     @emiss_probs = numpy array, emission probability matrix with shape 'len(observables) x len(observables)', 0's same as above
     #     @start_probs = numpy array, starting probability matrix with shape 'len(states) x 0', 0's same as above
-    #     @mov_column = string, name for the column containing the movement data to train the model with, default is 'moving'
+    #     @var_column = string, name for the column containing the variable of choice to train the model
     #     @iterations = int, only used if random is True, number of loops using a different randomised starting matrices, default is 10
     #     @hmm_iterations = int, argument to be passed to hmmlearn, number of iterations of parameter updating without reaching tol before it stops, default is 100
     #     @tol = int, convergence threshold, EM will stop if the gain in log-likelihood is below this value, default is 50
@@ -566,20 +566,25 @@ class behavpy(pd.DataFrame):
 
     #     t_delta = self[t_column].iloc[1] - self[t_column].iloc[0]
 
-    #     def bin_to_list(data, t_var, mov_var, t_delta, bin):
+    #     def bin_to_list(data, t_var, var, t_delta, bin):
     #         """ 
     #         Bins the time to the given integer and creates a nested list of the movement column by id
     #         """
+    #         if var == 'moving':
+    #             stat = 'max'
+    #         else:
+    #             stat = 'mean'
+
     #         if t_delta != bin:
     #             data[t_var] = data[t_var].map(lambda t: bin * floor(t / bin))
     #             bin_gb = self.groupby(['id', t_var]).agg(**{
-    #                 'moving' : ('moving', 'max')
+    #                 var : (var_column, stat)
     #             })
     #             bin_gb.reset_index(level = 1, inplace = True)
-    #             gb = np.array(bin_gb.groupby('id')[mov_var].apply(list).tolist(), dtype = 'object')
+    #             gb = np.array(bin_gb.groupby('id')[var].apply(list).tolist(), dtype = 'object')
 
     #         else:
-    #             gb = np.array(self.groupby('id')[mov_var].apply(list).tolist(), dtype = 'object')
+    #             gb = np.array(self.groupby('id')[var].apply(list).tolist(), dtype = 'object')
 
     #         return gb
 
@@ -599,13 +604,13 @@ class behavpy(pd.DataFrame):
     #         df_e = pd.DataFrame(emission_prob, index = state_names, columns = observable_names)
     #         print(tabulate(df_e, headers = 'keys', tablefmt = "github") + "\n")
 
-    #     if mov_column == 'beam_crosses':
-    #         self['active'] = np.where(self[mov_column] == 0, 0, 1)
-    #         gb = bin_to_list(self, t_var = t_column, mov_var = mov_column, t_delta = t_delta, bin = bin_time)
+    #     if var_column == 'beam_crosses':
+    #         self['active'] = np.where(self[var_column] == 0, 0, 1)
+    #         gb = bin_to_list(self, t_var = t_column, mov_var = var_column, t_delta = t_delta, bin = bin_time)
 
-    #     else:
-    #         self[mov_column] = np.where(self[mov_column] == True, 1, 0)
-    #         gb = bin_to_list(self, t_var = t_column, mov_var = mov_column, t_delta = t_delta, bin = bin_time)
+    #     elif var_column == 'moving':
+    #         self[var_column] = np.where(self[var_column] == True, 1, 0)
+    #         gb = bin_to_list(self, t_var = t_column, mov_var = var_column, t_delta = t_delta, bin = bin_time)
 
     #     len_seq = []
     #     for i in gb:

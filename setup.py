@@ -28,5 +28,5 @@ setup(
             "Operating System :: POSIX",
             "Operating System :: MacOS :: MacOS X"
         ],
-        python_requires = ">=3.6"
+        python_requires = ">=3.8"
 )

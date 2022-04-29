@@ -164,12 +164,12 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
                 raise
 
         file_path = win_path / file_name
-
+        
         if os.access(file_path, os.R_OK):
             if os.path.getsize(file_path) < file_size:
                 ftp = ftplib.FTP(remote_dir)
                 ftp.login()
-                ftp.cwd(work_dir)
+                ftp.cwd(str(work_dir))
 
                 localfile = open(file_path, 'wb')
                 ftp.retrbinary('RETR ' + file_name, localfile.write)

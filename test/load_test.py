@@ -9,12 +9,12 @@ local = r'C:\Users\lab\Documents\ethoscope_databases' # replace with your own
 
 etho.download_from_remote_dir(meta, remote, local)
 
-meta = etho.link_meta_index(meta, remote, local)
-print(meta)
+# meta = etho.link_meta_index(meta, remote, local)
+# print(meta)
 
-data = etho.load_ethoscope(meta, reference_hour = 9.0, FUN = partial(etho.max_velocity_detector, time_window_length = 60, raw = True))
-print(data)
+# data = etho.load_ethoscope(meta, reference_hour = 9.0, FUN = partial(etho.max_velocity_detector, time_window_length = 60, raw = True))
+# print(data)
 
-df = etho.set_behavpy(meta, data)
+# df = etho.set_behavpy(meta, data)
 
-df.display()
+# df.display()
