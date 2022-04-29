@@ -3,13 +3,13 @@ import numpy as np
 import warnings
 import pickle
 import copy
+from hmmlearn import hmm
 
 from math import floor
 
-# from ethoscopy.behavpy import check_conform
 from ethoscopy.misc.format_warning import format_warning
 from ethoscopy.misc.check_conform import check_conform
-from ethoscopy.analyse import max_velocity_detector
+from ethoscopy.analyse import max_velocity_detector, sleep_annotation
 from ethoscopy.misc.rle import rle
 
 class behavpy(pd.DataFrame):
@@ -449,7 +449,7 @@ class behavpy(pd.DataFrame):
         
         returns a behavpy object with added columns like 'moving' and 'beam_crosses'
         """
-        from motion_detectors import max_velocity_detector
+
         if optional_columns is not None:
             if optional_columns not in self.columns:
                 warnings.warn('Column heading "{}", is not in the data table'.format(optional_columns))
@@ -494,8 +494,6 @@ class behavpy(pd.DataFrame):
                                     min_time_immobile = min_time_immobile, 
                                     motion_detector_FUN = motion_detector_FUN, 
                                     masking_duration = masking_duration):
-            
-            from sleep_annotation import sleep_annotation
             
             index_name = data.index[0]
             

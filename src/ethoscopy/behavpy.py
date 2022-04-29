@@ -1,5 +1,4 @@
 import warnings
-import pandas as pd
 
 from ethoscopy.behavpy_class import behavpy
 from ethoscopy.misc.format_warning import format_warning
