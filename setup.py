@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
 from setuptools import setup, find_packages
+import importlib.metadata
 
-VERSION = '1.0.0' 
-DESCRIPTION = 'ethoscopy - a python toolbox for the Ethoscope'
+VERSION = importlib.metadata.version("ethoscopy")
+DESCRIPTION = 'A python based toolkit to download and anlyse data from the Ethoscope hardware system.'
 
 with open("README.md", "r", encoding="utf-8") as fh:
     LONG_DESCRIPTION = fh.read()

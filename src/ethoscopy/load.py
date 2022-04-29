@@ -328,9 +328,10 @@ def link_meta_index(metadata, remote_dir, local_dir):
 
     # split path into parts
     split_df = pd.DataFrame()
-    for path in paths:     
+    for path in paths:  
         split_path = path[0].split('/')
-        split_series = pd.Series(split_path, index = ['machine_id', 'machine_name', 'date_time', 'file_name'])
+        split_series = pd.DataFrame(data = split_path).T 
+        split_series.columns = ['machine_id', 'machine_name', 'date_time', 'file_name']
         split_series['file_size'] = path[1]
         split_df = pd.concat([split_df, split_series], ignore_index = True)
 
