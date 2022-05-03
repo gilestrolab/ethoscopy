@@ -474,7 +474,7 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
         #sql_query takes roughyl 2.8 seconds for 2.5 days of data
         sql_query = 'SELECT * FROM ROI_{} WHERE t >= {} {}'.format(file['region_id'], min_time, max_time_condtion)
         data = pd.read_sql_query(sql_query, conn)
-        print(data)
+        
         if 'id' in data.columns:
             data = data.drop(columns = ['id'])
 

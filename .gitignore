@@ -6,5 +6,4 @@ dist/
 __pycache__/
 ethoscopy.egg-info/
 *.toml
-*.lock
-*load_test.py
+load_test.py
