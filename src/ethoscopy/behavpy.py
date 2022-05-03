@@ -1,5 +1,5 @@
 import warnings
-
+from sys import exit
 from ethoscopy.behavpy_class import behavpy
 from ethoscopy.misc.format_warning import format_warning
 from ethoscopy.misc.check_conform import check_conform

@@ -1,11 +1,12 @@
 import pandas as pd
 import numpy as np 
 import warnings
-import pickle
+# import pickle
 import copy
 # from hmmlearn import hmm
 
 from math import floor
+from sys import exit
 
 from ethoscopy.misc.format_warning import format_warning
 from ethoscopy.misc.check_conform import check_conform

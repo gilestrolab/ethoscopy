@@ -1,5 +1,7 @@
 import warnings
 import pandas as pd
+from sys import exit
+
 from ethoscopy.misc.format_warning import format_warning
 
 def check_conform(data, metadata = None, skip = False):

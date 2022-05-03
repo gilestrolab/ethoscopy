@@ -1,4 +1,6 @@
 from datetime import datetime
+from sys import exit
+
 import warnings
 from ethoscopy.misc.format_warning import format_warning
 warnings.formatwarning = format_warning

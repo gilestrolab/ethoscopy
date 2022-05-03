@@ -5,7 +5,7 @@ import numpy as np
 import errno
 import time 
 import sqlite3
-import sys
+from sys import exit
 from pathlib import Path, PurePosixPath
 from functools import partial
 from urllib.parse import urlparse
@@ -198,7 +198,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
         if counter == 0:
             start = time.time()
             p = PurePosixPath(j[0])
-            download(work_dir = parse.path[1:] / p.parents[0], file_name = p.name, file_size = j[1])
+            download(work_dir = p.parents[0], file_name = p.name, file_size = j[1])
             stop = time.time()
             t = stop - start
             times.append(t)
@@ -208,7 +208,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
             print(f'Estimated finish time: {av_time} mins') 
             start = time.time()
             p = PurePosixPath(j[0])
-            download(work_dir = parse.path[1:] / p.parents[0], file_name = p.name, file_size = j[1])
+            download(work_dir = p.parents[0], file_name = p.name, file_size = j[1])
             stop = time.time()
             t = stop - start
             times.append(t)
@@ -362,9 +362,10 @@ def link_meta_index(metadata, remote_dir, local_dir):
     full_path_list = []
     parse = urlparse(remote_dir)
     os_work_dir = Path(parse.path[1:])
+    print(os_work_dir)
     for j in path_list:
         win_path = Path(j)
-        full_path = local_dir / os_work_dir / win_path
+        full_path = local_dir / win_path
         full_path_list.append(str(full_path))
     
     #create a unique id for each row, consists of first 25 char of file_name and region_id, inserted at index 0
@@ -439,7 +440,7 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
     """
 
     if min_time > max_time:
-        sys.exit('Error: min_time is larger than max_time')
+        exit('Error: min_time is larger than max_time')
 
     if cache is not None:
         cache_name = 'cached_{}_{}_{}.pkl'.format(file['machine_id'], file['region_id'], file['date'])

@@ -2,7 +2,9 @@ import pandas as pd
 import numpy as np 
 import warnings
 import copy
+
 from math import floor
+from sys import exit
 
 from ethoscopy.misc.rle import rle
 
