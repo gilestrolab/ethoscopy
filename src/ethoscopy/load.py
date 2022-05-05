@@ -194,7 +194,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
     times = []
 
     for counter, j in enumerate(paths):
-        print('Downloading {}... {}/{}'.format(j[0].split('/')[1], counter, len(paths)))
+        print('Downloading {}... {}/{}'.format(j[0].split('/')[1], counter+1, len(paths)))
         if counter == 0:
             start = time.time()
             p = PurePosixPath(j[0])
@@ -361,8 +361,7 @@ def link_meta_index(metadata, remote_dir, local_dir):
     #join the db path name with the users directory 
     full_path_list = []
     parse = urlparse(remote_dir)
-    os_work_dir = Path(parse.path[1:])
-    print(os_work_dir)
+
     for j in path_list:
         win_path = Path(j)
         full_path = local_dir / win_path

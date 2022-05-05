@@ -44,7 +44,7 @@ class behavpy(pd.DataFrame):
         Expand metavariable from the behavpy object
 
         Params:
-        @column = string. column heading from the metadata of the behavpy object
+        @column = string, column heading from the metadata of the behavpy object
         @*args = string, arguments corresponding to groups from the column given
 
         returns a behavpy object with filtered data and metadata
