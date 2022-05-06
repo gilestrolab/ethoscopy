@@ -5,7 +5,7 @@ import copy
 
 from math import floor
 from sys import exit
-
+from scipy.stats import zscore
 from ethoscopy.misc.rle import rle
 
 def max_velocity_detector(data, 
@@ -410,6 +410,7 @@ def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_
     Params:
     @data = pandas dataframe, a dataframe object as provided from the read_single_roi fucntion with a column of time 't' in seconds
     @intervals = list of ints, a list with the timestamps you want the window to work back from, must be in minutes
+    @window = int, the time frame you want to work back from each interval
     @inactive = bool, whether to search for runs of activity or inactivity
     @velocity_correction_coef - float, coeffient to find the velocity over time
 
@@ -417,6 +418,11 @@ def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_
     """
     assert(isinstance(intervals, list))
     assert(all(isinstance(item, int) for item in intervals))
+
+    if len(data.index) < 100:
+        return None
+
+    window = window * 60
 
     data['deltaT'] = data.t.diff()
     data['dist'] = 10 ** (data.xy_dist_log10x1000 / 1000)
@@ -434,6 +440,22 @@ def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_
         })
     data.reset_index(inplace = True)
     data['moving'] = np.where(data['velocity'] > 1, 1, 0)
+
+    def norm_1_0(data, var):
+        v_min = data[var].min()
+        v_max = data[var].max()
+        data[var] = data[var].map(lambda v: (v - v_min) / (v_max - v_min))
+        return data
+    
+    data = norm_1_0(data, var = 'x')
+    data = norm_1_0(data, var = 'phi')
+    for i in ['w', 'h']:
+        data[f'{i}_z'] = np.abs(zscore(data[i].to_numpy())) < 3
+        data[i] = np.where(data[f'{i}_z'] == True, data[i], np.nan)
+        data[i] = data[i].fillna(method = 'ffill')
+        data[i] = data[i].fillna(method = 'bfill')
+        data.drop(columns = [f'{i}_z'], inplace = True)
+        data = norm_1_0(data, var = i)
 
     def find_inactivity(data, inactive = inactive):
                 if inactive == True:
@@ -473,7 +495,8 @@ def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_
 
     for interval in intervals:
         #isolate interaction times
-        interaction_dt = data['t'][data['inactive_count'] == interval*60].to_frame()
+        interval = interval * 60
+        interaction_dt = data['t'][data['inactive_count'] == interval].to_frame()
         interaction_dt.rename(columns = {'t' : 'int_t'}, inplace = True)
 
         #check some interactions took place, return none if empty
@@ -493,11 +516,12 @@ def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_
             np.column_stack([data.values[i], interaction_dt.values[j]]),
             columns = data.columns.append(interaction_dt.columns)
         )
-        df.drop(columns = ['end', 'int_t', 'moving', 'inactive_count'], inplace = True)
+        df.drop(columns = ['end', 'int_t', 'inactive_count'], inplace = True)
 
         gb = df.groupby('start').size()
         filt_gb = gb[gb == window]
         filt_df = df[df['start'].isin(filt_gb.index.tolist())]
+        filt_df['t_rel'] = list(range(interval - window, interval)) * len(filt_gb.index)
         inactivity_df = pd.concat([inactivity_df, filt_df], ignore_index = False)
                 
 
