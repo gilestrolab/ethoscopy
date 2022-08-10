@@ -448,7 +448,7 @@ def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_
         return data
     
     data = norm_1_0(data, var = 'x')
-    data = norm_1_0(data, var = 'phi')
+
     for i in ['w', 'h']:
         data[f'{i}_z'] = np.abs(zscore(data[i].to_numpy())) < 3
         data[i] = np.where(data[f'{i}_z'] == True, data[i], np.nan)
