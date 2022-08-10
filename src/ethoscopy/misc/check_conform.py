@@ -10,7 +10,7 @@ def check_conform(data, metadata = None, skip = False):
     If metadata is provided and skip is False it will check as above and check the ID's in
     metadata match those in the data
     params: 
-    @data / @metadata = can be any class but will force an exit if not a pandas dataframe
+    @data / @metadata = a pandas dataframe containing data and metadata with common unique ids
     @skip = boolean indicating whether to skip a check that unique id's are in both meta and data match 
     """
     
@@ -18,7 +18,7 @@ def check_conform(data, metadata = None, skip = False):
     warnings.formatwarning = format_warning
 
     if isinstance(data, pd.DataFrame) is not True:
-        warnings.warn('Data input is not a pandas dataframe')
+        warnings.warn('Data is not a pandas dataframe')
         exit()
 
     if metadata is not None: 
@@ -32,5 +32,5 @@ def check_conform(data, metadata = None, skip = False):
             # checks if all id's of data are in the metadata dataframe
             check_data = all(elem in metadata_id_list for elem in data_id_list)
             if check_data is not True:
-                warnings.warn("There are ID's in the data not in the metadata, please check")
+                warnings.warn("There are ID's in the data that are not in the metadata, please check")
                 exit()
