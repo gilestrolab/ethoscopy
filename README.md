@@ -10,5 +10,8 @@ Ethoscopy provides the tools to download epxerimental data from a remote ftp ser
 
 Further the ethoscopy package provides behavpy a subclassed version of pandas that combines metadata with the data for easy manipulation. Behavpy can be used independantly of the Ethoscope system data if following the same structure.
 
-**TO COME** 
-The addition of a hidden markov model to train the data on will be added (hmmlearn - https://hmmlearn.readthedocs.io/en/latest/). Here you can set the architecture and train a HMM of your choice. There are several plotting functions avaiable alongside side it to explore the hidden markov model, using plotly as graphing tool of choice.
+Within Behavpy is a wrapped version of the python package hmmlearn, a tool for creating hidden markov models. With the update the user can easy train new HMMs from their data.
+
+**To Come**
+Plotting functions to complement the addtioanal hmmlearn update
+
