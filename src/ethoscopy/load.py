@@ -488,7 +488,7 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
         
         else:
             data.t = data.t / 1e3
-
+            
         roi_width = max(roi_row['w'].iloc[0], roi_row['h'].iloc[0])
         for var_n in var_df['var_name']:
             if var_df['functional_type'][var_df['var_name'] == var_n].iloc[0] == 'distance':

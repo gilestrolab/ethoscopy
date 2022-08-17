@@ -30,7 +30,7 @@ def max_velocity_detector(data,
 
     returns a pandas dataframe object with columns such as 'moving' and 'beam_cross'
     """
-    
+
     if len(data.index) < 100:
         return None
 
@@ -404,7 +404,7 @@ def find_motifs(data, window = 300, velocity_correction_coef = 3e-3):
 
 def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_correction_coef = 3e-3):
     """
-    Isolate activity lengths is a loading function that will find consecutive runs of inactivity or activity and segment mement them into same sized windows
+    Isolate activity lengths is a loading function that will find consecutive runs of inactivity or activity and segment them into same sized windows
     at intervals stated by the user. This function
 
     Params:
