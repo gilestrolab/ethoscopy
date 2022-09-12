@@ -136,7 +136,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
         else:
             print(f'{i[0]}_{i[1]} has not been found for download')
 
-    def download_database(remote_dir, work_dir, local_dir, file_name, file_size):
+    def download_database(remote_dir, folders, work_dir, local_dir, file_name, file_size):
         """ 
         Connects to remote FTP server and saves to designated local path, retains file name and path directory structure 
         
@@ -169,7 +169,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
             if os.path.getsize(file_path) < file_size:
                 ftp = ftplib.FTP(remote_dir)
                 ftp.login()
-                ftp.cwd(str(work_dir))
+                ftp.cwd(folders + '/' + str(work_dir))
 
                 localfile = open(file_path, 'wb')
                 ftp.retrbinary('RETR ' + file_name, localfile.write)
@@ -180,7 +180,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
         else:
             ftp = ftplib.FTP(remote_dir)
             ftp.login()
-            ftp.cwd(str(work_dir))
+            ftp.cwd(folders + '/' + str(work_dir))
 
             localfile = open(file_path, 'wb')
             ftp.retrbinary('RETR ' + file_name, localfile.write)
@@ -190,7 +190,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
 
     # iterate over paths, downloading each file
     # provide estimate download time based upon average time of previous downloads in queue
-    download = partial(download_database, remote_dir=parse.netloc, local_dir=local_dir)
+    download = partial(download_database, remote_dir = parse.netloc, folders = parse.path, local_dir = local_dir)
     times = []
 
     for counter, j in enumerate(paths):

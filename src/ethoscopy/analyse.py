@@ -233,6 +233,7 @@ def puff_mago(data, response_window = 10, velocity_correction_coef = 3e-3):
 
     # check for has_interaction column, as is removed during loading of roi if all false
     if any('has_interacted' in ele for ele in data.columns.tolist()) is False:
+        print('ROI was unable to load due to no interactions in the database')
         return None
 
     data['deltaT'] = data.t.diff()
@@ -288,9 +289,9 @@ def puff_mago(data, response_window = 10, velocity_correction_coef = 3e-3):
             response_row['has_responded'] = True
             trel_row = filtered_df[filtered_df['has_responded'] == True].iloc[0]
             response_row['t_rel'] = trel_row['t_rel']
-            response_df = response_df.append(response_row)
+            response_df = pd.concat([response_df, response_row])
         else:
-            response_df = response_df.append(filtered_df[filtered_df['t_rel'] == 0])
+            response_df = pd.concat([response_df, filtered_df[filtered_df['t_rel'] == 0]])
 
     return response_df
 
