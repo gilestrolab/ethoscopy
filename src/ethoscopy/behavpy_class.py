@@ -50,6 +50,11 @@ class behavpy(pd.DataFrame):
         returns a behavpy object with filtered data and metadata
         """
 
+        if len(args) == 1:
+            if type(args[0]) == list:
+                print('its a list')
+                args = args[0]
+
         if column == 'id':
             index_list = []
             for m in args:
@@ -641,6 +646,10 @@ class behavpy(pd.DataFrame):
 
         returns a behavpy object with filtered data and metadata
         """
+
+        if len(args) == 1:
+            if type(args[0]) == list:
+                args = args[0]
 
         if column == 'id':
             remove_index_list = []
