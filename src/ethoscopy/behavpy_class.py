@@ -597,7 +597,7 @@ class behavpy(pd.DataFrame):
 
         heatmap_df = self.groupby('id', group_keys = False).apply(align_data)
 
-        gbm = heatmap_df.groupby(heatmap_df.index)['moving_mean'].apply(list)
+        gbm = heatmap_df.groupby(heatmap_df.index)[f'{mov_column}_mean'].apply(list)
         id = heatmap_df.groupby(heatmap_df.index)['t_bin'].mean().index.tolist()
 
         fig = go.Figure(data=go.Heatmap(
