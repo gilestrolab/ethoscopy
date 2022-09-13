@@ -52,7 +52,6 @@ class behavpy(pd.DataFrame):
 
         if len(args) == 1:
             if type(args[0]) == list:
-                print('its a list')
                 args = args[0]
 
         if column == 'id':
@@ -281,6 +280,7 @@ class behavpy(pd.DataFrame):
             else:
                 return bout_times
 
+        self.reset_index(inplace = True)
         bout_df = behavpy(self.groupby('id', group_keys = False).apply(wrapped_bout_analysis))
         bout_df.meta = self.meta
 
@@ -331,6 +331,7 @@ class behavpy(pd.DataFrame):
             curated_data = data[data[time_var].between(data.t.min(), last_valid_point[0])]
             return curated_data
 
+        self.reset_index(inplace = True)
         curated_df = behavpy(self.groupby('id', group_keys = False).apply(wrapped_curate_dead_animals))
         curated_df.meta = self.meta 
 
@@ -360,22 +361,21 @@ class behavpy(pd.DataFrame):
             index_name = data.index[0]
 
             data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
-
-            output_parse_name = '{}_{}'.format(column, function) # create new column name
+            
+            output_parse_name = f'{column}_{function}' # create new column name
         
             bout_gb = data.groupby(bin_column).agg(**{
                 output_parse_name : (column, function)    
             })
 
-            bin_parse_name = '{}_bin'.format(bin_column)
-
+            bin_parse_name = f'{bin_column}_bin'
             bout_gb.rename_axis(bin_parse_name, inplace = True)
             bout_gb.reset_index(level=0, inplace=True)
             old_index = pd.Index([index_name] * len(bout_gb.index), name = 'id')
             bout_gb.set_index(old_index, inplace =True)
 
             return bout_gb
-
+        self.reset_index(inplace = True)
         bin_df = behavpy(self.groupby('id', group_keys = False).apply(wrapped_bin_data))
         bin_df.meta = self.meta
 
@@ -512,8 +512,9 @@ class behavpy(pd.DataFrame):
             old_index = pd.Index([index_name] * len(df.index), name = 'id')
             df.set_index(old_index, inplace =True)  
 
-            return df                     
+            return df    
 
+        self.reset_index(inplace = True)
         sleep_df = behavpy(self.groupby('id', group_keys = False).apply(wrapped_sleep_annotation))
         sleep_df.meta = self.meta
 
