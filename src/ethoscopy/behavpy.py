@@ -1,10 +1,11 @@
 import warnings
 from sys import exit
 from ethoscopy.behavpy_class import behavpy
+from ethoscopy.behavpy_HMM_class import behavpy_HMM
 from ethoscopy.misc.format_warning import format_warning
 from ethoscopy.misc.check_conform import check_conform
 
-def set_behavpy(metadata, data, skip = False):
+def set_behavpy(metadata, data, skip = False, HMM = False):
     """ 
     Takes two data frames, one metadata and the other the recorded values and makes an instance of the behavpy class
     Data becomes the pandas dataframe with metadata added as an attribute from a subclassed version of pd.DataFrame
@@ -37,10 +38,15 @@ def set_behavpy(metadata, data, skip = False):
 
     # drop some left over columns from loading that arean't needed in analysis
     drop_col_names = ['path', 'file_name', 'file_size', 'machine_id']
-    metadata.drop(columns=[col for col in metadata if col in drop_col_names], inplace =True)
+    meta = metadata.drop(columns=[col for col in metadata if col in drop_col_names])
 
-    # make instance of behavpy class and set metadata as attribute
-    df = behavpy(data)
-    df.meta = metadata
-
-    return df
+    if HMM is False:
+        # make instance of behavpy class and set metadata as attribute
+        df = behavpy(data)
+        df.meta = meta
+        return df
+    else:
+        print('hmm')
+        df = behavpy_HMM(data)
+        df.meta = meta
+        return df 

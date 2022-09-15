@@ -1,22 +1,23 @@
 import pandas as pd
 import numpy as np 
 import warnings
-# import pickle
 import copy
-# from hmmlearn import hmm
-
-from math import floor
+import plotly.graph_objs as go 
+import plotly.express as px
+from math import floor, ceil
 from sys import exit
+from scipy.stats import zscore
 
 from ethoscopy.misc.format_warning import format_warning
-from ethoscopy.misc.check_conform import check_conform
+from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.analyse import max_velocity_detector, sleep_annotation
 from ethoscopy.misc.rle import rle
+from ethoscopy.misc.bootstrap_CI import bootstrap
 
 class behavpy(pd.DataFrame):
     """
-    The behavpy class is a store of information for data from the ethoscope system with corresponding methods to augment and manipulate,
-    the data as necessary for standard analysis
+    The behavpy class is a store of information for data from the ethoscope system with corresponding methods to augment and manipulate
+    the data as necessary for standard analysis.
     Behavpy is subclassed from the pandas dataframe object and can be manipualted using all their tools as well as the custom methods within
     Behavpy sets a metadata dataframe as an attribute which is called upon frequently in the methods, can be accessed through behavpy.meta
     Both metadata and data should share unique ids in their 'id' column that are essential for manipulaiton
@@ -24,12 +25,77 @@ class behavpy(pd.DataFrame):
     """
     warnings.formatwarning = format_warning
 
+    @staticmethod
+    def _check_conform(self):
+            """ 
+            Checks the data augument is a pandas dataframe
+            If metadata is provided and skip is False it will check as above and check the ID's in
+            metadata match those in the data
+            params: 
+            @skip = boolean indicating whether to skip a check that unique id's are in both meta and data match 
+            """
+            
+            # formats warming method to not double print and allow string formatting
+            warnings.formatwarning = format_warning
+
+            if isinstance(self.meta, pd.DataFrame) is not True:
+                warnings.warn('Metadata input is not a pandas dataframe')
+                exit()
+
+            if self.index.name != 'id':
+                try:
+                    self.set_index('id', inplace = True)
+                except:
+                    warnings.warn("There is no 'id' as a column or index in the data'")
+                    exit()
+
+            if self.meta.index.name != 'id':
+                try:
+                    self.meta.set_index('id', inplace = True)
+                except:
+                    warnings.warn("There is no 'id' as a column or index in the metadata'")
+                    exit()
+
+            metadata_id_list = set(self.meta.index.tolist())
+            data_id_list = set(self.index.tolist())
+            # checks if all id's of data are in the metadata dataframe
+            check_data = all(elem in metadata_id_list for elem in data_id_list)
+            if check_data is not True:
+                warnings.warn("There are ID's in the data that are not in the metadata, please check. You can skip this process by changing the parameter skip to False")
+                exit()
+
     # set meta as permenant attribute
     _metadata = ['meta']
 
     @property
     def _constructor(self):
-        return behavpy
+        return behavpy._internal_constructor(self.__class__)
+
+    class _internal_constructor(object):
+        def __init__(self, cls):
+            self.cls = cls
+
+        def __call__(self, *args, **kwargs):
+            kwargs['meta'] = None
+            return self.cls(*args, **kwargs)
+
+        def _from_axes(self, *args, **kwargs):
+            return self.cls._from_axes(*args, **kwargs)
+
+    def __init__(self, data, meta, check = False, index= None, columns=None, dtype=None, copy=True):
+        super(behavpy, self).__init__(data=data,
+                                        index=index,
+                                        columns=columns,
+                                        dtype=dtype,
+                                        copy=copy)
+
+        self.meta = meta   
+
+        if check is True:
+            self._check_conform(self)
+        
+    _colours_small = px.colors.qualitative.Safe
+    _colours_large = px.colors.qualitative.Dark24
 
     def display(self):
         """
@@ -90,10 +156,8 @@ class behavpy(pd.DataFrame):
         data_id = list(set(self.index.values))
         new_index_list = np.intersect1d(index_list, data_id)
 
-        xmv_df = behavpy(self[self.index.isin(index_list)])
-        xmv_df.meta = self.meta[self.meta.index.isin(new_index_list)]
+        return behavpy(self[self.index.isin(index_list)], meta = self.meta[self.meta.index.isin(new_index_list)])
 
-        return xmv_df
 
     def t_filter(self, end_time = None, start_time = 0, t_column = 't'):
         """
@@ -116,17 +180,19 @@ class behavpy(pd.DataFrame):
 
         return t_filter_df
 
-    def rejoin(self, new_column):
+    def rejoin(self, new_column, check = True):
         """
         Joins a new column to the metadata
 
         Params:
         @new_column = pandas dataframe. The column to be added, must contain an index called 'id' to match original metadata
+        @check = bool. Whether or not to check if the ids in the data match the new column, default is True
 
         augments the metadata in place
         """
 
-        check_conform(new_column)
+        if check is True:
+            self._check_conform(self, new_column)
 
         m = pd.DataFrame(self.meta)
         new_m = m.join(new_column, on = 'id')
@@ -185,33 +251,7 @@ class behavpy(pd.DataFrame):
 
         return pivot
 
-    def sleep_contiguous(self, mov_column = 'moving', min_valid_time = 300):
-        """ 
-        Checks for contiguous bouts of non-movement, those larger than the threshold are classed as asleep
-
-        params:
-        @mov_column = string, default 'moving'. The name of the column containg the sleep boolean values in the data
-        @min_valid_time = integer, default 300. The threshold for sleep in seconds, i.e. 300 = 5 mins
-
-        returns a modified behavpy object with an added asleep column
-        """
-
-        t_delta = self['t'].iloc[1] - self['t'].iloc[0] 
-        fs = 1/t_delta # sampling frequency
-        moving = self[mov_column]
-
-        min_len = fs * min_valid_time
-        r_sleep =  rle(np.logical_not(moving)) 
-        valid_runs = r_sleep[2] >= min_len 
-        r_sleep_mod = valid_runs & r_sleep[0]
-        r_small = []
-
-        for c, i in enumerate(r_sleep_mod):
-            r_small += ([i] * r_sleep[2][c])
-
-        self['asleep'] = r_small
-
-    def sleep_bout_analysis(self, sleep_column = 'asleep', as_hist = False, relative = True, min_bins = 30, asleep = True):
+    def sleep_bout_analysis(self, sleep_column = 'asleep', as_hist = False, max_bins = 30, asleep = True):
         """ 
         Augments a behavpy objects sleep column to have duration and start of the sleep bouts, must contain a column with boolean values for sleep
 
@@ -220,7 +260,7 @@ class behavpy(pd.DataFrame):
         @as_hist = bool, default False. If true the data will be augmented further into data appropriate for a histogram 
         Subsequent params only apply if as_hist is True
         @relative = bool, default True. Changes frequency from absolute to proportional with 1 equalling 100%
-        @min_bins = integer, default 30. The min bumber of bins for the data to sorted into for the histogram
+        @max_bins = integer, default 30. The number of bins for the data to be sorted into for the histogram, each bin is 1 minute
         @asleep = bool, default True. If True the histogram represents sleep bouts, if false bouts of awake
 
         returns a behavpy object with duration and time start of both awake and asleep
@@ -233,7 +273,7 @@ class behavpy(pd.DataFrame):
             warnings.warn(f'Column heading "{sleep_column}", is not in the data table')
             exit()
 
-        def wrapped_bout_analysis(data, var_name = sleep_column, as_hist = as_hist, relative = relative, min_bins = min_bins, asleep = asleep):
+        def wrapped_bout_analysis(data, var_name = sleep_column, as_hist = as_hist, max_bins = max_bins, asleep = asleep):
 
             index_name = data.index[0]
             
@@ -263,13 +303,12 @@ class behavpy(pd.DataFrame):
 
                 filtered = bout_times[bout_times[var_name] == asleep]
 
-                breaks = list(range(0, min_bins*60, 60))
+                breaks = list(range(0, max_bins*60, 60))
                 bout_cut = pd.DataFrame(pd.cut(filtered.duration, breaks, right = False, labels = breaks[1:]))
                 bout_gb = bout_cut.groupby('duration').agg(
                 count = pd.NamedAgg(column = 'duration', aggfunc = 'count')
                 )
-                if relative is True:
-                    bout_gb['prob'] = bout_gb['count'] / bout_gb['count'].sum()
+                bout_gb['prob'] = bout_gb['count'] / bout_gb['count'].sum()
                 bout_gb.rename_axis('bins', inplace = True)
                 bout_gb.reset_index(level=0, inplace=True)
                 old_index = pd.Index([index_name] * len(bout_gb.index), name = 'id')
@@ -375,6 +414,7 @@ class behavpy(pd.DataFrame):
             bout_gb.set_index(old_index, inplace =True)
 
             return bout_gb
+
         self.reset_index(inplace = True)
         bin_df = behavpy(self.groupby('id', group_keys = False).apply(wrapped_bin_data))
         bin_df.meta = self.meta
@@ -427,13 +467,13 @@ class behavpy(pd.DataFrame):
 
             print(group)
 
-    def add_day_phase(self, reference_hour = None):
+    def add_day_phase(self, circadian_night = 12):
         """ 
         Adds a column called 'phase' with either light or dark as catergories according to its time compared to the reference hour
         Adds a column with the day the row in, starting with 1 as day zero and increasing sequentially.
 
         Params:
-        @reference_hour = int, a number in the 24 hour clock from when the lights turn on first in the day
+        @circadian_night = int, the ZT hour when the conditions shift to dark
             
         returns the orignal behapvy object with added columns to the data column 
         """
@@ -442,9 +482,10 @@ class behavpy(pd.DataFrame):
 
         self['day'] = self['t'].map(lambda t: floor(t / 86400))
         
-        if reference_hour is None:
-            self['phase'] = np.where(((self.t % 86400) > 43200), 'dark', 'light')
-            self['phase'] = self['phase'].astype('category')
+        night_in_secs = circadian_night * 60 * 60
+
+        self['phase'] = np.where(((self.t % 86400) > night_in_secs), 'dark', 'light')
+        self['phase'] = self['phase'].astype('category')
 
     def motion_detector(self, time_window_length = 10, velocity_correction_coef = 3e-3, masking_duration = 0, optional_columns = None):
         """
@@ -536,7 +577,7 @@ class behavpy(pd.DataFrame):
 
     def baseline(self, column, t_column = 't', inplace = False):
         """
-        A function to add days to the time series data per animal so allign interaction times per user discretion
+        A function to add days to the time series data per animal so align interaction times per user discretion
 
         Params:
         @column = string, name of column containing the number of days to add, must in integers, 0 = no days added
@@ -566,20 +607,21 @@ class behavpy(pd.DataFrame):
 
             return new
 
-    def heatmap(self, mov_column = 'moving'):
+    def heatmap(self, variable = 'moving'):
         """
         Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
         
         Params:
-        @mov_column = string, name for the column containing the movement data to plot, default is 'moving'
+        @variable = string, name for the column containing the variable of interest, the default is moving
         
         returns None
         """
-        import plotly.graph_objs as go 
 
         # change movement values from boolean to intergers and bin to 30 mins finding the mean
-        self[mov_column] = np.where(self[mov_column] == True, 1, 0)
-        self = self.bin_time(column = mov_column, bin_secs = 1800)
+        if variable == 'moving':
+            self[variable] = np.where(self[variable] == True, 1, 0)
+
+        self = self.bin_time(column = variable, bin_secs = 1800)
         self['t_bin'] = self['t_bin'] / (60*60)
         # create an array starting with the earliest half hour bin and the last with 0.5 intervals
         start = self['t_bin'].min().astype(int)
@@ -603,7 +645,7 @@ class behavpy(pd.DataFrame):
 
         heatmap_df = self.groupby('id', group_keys = False).apply(align_data)
 
-        gbm = heatmap_df.groupby(heatmap_df.index)[f'{mov_column}_mean'].apply(list)
+        gbm = heatmap_df.groupby(heatmap_df.index)[f'{variable}_mean'].apply(list)
         id = heatmap_df.groupby(heatmap_df.index)['t_bin'].mean().index.tolist()
 
         fig = go.Figure(data=go.Heatmap(
@@ -667,10 +709,7 @@ class behavpy(pd.DataFrame):
             data_id = list(set(self.index.values))
             new_index_list = np.intersect1d(index_list, data_id)
 
-            xmv_df = behavpy(self[self.index.isin(index_list)])
-            xmv_df.meta = self.meta[self.meta.index.isin(new_index_list)]
-
-            return xmv_df
+            return behavpy(self[self.index.isin(index_list)], self.meta[self.meta.index.isin(new_index_list)])
 
         if column not in self.meta.columns:
             warnings.warn('Column heading "{}" is not in the metadata table'.format(column))
@@ -689,175 +728,364 @@ class behavpy(pd.DataFrame):
         data_id = list(set(self.index.values))
         new_index_list = np.intersect1d(index_list, data_id)
 
-        xmv_df = behavpy(self[self.index.isin(index_list)])
-        xmv_df.meta = self.meta[self.meta.index.isin(new_index_list)]
+        return behavpy(self[self.index.isin(index_list)], self.meta[self.meta.index.isin(new_index_list)])
 
-        return xmv_df
-
-    def hmm_train(self, states, observables, var_column, trans_probs = None, emiss_probs = None, start_probs = None, iterations = 10, hmm_iterations = 100, tol = 50, t_column = 't', bin_time = 60, test_size = 10, file_name = '', verbose = False):
-        """
-        Behavpy wrapper for the hmmlearn package which generates a Hidden Markov Model using the movement data from ethoscope data.
-        If users want a restricted framework ,
-        E.g. for random:
-
-        There must be no NaNs in the training data
-
-        Resultant hidden markov models will be saved as a .pkl file if file_name is provided
-        Final trained model probability matrices will be printed to terminal at the end of the run time
-
-        Params:
-        @states = list of sting(s), names of hidden states for the model to train to
-        @observables = list of string(s), names of the observable states for the model to train to.
-        The length must be the same number as the different categories in you movement column.
-        @trans_probs = numpy array, transtion probability matrix with shape 'len(states) x len(states)', 0's restrict the model from training any tranisitons between those states
-        @emiss_probs = numpy array, emission probability matrix with shape 'len(observables) x len(observables)', 0's same as above
-        @start_probs = numpy array, starting probability matrix with shape 'len(states) x 0', 0's same as above
-        @var_column = string, name for the column containing the variable of choice to train the model
-        @iterations = int, only used if random is True, number of loops using a different randomised starting matrices, default is 10
-        @hmm_iterations = int, argument to be passed to hmmlearn, number of iterations of parameter updating without reaching tol before it stops, default is 100
-        @tol = int, convergence threshold, EM will stop if the gain in log-likelihood is below this value, default is 50
-        @t_column = string, name for the column containing the time series data, default is 't'
-        @bin_time = int, the time in seconds the data will be binned to before the training begins, default is 60 (i.e 1 min)
-        @file_name = string, name of the .pkl file the resultant trained model will be saved to, if left as '' and random is False the model won't be saved, default is ''
-        @verbose = (bool, optional), argument for hmmlearn, whether per-iteration convergence reports are printed to terminal
-
-        returns a trained hmmlearn HMM Multinomial object
-        """
-
-        import pickle
-        from tabulate import tabulate
-        from hmmlearn import hmm
+    def curate(self, length, t_delta):
         
-        if file_name.endswith('.pkl') is False:
-            warnings.warn('enter a file name and type (.pkl) for the hmm object to be saved under')
+        data_points = length * t_delta
+
+        def wrapped_curate(data, limit = data_points):
+            if len(data) < limit:
+                id_list.append(list(set(data['id']))[0])
+                return data
+            else:
+                return data
+
+        id_list = []
+        self.reset_index(inplace = True)
+        df = self.groupby('id', group_keys = False).apply(wrapped_curate)
+        df.set_index('id', inplace = True)
+        df = behavpy(df, self.meta)
+
+        return df.remove('id', id_list)
+
+    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_args = None, labels = None, avg_window = 30, circadian_night = 12, save = False, location = ''):
+
+
+        if facet_col is not None:
+            if facet_col not in self.meta.columns:
+                warnings.warn(f'Column "{facet_col}" is not a metadata column')
+                exit()
+            d_list = []
+            if facet_args is None:
+                arg_list = list(set(self.meta[facet_col].tolist()))
+                for arg in arg_list:
+                    temp_df = self.xmv(facet_col, arg)
+                    d_list.append(temp_df)
+                if labels is None:
+                    labels = arg_list
+                elif len(d_list) != len(labels):
+                    labels = arg_list
+            else:
+                assert isinstance(facet_args, list)
+                arg_list = facet_args
+                for arg in arg_list:
+                    temp_df = self.xmv(facet_col, arg)
+                    d_list.append(temp_df)
+                if labels is None:
+                    labels = arg_list
+                elif len(d_list) != len(labels):
+                    labels = arg_list
+
+        else:
+            d_list = [self]
+            labels = ['']
+
+        if len(d_list) < 11:
+            col_list = self._colours_small
+        elif len(d_list) < 24:
+            col_list = self._colours_large
+        else:
+            warnings.warn('Too many sub groups to plot with the current colour palette')
             exit()
 
-        n_states = len(states)
-        n_obs = len(observables)
+        def pop_std(array):
+            return np.std(array, ddof = 0)
 
-        def bin_to_list(data, t_var, mov_var, bin):
-            """ 
-            Bins the time to the given integer and creates a nested list of the movement column by id
-            """
-            if mov_var == 'moving':
-                stat = 'max'
-            else:
-                stat = 'mean'
+        layout = go.Layout(
+            yaxis = dict(
+                color = 'black',
+                linecolor = 'black',
+                title = dict(
+                    text = f'Probability of {variable}',
+                    font = dict(
+                        size = 24,
+                    )
+                ),
+                range = [-0.025, 1], 
+                tick0 = 0,
+                ticks = 'outside',
+                tickwidth = 2,
+                tickfont = dict(
+                    size = 18
+                )
+            ),
+            xaxis = dict(
+                color = 'black',
+                linecolor = 'black',
+                gridcolor = 'black',
+                title = dict(
+                    text = 'ZT (Hours)',
+                    font = dict(
+                        size = 24,
+                        color = 'black'
+                    )
+                ),
+                tick0 = 0,
+                dtick = 12,
+                ticks = 'outside',
+                tickwidth = 2,
+                tickfont = dict(
+                    size = 18
+                )
+            ),
+            plot_bgcolor = 'white',
+            yaxis_showgrid=False,
+            xaxis_showgrid = False,
+            legend = dict(
+                bgcolor = 'rgba(201, 201, 201, 1)',
+                bordercolor = 'grey',
+                font = dict(
+                    size = 12
+                ),
+                x = 0.92,
+                y = 0.99
+            )
+        )
+        fig = go.Figure(layout = layout)
 
-            t_delta = data[t_column].iloc[1] - data[t_column].iloc[0]
+        min_t = []
+        max_t = []
+        
+        max_var = []
 
-            if t_delta != bin:
-                data[t_var] = data[t_var].map(lambda t: bin * floor(t / bin))
-                bin_gb = self.groupby(['id', t_var]).agg(**{
-                    mov_var : (var_column, stat)
-                })
-                bin_gb.reset_index(level = 1, inplace = True)
-                gb = np.array(bin_gb.groupby('id')[mov_var].apply(list).tolist(), dtype = 'object')
+        for data, name, col in zip(d_list, labels, col_list):
 
-            else:
-                gb = np.array(self.groupby('id')[mov_var].apply(list).tolist(), dtype = 'object')
+            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+                col = 'grey'
 
-            return gb
+            rolling_col = data.groupby(data.index, sort = False)[variable].rolling(avg_window).mean().reset_index(level = 0, drop = True)
+            data['rolling'] = rolling_col.to_numpy()
 
-        def hmm_table(start_prob, trans_prob, emission_prob, state_names, observable_names):
-            """ 
-            Prints a formatted table of the probabilities from a hmmlearn MultinomialHMM object
-            """
-            df_s = pd.DataFrame(start_prob)
-            df_s = df_s.T
-            df_s.columns = states
-            print("Starting probabilty table: ")
-            print(tabulate(df_s, headers = 'keys', tablefmt = "github") + "\n")
-            print("Transition probabilty table: ")
-            df_t = pd.DataFrame(trans_prob, index = state_names, columns = state_names)
-            print(tabulate(df_t, headers = 'keys', tablefmt = "github") + "\n")
-            print("Emission probabilty table: ")
-            df_e = pd.DataFrame(emission_prob, index = state_names, columns = observable_names)
-            print(tabulate(df_e, headers = 'keys', tablefmt = "github") + "\n")
+            if wrapped is True:
+                data['t'] = data['t'].map(lambda t: t % 86400)
+            data['t'] = data['t'].map(lambda t: t / (60*60))
 
-        if var_column == 'beam_crosses':
-            self['active'] = np.where(self[var_column] == 0, 0, 1)
-            gb = bin_to_list(self, t_var = t_column, mov_var = var_column, bin = bin_time)
+            t_min = int(circadian_night * floor(data.t.min() / circadian_night))
+            min_t.append(t_min)
+            t_max = int(12 * ceil(data.t.max() / 12)) 
+            max_t.append(t_max)
 
-        elif var_column == 'moving':
-            self[var_column] = np.where(self[var_column] == True, 1, 0)
-            gb = bin_to_list(self, t_var = t_column, mov_var = var_column, bin = bin_time)
-
-        # split runs into test and train lists
-        test_train_split = round(len(gb) / test_size)
-        rand_runs = np.random.permutation(gb)
-        train = rand_runs[test_train_split:]
-        test = rand_runs[:test_train_split]
-
-        len_seq_train = []
-        len_seq_test = []
-        for i, q in zip(train, test):
-            len_seq_train.append(len(i))
-            len_seq_test.append(len(q))
-
-        seq_train = np.concatenate(train, 0)
-        seq_train = seq_train.reshape(-1, 1)
-        seq_test = np.concatenate(test, 0)
-        seq_test = seq_test.reshape(-1, 1)
-
-        for i in range(iterations):
-            print(f"Iteration {i+1} of {iterations}")
             
-            init_params = ''
-            h = hmm.MultinomialHMM(n_components = n_states, n_iter = hmm_iterations, tol = tol, params = 'ste', verbose = verbose)
 
-            if start_probs is None:
-                init_params += 's'
+            gb = data.groupby('t').agg(**{
+                        'mean' : ('rolling', 'mean'), 
+                        'SD' : ('rolling', pop_std),
+                        'count' : ('rolling', 'count'),
+                    })
+
+            max_var.append(max(gb['mean']))
+
+            gb['SE'] = (1.96*gb['SD']) / np.sqrt(gb['count'])
+            gb['y_max'] = gb['mean'] + gb['SE']
+            gb['y_min'] = gb['mean'] - gb['SE']
+
+            y = gb['mean']
+            y_upper = gb['y_max']
+            y_lower = gb['y_min']
+            x = gb.index.values
+
+            upper_bound = go.Scatter(
+            showlegend = False,
+            x = x,
+            y = y_upper,
+            mode='lines',
+            marker=dict(color="#444"),
+            line=dict(width=0,
+                    shape = 'spline'
+                    ),
+            )
+            fig.add_trace(upper_bound)
+
+            trace = go.Scatter(
+            x = x,
+            y = y,
+            mode = 'lines',
+            name = name,
+            line = dict(
+                shape = 'spline',
+                color = col
+                ),
+            fill = 'tonexty'
+            )
+            fig.add_trace(trace)
+
+            lower_bound = go.Scatter(
+            showlegend = False,
+            x = x,
+            y = y_lower,
+            mode='lines',
+            marker=dict(color=col),
+            line=dict(width = 0,
+                    shape = 'spline'
+                    ),
+            fill = 'tonexty'
+            )  
+            fig.add_trace(lower_bound)
+
+        # Light-Dark annotaion bars
+        bar_shapes = circadian_bars(t_min, t_max, circadian_night = circadian_night)
+        fig.update_layout(shapes=list(bar_shapes.values()))
+
+        if max(max_var) > 1.01:
+            fig['layout']['yaxis'].update(
+                    range = [0, max_var]
+                )
+
+        if save is True:
+            fig.write_image(location, width=1500, height=650)
+            print(f'Saved to {location}')
+            fig.show()
+        else:
+            fig.show()
+
+    def plot_quantify(self, variable, facet_col = None, facet_args = None, labels = None, save = False, location = ''):
+
+        if facet_col is not None:
+            if facet_col not in self.meta.columns:
+                warnings.warn(f'Column "{facet_col}" is not a metadata column')
+                exit()
+            d_list = []
+            if facet_args is None:
+                arg_list = list(set(self.meta[facet_col].tolist()))
+                for arg in arg_list:
+                    temp_df = self.xmv(facet_col, arg)
+                    d_list.append(temp_df)
+                if labels is None:
+                    labels = arg_list
+                elif len(d_list) != len(labels):
+                    labels = arg_list
             else:
-                s_prob = np.array([[np.random.random() if y == 'rand' else y for y in x] for x in start_probs], dtype = np.float64)
-                s_prob = np.array([[y / sum(x) for y in x] for x in t_prob], dtype = np.float64)
-                h.startprob_ = s_prob
+                assert isinstance(facet_args, list)
+                arg_list = facet_args
+                for arg in arg_list:
+                    temp_df = self.xmv(facet_col, arg)
+                    d_list.append(temp_df)
+                if labels is None:
+                    labels = arg_list
+                elif len(d_list) != len(labels):
+                    labels = arg_list
 
-            if trans_probs is None:
-                init_params += 't'
-            else:
-                # replace 'rand' with a new random number being 0-1
-                t_prob = np.array([[np.random.random() if y == 'rand' else y for y in x] for x in trans_probs], dtype = np.float64)
-                t_prob = np.array([[y / sum(x) for y in x] for x in t_prob], dtype = np.float64)
-                h.transmat_ = t_prob
+        else:
+            d_list = [self]
+            labels = ['']
 
-            if emiss_probs is None:
-                init_params += 'e'
-            else:
-                # replace 'rand' with a new random number being 0-1
-                em_prob = np.array([[np.random.random() if y == 'rand' else y for y in x] for x in emiss_probs], dtype = np.float64)
-                em_prob = np.array([[y / sum(x) for y in x] for x in em_prob], dtype = np.float64)
-                h.emissionprob_ = em_prob
+        if len(d_list) < 11:
+            col_list = self._colours_small
+        elif len(d_list) < 24:
+            col_list = self._colours_large
+        else:
+            warnings.warn('Too many sub groups to plot with the current colour palette')
+            exit()
+        
+        layout = go.Layout(
+            yaxis = dict(
+                color = 'black',
+                linecolor = 'black',
+                title = dict(
+                    text = f'Fraction of time spent {variable}',
+                    font = dict(
+                        size = 24,
+                    )
+                ),
+                range = [0, 1.01], 
+                tick0 = 0,
+                dtick = 0.2,
+                ticks = 'outside',
+                tickwidth = 2,
+                tickfont = dict(
+                    size = 18
+                )
+            ),
+            xaxis = dict(
+                color = 'black',
+                linecolor = 'black',
+                gridcolor = 'black',
+                title = dict(
+                    font = dict(
+                        size = 24,
+                        color = 'black'
+                    )
+                ),
+                ticks = 'outside',
+                tickwidth = 2,
+                tickfont = dict(
+                    size = 18
+                )
+            ),
+            plot_bgcolor = 'white',
+            yaxis_showgrid=False,
+            xaxis_showgrid = False,
+        )
 
-            h.init_params = init_params
+        fig = go.Figure(layout = layout)
 
-            h.n_features = n_obs # number of emission states
+        max_var = []
 
-            # call the fit function on the dataset input
-            h.fit(seq_train, len_seq_train)
+        for data, name, col in zip(d_list, labels, col_list):
 
-            # Boolean output of if the number of runs convererged on set of appropriate probabilites for s, t, an e
-            print("True Convergence:" + str(h.monitor_.history[-1] - h.monitor_.history[-2] < h.monitor_.tol))
-            print("Final log liklihood score:" + str(h.score(seq_train, len_seq_train)))
+            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+                col = 'grey'
 
-            if i == 0:
-                with open(file_name, "wb") as file: pickle.dump(h, file)
+            data = data.reset_index()
+            gdf = data.groupby('id').agg(**{
+                                    'mean' : (variable, 'mean'),
+                })
+            zscore_list = gdf['mean'].to_numpy()[np.abs(zscore(gdf['mean'].to_numpy())) < 3]
 
-            else:
-                with open(file_name, "rb") as file: 
-                    h_old = pickle.load(file)
-                if h.score(seq_test, len_seq_test) > h_old.score(seq_test, len_seq_test):
-                    print('New Matrix:')
-                    df_t = pd.DataFrame(h.transmat_, index = states, columns = states)
-                    print(tabulate(df_t, headers = 'keys', tablefmt = "github") + "\n")
-                    with open(file_name, "wb") as file: pickle.dump(h, file)
+            max_var.append(max(zscore_list))
 
-            if i+1 == iterations:
-                with open(file_name, "rb") as file: 
-                    h = pickle.load(file)
-                #print tables of trained emission probabilties, not accessible as objects for the user
-                hmm_table(start_prob = h.startprob_, trans_prob = h.transmat_, emission_prob = h.emissionprob_, state_names = states, observable_names = observables)
-                return h
+            median_list = [np.mean(zscore_list)]
+            q3_list = [bootstrap(zscore_list)[1]]
+            q1_list = [bootstrap(zscore_list)[0]]
 
+            trace_box = go.Box(
+                showlegend = False,
+                median = median_list,
+                q3 = q3_list,
+                q1 = q1_list,
+                x = [name],
+                # xaxis = f'x{state+1}',
+                marker = dict(
+                    color = col,
+                    opacity = 0.5,
+                    size = 4
+                ),
+                boxpoints = False,
+                jitter = 0.75, 
+                pointpos = 0, 
+                width = 0.9,
+            )
+            fig.add_trace(trace_box)
 
+            trace_box2 = go.Box(
+                showlegend = False,
+                y = zscore_list, 
+                x = len(zscore_list) * [name],
+                line = dict(
+                    color = 'rgba(0,0,0,0)'
+                ),
+                fillcolor = 'rgba(0,0,0,0)',
+                marker = dict(
+                    color = col,
+                    opacity = 0.5,
+                    size = 4
+                ),
+                boxpoints = 'all',
+                jitter = 0.75, 
+                pointpos = 0, 
+                width = 0.9
+            )
+            fig.add_trace(trace_box2)
 
+        if max(max_var) > 1.01:
+            fig['layout']['yaxis'].update(
+                    range = [0, max_var]
+                )
+
+        if save is True:
+            fig.write_image(location, width=1500, height=650)
+            print(f'Saved to {location}')
+            fig.show()
+        else:
+            fig.show()
