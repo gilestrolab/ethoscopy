@@ -13,7 +13,7 @@ def bootstrap(data, n=1000, func=np.mean):
     """
     simulations = list()
     sample_size = len(data)
-    xbar_init = np.mean(data)
+    # xbar_init = np.mean(data)
     
     for c in range(n):
         itersample = np.random.choice(data, size=sample_size, replace=True)

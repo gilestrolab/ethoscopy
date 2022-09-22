@@ -3,7 +3,8 @@ import numpy as np
 import warnings
 import copy
 import plotly.graph_objs as go 
-import plotly.express as px
+from plotly.express.colors import qualitative
+
 from math import floor, ceil
 from sys import exit
 from scipy.stats import zscore
@@ -26,7 +27,11 @@ class behavpy(pd.DataFrame):
     warnings.formatwarning = format_warning
 
     @staticmethod
-    def _check_conform(self):
+    def _pop_std(array):
+        return np.std(array, ddof = 0)  
+
+    @staticmethod
+    def _check_conform(dataframe):
             """ 
             Checks the data augument is a pandas dataframe
             If metadata is provided and skip is False it will check as above and check the ID's in
@@ -38,28 +43,29 @@ class behavpy(pd.DataFrame):
             # formats warming method to not double print and allow string formatting
             warnings.formatwarning = format_warning
 
-            if isinstance(self.meta, pd.DataFrame) is not True:
+            if isinstance(dataframe.meta, pd.DataFrame) is not True:
                 warnings.warn('Metadata input is not a pandas dataframe')
                 exit()
 
-            if self.index.name != 'id':
+            drop_col_names = ['path', 'file_name', 'file_size', 'machine_id']
+            dataframe.meta = dataframe.meta.drop(columns=[col for col in dataframe.meta if col in drop_col_names])
+
+            if dataframe.index.name != 'id':
                 try:
-                    self.set_index('id', inplace = True)
+                    dataframe.set_index('id', inplace = True)
                 except:
                     warnings.warn("There is no 'id' as a column or index in the data'")
                     exit()
 
-            if self.meta.index.name != 'id':
+            if dataframe.meta.index.name != 'id':
                 try:
-                    self.meta.set_index('id', inplace = True)
+                    dataframe.meta.set_index('id', inplace = True)
                 except:
                     warnings.warn("There is no 'id' as a column or index in the metadata'")
                     exit()
 
-            metadata_id_list = set(self.meta.index.tolist())
-            data_id_list = set(self.index.tolist())
             # checks if all id's of data are in the metadata dataframe
-            check_data = all(elem in metadata_id_list for elem in data_id_list)
+            check_data = all(elem in set(dataframe.meta.index.tolist()) for elem in set(dataframe.index.tolist()))
             if check_data is not True:
                 warnings.warn("There are ID's in the data that are not in the metadata, please check. You can skip this process by changing the parameter skip to False")
                 exit()
@@ -94,8 +100,8 @@ class behavpy(pd.DataFrame):
         if check is True:
             self._check_conform(self)
         
-    _colours_small = px.colors.qualitative.Safe
-    _colours_large = px.colors.qualitative.Dark24
+    _colours_small = qualitative.Safe
+    _colours_large = qualitative.Dark24
 
     def display(self):
         """
@@ -133,11 +139,9 @@ class behavpy(pd.DataFrame):
             # find interection of meta and data id incase metadata contains more id's than in data
             data_id = list(set(self.index.values))
             new_index_list = np.intersect1d(index_list, data_id)
-
-            xmv_df = behavpy(self[self.index.isin(index_list)])
-            xmv_df.meta = self.meta[self.meta.index.isin(new_index_list)]
-
-            return xmv_df
+            self = self[self.index.isin(index_list)]
+            self.meta = self.meta[self.meta.index.isin(new_index_list)]
+            return self
 
         if column not in self.meta.columns:
             warnings.warn(f'Column heading "{column}" is not in the metadata table')
@@ -155,9 +159,9 @@ class behavpy(pd.DataFrame):
         # find interection of meta and data id incase metadata contains more id's than in data
         data_id = list(set(self.index.values))
         new_index_list = np.intersect1d(index_list, data_id)
-
-        return behavpy(self[self.index.isin(index_list)], meta = self.meta[self.meta.index.isin(new_index_list)])
-
+        self = self[self.index.isin(index_list)]
+        self.meta = self.meta[self.meta.index.isin(new_index_list)]
+        return self
 
     def t_filter(self, end_time = None, start_time = 0, t_column = 't'):
         """
@@ -192,12 +196,13 @@ class behavpy(pd.DataFrame):
         """
 
         if check is True:
-            self._check_conform(self, new_column)
+            check_data = all(elem in new_column.index.tolist() for elem in set(self.index.tolist()))
+            if check_data is not True:
+                warnings.warn("There are ID's in the data that are not in the metadata, please check. You can skip this process by changing the parameter skip to False")
+                exit()
 
-        m = pd.DataFrame(self.meta)
-        new_m = m.join(new_column, on = 'id')
-
-        self.meta = new_m
+        m = self.meta.join(new_column, on = 'id')
+        self.meta = m
 
     def concat(self, *args):
         """
@@ -275,7 +280,7 @@ class behavpy(pd.DataFrame):
 
         def wrapped_bout_analysis(data, var_name = sleep_column, as_hist = as_hist, max_bins = max_bins, asleep = asleep):
 
-            index_name = data.index[0]
+            index_name = data['id'].iloc[0]
             
             dt = copy.deepcopy(data[['t',var_name]])
             dt['deltaT'] = dt.t.diff()
@@ -292,7 +297,9 @@ class behavpy(pd.DataFrame):
             duration = pd.NamedAgg(column='deltaT', aggfunc='sum')
             )
             bout_times[var_name] = vals
-            time = list(np.cumsum(pd.Series(0).append(bout_times['duration'].iloc[:-1])) + dt.t.iloc[0])
+            time = np.array([dt.t.iloc[0]])
+            time = np.concatenate((time, bout_times['duration'].iloc[:-1]), axis = None)
+            time = np.cumsum(time)
             bout_times['t'] = time
             bout_times.reset_index(level=0, inplace=True)
             bout_times.drop(columns = ['bout_id'], inplace = True)
@@ -320,10 +327,7 @@ class behavpy(pd.DataFrame):
                 return bout_times
 
         self.reset_index(inplace = True)
-        bout_df = behavpy(self.groupby('id', group_keys = False).apply(wrapped_bout_analysis))
-        bout_df.meta = self.meta
-
-        return bout_df
+        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_bout_analysis), self.meta)
 
     def curate_dead_animals(self, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
         
@@ -371,10 +375,8 @@ class behavpy(pd.DataFrame):
             return curated_data
 
         self.reset_index(inplace = True)
-        curated_df = behavpy(self.groupby('id', group_keys = False).apply(wrapped_curate_dead_animals))
-        curated_df.meta = self.meta 
-
-        return curated_df
+        
+        return self.groupby('id', group_keys = False).apply(wrapped_curate_dead_animals)
 
     def bin_time(self, column, bin_secs, t_column = 't', function = 'mean'):
         """
@@ -397,7 +399,7 @@ class behavpy(pd.DataFrame):
 
         def wrapped_bin_data(data, column = column, bin_column = t_column, function = function, bin_secs = bin_secs):
 
-            index_name = data.index[0]
+            index_name = data['id'].iloc[0]
 
             data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
             
@@ -416,10 +418,7 @@ class behavpy(pd.DataFrame):
             return bout_gb
 
         self.reset_index(inplace = True)
-        bin_df = behavpy(self.groupby('id', group_keys = False).apply(wrapped_bin_data))
-        bin_df.meta = self.meta
-
-        return bin_df
+        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_bin_data), self.meta)
 
     def summary(self, detailed = False):
         """ 
@@ -475,7 +474,7 @@ class behavpy(pd.DataFrame):
         Params:
         @circadian_night = int, the ZT hour when the conditions shift to dark
             
-        returns the orignal behapvy object with added columns to the data column 
+        returns nothing, all actions done inplace
         """
 
         from math import floor
@@ -508,7 +507,7 @@ class behavpy(pd.DataFrame):
                                     masking_duration = masking_duration, 
                                     optional_columns = optional_columns):
             
-            index_name = data.index[0]
+            index_name = data['id'].iloc[0]
             
             df = max_velocity_detector(data,                                   
                                     time_window_length = time_window_length, 
@@ -519,12 +518,10 @@ class behavpy(pd.DataFrame):
             old_index = pd.Index([index_name] * len(df.index), name = 'id')
             df.set_index(old_index, inplace =True)  
 
-            return df                     
+            return df    
 
-        motion_df = behavpy(self.groupby('id', group_keys = False).apply(wrapped_motion_detector))
-        motion_df.meta = self.meta
-
-        return  motion_df
+        self.reset_index(inplace = True)
+        return  behavpy(self.groupby('id', group_keys = False).apply(wrapped_motion_detector), self.meta)
 
     def sleep_annotation(self, time_window_length = 10, min_time_immobile = 300, motion_detector_FUN = max_velocity_detector, masking_duration = 0):
         """
@@ -542,7 +539,7 @@ class behavpy(pd.DataFrame):
                                     motion_detector_FUN = motion_detector_FUN, 
                                     masking_duration = masking_duration):
             
-            index_name = data.index[0]
+            index_name = data['id'].iloc[0]
             
             df = sleep_annotation(data,                                   
                                     time_window_length = time_window_length, 
@@ -556,10 +553,7 @@ class behavpy(pd.DataFrame):
             return df    
 
         self.reset_index(inplace = True)
-        sleep_df = behavpy(self.groupby('id', group_keys = False).apply(wrapped_sleep_annotation))
-        sleep_df.meta = self.meta
-
-        return sleep_df
+        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_sleep_annotation), self.meta)
 
     def wrap_time(self, wrap_time = 24, time_column = 't'):
         """
@@ -569,7 +563,7 @@ class behavpy(pd.DataFrame):
         @wrap_time = int, time in hours you want to wrap the time series by, default is 24 hours
         @time_column  = string, column title for the time series column, default is 't'
 
-        returns a modified version of the given behavpy table
+        returns nothig, all actions are inplace generating a modified version of the given behavpy table
         """
 
         hours_in_seconds = wrap_time * 60 * 60
@@ -708,8 +702,9 @@ class behavpy(pd.DataFrame):
             # find interection of meta and data id incase metadata contains more id's than in data
             data_id = list(set(self.index.values))
             new_index_list = np.intersect1d(index_list, data_id)
-
-            return behavpy(self[self.index.isin(index_list)], self.meta[self.meta.index.isin(new_index_list)])
+            self = self[self.index.isin(index_list)]
+            self.meta = self.meta[self.meta.index.isin(new_index_list)]
+            return self
 
         if column not in self.meta.columns:
             warnings.warn('Column heading "{}" is not in the metadata table'.format(column))
@@ -728,13 +723,19 @@ class behavpy(pd.DataFrame):
         data_id = list(set(self.index.values))
         new_index_list = np.intersect1d(index_list, data_id)
 
-        return behavpy(self[self.index.isin(index_list)], self.meta[self.meta.index.isin(new_index_list)])
+        return self
 
-    def curate(self, length, t_delta):
-        
-        data_points = length * t_delta
+    def curate(self, points):
+        """
+        A method to remove specimens without enough data points. The user must work out the number of points that's equivalent to their wanted time coverage.
 
-        def wrapped_curate(data, limit = data_points):
+        Params:
+        @points, int, the number of minimum data points a specimen must have to not be removed.
+
+        returns a behavpy object with specimens of low data points removed from the metadata and data
+        """
+
+        def wrapped_curate(data, limit = points):
             if len(data) < limit:
                 id_list.append(list(set(data['id']))[0])
                 return data
@@ -742,12 +743,10 @@ class behavpy(pd.DataFrame):
                 return data
 
         id_list = []
-        self.reset_index(inplace = True)
-        df = self.groupby('id', group_keys = False).apply(wrapped_curate)
-        df.set_index('id', inplace = True)
-        df = behavpy(df, self.meta)
-
-        return df.remove('id', id_list)
+        df = self.reset_index()
+        df.groupby('id', group_keys = False).apply(wrapped_curate)
+        
+        return self.remove('id', id_list)
 
     def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_args = None, labels = None, avg_window = 30, circadian_night = 12, save = False, location = ''):
 
@@ -788,10 +787,7 @@ class behavpy(pd.DataFrame):
         else:
             warnings.warn('Too many sub groups to plot with the current colour palette')
             exit()
-
-        def pop_std(array):
-            return np.std(array, ddof = 0)
-
+            
         layout = go.Layout(
             yaxis = dict(
                 color = 'black',
@@ -866,11 +862,9 @@ class behavpy(pd.DataFrame):
             t_max = int(12 * ceil(data.t.max() / 12)) 
             max_t.append(t_max)
 
-            
-
             gb = data.groupby('t').agg(**{
                         'mean' : ('rolling', 'mean'), 
-                        'SD' : ('rolling', pop_std),
+                        'SD' : ('rolling', self._pop_std),
                         'count' : ('rolling', 'count'),
                     })
 
@@ -1089,3 +1083,6 @@ class behavpy(pd.DataFrame):
             fig.show()
         else:
             fig.show()
+
+
+

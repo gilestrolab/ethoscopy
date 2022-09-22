@@ -1,4 +1,15 @@
 [[package]]
+name = "colour"
+version = "0.1.5"
+description = "converts and manipulates various color representation (HSL, RVB, web, X11, ...)"
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.extras]
+test = ["nose"]
+
+[[package]]
 name = "hmmlearn"
 version = "0.2.7"
 description = "Hidden Markov Models in Python with scikit-learn like API"
@@ -155,9 +166,10 @@ python-versions = ">=3.6"
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8, <3.11"
-content-hash = "4e8a5a82f09cfe206eb899e0eaf636e3b92356a5e24e7a7528a6785d16d4c291"
+content-hash = "186489cae40bcdabce9bc9d745ab28e983d1ae33fe6cdf6b3c89bbbd299b5df9"
 
 [metadata.files]
+colour = []
 hmmlearn = [
     {file = "hmmlearn-0.2.7-cp310-cp310-macosx_10_15_x86_64.whl", hash = "sha256:69b9f36a1fc8a76c09c90c8979a7a2720be1d27a171ce1a11267e077eceb77ba"},
     {file = "hmmlearn-0.2.7-cp310-cp310-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:0c5db2e9876351b8819172b98d9b1ab9081ba37c4191124c5a0e989af0495a63"},

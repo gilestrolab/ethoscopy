@@ -158,7 +158,8 @@ def sleep_annotation(data,
                     time_window_length = 10,
                     min_time_immobile = 300,
                     motion_detector_FUN = max_velocity_detector,
-                    masking_duration = 6
+                    masking_duration = 6,
+                    velocity_correction_coef = 3e-3,
                     ):
     """ 
     This function first uses a motion classifier to decide whether an animal is moving during a given time window.
@@ -170,6 +171,7 @@ def sleep_annotation(data,
     @min_time_immobile = int, immobility bouts longer or equal to this value are considered as asleep, default is 300 (i.e 5 mins)
     @motion_detector_FUN = function, the function to curate raw ethoscope data into velocity measurements, default is max_velocity_detector
     @masking_duration, int, number of seconds during which any movement is ignored (velocity is set to 0) after a stimulus is delivered (a.k.a. interaction),
+    @velocity_correction_coef = float, a coefficient to correct the velocity data (change for different length tubes), default is 3e-3
     for beam_cross column, default is 6
 
     returns a pandas dataframe containing columns 'moving' and 'asleep'
@@ -178,7 +180,7 @@ def sleep_annotation(data,
     if len(data.index) < 100:
         return None
     
-    d_small = motion_detector_FUN(data, time_window_length, masking_duration = masking_duration)
+    d_small = motion_detector_FUN(data, time_window_length, masking_duration = masking_duration, velocity_correction_coef = velocity_correction_coef)
 
     if len(d_small.index) < 100:
         return None
