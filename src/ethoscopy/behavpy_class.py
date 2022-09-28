@@ -687,16 +687,16 @@ class behavpy(pd.DataFrame):
         
         returns None
         """
-
+        heatmap_df = self.copy(deep = True)
         # change movement values from boolean to intergers and bin to 30 mins finding the mean
         if variable == 'moving':
-            self[variable] = np.where(self[variable] == True, 1, 0)
+            heatmap_df[variable] = np.where(heatmap_df[variable] == True, 1, 0)
 
-        self = self.bin_time(column = variable, bin_secs = 1800)
-        self['t_bin'] = self['t_bin'] / (60*60)
+        heatmap_df = heatmap_df.bin_time(column = variable, bin_secs = 1800)
+        heatmap_df['t_bin'] = heatmap_df['t_bin'] / (60*60)
         # create an array starting with the earliest half hour bin and the last with 0.5 intervals
-        start = self['t_bin'].min().astype(int)
-        end = self['t_bin'].max().astype(int)
+        start = heatmap_df['t_bin'].min().astype(int)
+        end = heatmap_df['t_bin'].max().astype(int)
         time_list = np.array([x / 10 for x in range(start*10, end*10+5, 5)])
         time_map = pd.Series(time_list, 
                     name = 't_bin')
@@ -714,7 +714,7 @@ class behavpy(pd.DataFrame):
 
             return df                    
 
-        heatmap_df = self.groupby('id', group_keys = False).apply(align_data)
+        heatmap_df = heatmap_df.groupby('id', group_keys = False).apply(align_data)
 
         gbm = heatmap_df.groupby(heatmap_df.index)[f'{variable}_mean'].apply(list)
         id = heatmap_df.groupby(heatmap_df.index)['t_bin'].mean().index.tolist()
@@ -865,7 +865,6 @@ class behavpy(pd.DataFrame):
             warnings.warn('Too many sub groups to plot with the current colour palette')
             exit()
 
-        fig = go.Figure(layout = layout)
         layout = self._plot_ylayout([-0.025, 1.01], 0, 0.2, f'Probability of {variable}')
         fig = go.Figure(layout = layout)
         fig = self._plot_xlayout(fig, False, 0, 6, 'ZT (Hours)')
@@ -962,14 +961,14 @@ class behavpy(pd.DataFrame):
         else:
             fig.show()
 
-    def plot_quantify(self, variable, facet_col = None, facet_args = None, labels = None, save = False, location = ''):
+    def plot_quantify(self, variable, facet_col = None, facet_arg = None, labels = None, save = False, location = ''):
 
         if facet_col is not None:
             if facet_col not in self.meta.columns:
                 warnings.warn(f'Column "{facet_col}" is not a metadata column')
                 exit()
             d_list = []
-            if facet_args is None:
+            if facet_arg is None:
                 arg_list = list(set(self.meta[facet_col].tolist()))
                 for arg in arg_list:
                     temp_df = self.xmv(facet_col, arg)
@@ -979,8 +978,8 @@ class behavpy(pd.DataFrame):
                 elif len(d_list) != len(labels):
                     labels = arg_list
             else:
-                assert isinstance(facet_args, list)
-                arg_list = facet_args
+                assert isinstance(facet_arg, list)
+                arg_list = facet_arg
                 for arg in arg_list:
                     temp_df = self.xmv(facet_col, arg)
                     d_list.append(temp_df)

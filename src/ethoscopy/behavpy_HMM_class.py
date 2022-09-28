@@ -380,7 +380,7 @@ class behavpy_HMM(behavpy):
         returns None
         """
 
-        df = self.copy()
+        df = self.copy(deep = True)
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
 
@@ -499,7 +499,7 @@ class behavpy_HMM(behavpy):
             if arg != None:
                 d = self.xmv(facet_col, arg)
             else:
-                d = self
+                d = self.copy(deep = True)
 
             states_list, time_list = self._hmm_decode(d, h, b, variable, func)
 
@@ -679,7 +679,7 @@ class behavpy_HMM(behavpy):
         if facet_col is not None:
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
-            df_list = [self]
+            df_list = [self.copy(deep = True)]
 
         decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
 
@@ -793,7 +793,7 @@ class behavpy_HMM(behavpy):
         if facet_col is not None:
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
-            df_list = [self]
+            df_list = [self.copy(deep = True)]
         ite_len = len(df_list)
 
         decoded_dict = {f'df{c}' : self._hmm_decode(d, h, b, variable, func) for c, (d, h, b) in enumerate(zip(df_list, h_list, b_list))}
@@ -927,7 +927,7 @@ class behavpy_HMM(behavpy):
         if facet_col is not None:
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
-            df_list = [self]
+            df_list = [self.copy(deep = True)]
         ite_len = len(df_list)
 
         decoded_dict = {f'df{c}' : self._hmm_decode(d, h, b, variable, func) for c, (d, h, b) in enumerate(zip(df_list, h_list, b_list))}
