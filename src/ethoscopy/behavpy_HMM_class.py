@@ -199,6 +199,8 @@ class behavpy_HMM(behavpy):
         n_states = len(states)
         n_obs = len(observables)
 
+        hmm_df = self.copy(deep = True)
+
         def bin_to_list(data, t_var, mov_var, bin):
             """ 
             Bins the time to the given integer and creates a nested list of the movement column by id
@@ -224,12 +226,15 @@ class behavpy_HMM(behavpy):
             return gb
 
         if var_column == 'beam_crosses':
-            self['active'] = np.where(self[var_column] == 0, 0, 1)
-            gb = bin_to_list(self, t_var = t_column, mov_var = var_column, bin = bin_time)
+            hmm_df['active'] = np.where(hmm_df[var_column] == 0, 0, 1)
+            gb = bin_to_list(hmm_df, t_var = t_column, mov_var = var_column, bin = bin_time)
 
         elif var_column == 'moving':
-            self[var_column] = np.where(self[var_column] == True, 1, 0)
-            gb = bin_to_list(self, t_var = t_column, mov_var = var_column, bin = bin_time)
+            hmm_df[var_column] = np.where(hmm_df[var_column] == True, 1, 0)
+            gb = bin_to_list(hmm_df, t_var = t_column, mov_var = var_column, bin = bin_time)
+
+        else:
+            gb = bin_to_list(hmm_df, t_var = t_column, mov_var = var_column, bin = bin_time)
 
         # split runs into test and train lists
         test_train_split = round(len(gb) / test_size)
@@ -749,8 +754,8 @@ class behavpy_HMM(behavpy):
 
                 con_list = pd.Series(dtype = 'float64')
                 label_list = pd.Series(dtype = 'str')
-                con_list = pd.concat([con_list, analysed_dict[f'df{c}'][state][np.abs(zscore(analysed_dict[f'df{c}'][state])) < 3]])
-                label_list = pd.concat([label_list, analysed_dict[f'df{c}']['labels'][np.abs(zscore(analysed_dict[f'df{c}'][state])) < 3]])
+                con_list = pd.concat([con_list, analysed_dict[f'df{i}'][state][np.abs(zscore(analysed_dict[f'df{i}'][state])) < 3]])
+                label_list = pd.concat([label_list, analysed_dict[f'df{i}']['labels'][np.abs(zscore(analysed_dict[f'df{i}'][state])) < 3]])
 
                 trace_box2 = go.Box(
                     showlegend = False,
