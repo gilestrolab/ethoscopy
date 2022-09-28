@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np 
 import warnings
-import copy
 import plotly.graph_objs as go 
 from plotly.express.colors import qualitative
 
@@ -69,6 +68,84 @@ class behavpy(pd.DataFrame):
             if check_data is not True:
                 warnings.warn("There are ID's in the data that are not in the metadata, please check. You can skip this process by changing the parameter skip to False")
                 exit()
+
+    @staticmethod
+    def _plot_ylayout(range, t0, dtick, ylabel, type = "-"):
+        layout = go.Layout(
+                    yaxis= dict(
+                        showgrid = False,
+                        linecolor = 'black',
+                        type = type,
+                        tick0 = t0,
+                        dtick = dtick,
+                        title = dict(
+                            text = ylabel,
+                            font = dict(
+                                size = 18,
+                                color = 'black'
+                            )
+                        ),
+                        zeroline = False,
+                                ticks = 'outside',
+                        tickwidth = 2,
+                        tickfont = dict(
+                            size = 18,
+                            color = 'black'
+                        ),
+                        linewidth = 4
+                    ),
+                    plot_bgcolor = 'white',
+                    legend = dict(
+                    bgcolor = 'rgba(201, 201, 201, 1)',
+                    bordercolor = 'grey',
+                    font = dict(
+                        size = 12
+                        ),
+                        x = 0.85,
+                        y = 0.99
+                    )
+                )
+        if range is not False:
+            layout['yaxis']['range'] = range
+        return layout
+
+    @staticmethod
+    def _plot_xlayout(fig, range, t0, dtick, xlabel, domains = False, axis = None, type = "-"):
+        if domains is not False:
+            fig['layout'][axis] = {}
+        else:
+            axis = 'xaxis'
+        fig['layout'][axis].update(
+                        showgrid = False,
+                        linecolor = 'black',
+                        type = type,
+                        title = dict(
+                            font = dict(
+                                size = 18,
+                                color = 'black'
+                            )
+                        ),
+                        zeroline = False,
+                                ticks = 'outside',
+                        tickwidth = 2,
+                        tickfont = dict(
+                            size = 18,
+                            color = 'black'
+                        ),
+                        linewidth = 4
+                    )
+
+        if range is not False:
+            fig['layout'][axis].update(range = range)
+        if t0 is not False:
+            fig['layout'][axis].update(tick0 = t0)
+        if dtick is not False:
+            fig['layout'][axis].update(dtick = dtick)
+        if xlabel is not False:
+            fig['layout'][axis]['title'].update(text = xlabel)
+        if domains is not False:
+            fig['layout'][axis].update(domain = domains)
+        return fig
 
     # set meta as permenant attribute
     _metadata = ['meta']
@@ -282,7 +359,7 @@ class behavpy(pd.DataFrame):
 
             index_name = data['id'].iloc[0]
             
-            dt = copy.deepcopy(data[['t',var_name]])
+            dt = data[['t',var_name]].copy(deep = True)
             dt['deltaT'] = dt.t.diff()
             bout_rle = rle(dt[var_name])
             vals = bout_rle[0]
@@ -596,7 +673,7 @@ class behavpy(pd.DataFrame):
             self[t_column] = self.apply(d2s, axis = 1)
 
         else:
-            new = copy.deepcopy(self)
+            new = self.copy(deep = True)
             new[t_column] = new.apply(d2s, axis = 1)
 
             return new
@@ -722,7 +799,8 @@ class behavpy(pd.DataFrame):
         # find interection of meta and data id incase metadata contains more id's than in data
         data_id = list(set(self.index.values))
         new_index_list = np.intersect1d(index_list, data_id)
-
+        self = self[self.index.isin(index_list)]
+        self.meta = self.meta[self.meta.index.isin(new_index_list)]
         return self
 
     def curate(self, points):
@@ -750,7 +828,6 @@ class behavpy(pd.DataFrame):
 
     def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_args = None, labels = None, avg_window = 30, circadian_night = 12, save = False, location = ''):
 
-
         if facet_col is not None:
             if facet_col not in self.meta.columns:
                 warnings.warn(f'Column "{facet_col}" is not a metadata column')
@@ -777,7 +854,7 @@ class behavpy(pd.DataFrame):
                     labels = arg_list
 
         else:
-            d_list = [self]
+            d_list = [self.copy(deep = True)]
             labels = ['']
 
         if len(d_list) < 11:
@@ -787,58 +864,11 @@ class behavpy(pd.DataFrame):
         else:
             warnings.warn('Too many sub groups to plot with the current colour palette')
             exit()
-            
-        layout = go.Layout(
-            yaxis = dict(
-                color = 'black',
-                linecolor = 'black',
-                title = dict(
-                    text = f'Probability of {variable}',
-                    font = dict(
-                        size = 24,
-                    )
-                ),
-                range = [-0.025, 1], 
-                tick0 = 0,
-                ticks = 'outside',
-                tickwidth = 2,
-                tickfont = dict(
-                    size = 18
-                )
-            ),
-            xaxis = dict(
-                color = 'black',
-                linecolor = 'black',
-                gridcolor = 'black',
-                title = dict(
-                    text = 'ZT (Hours)',
-                    font = dict(
-                        size = 24,
-                        color = 'black'
-                    )
-                ),
-                tick0 = 0,
-                dtick = 12,
-                ticks = 'outside',
-                tickwidth = 2,
-                tickfont = dict(
-                    size = 18
-                )
-            ),
-            plot_bgcolor = 'white',
-            yaxis_showgrid=False,
-            xaxis_showgrid = False,
-            legend = dict(
-                bgcolor = 'rgba(201, 201, 201, 1)',
-                bordercolor = 'grey',
-                font = dict(
-                    size = 12
-                ),
-                x = 0.92,
-                y = 0.99
-            )
-        )
+
         fig = go.Figure(layout = layout)
+        layout = self._plot_ylayout([-0.025, 1.01], 0, 0.2, f'Probability of {variable}')
+        fig = go.Figure(layout = layout)
+        fig = self._plot_xlayout(fig, False, 0, 6, 'ZT (Hours)')
 
         min_t = []
         max_t = []
@@ -920,11 +950,10 @@ class behavpy(pd.DataFrame):
         # Light-Dark annotaion bars
         bar_shapes = circadian_bars(t_min, t_max, circadian_night = circadian_night)
         fig.update_layout(shapes=list(bar_shapes.values()))
-
+        
+        fig['layout']['xaxis'].update(range = [t_min, t_max])
         if max(max_var) > 1.01:
-            fig['layout']['yaxis'].update(
-                    range = [0, max_var]
-                )
+            fig['layout']['yaxis'].update(range = [0, max_var])
 
         if save is True:
             fig.write_image(location, width=1500, height=650)
@@ -961,7 +990,7 @@ class behavpy(pd.DataFrame):
                     labels = arg_list
 
         else:
-            d_list = [self]
+            d_list = [self.copy(deep = True)]
             labels = ['']
 
         if len(d_list) < 11:
@@ -1039,7 +1068,6 @@ class behavpy(pd.DataFrame):
                 q3 = q3_list,
                 q1 = q1_list,
                 x = [name],
-                # xaxis = f'x{state+1}',
                 marker = dict(
                     color = col,
                     opacity = 0.5,

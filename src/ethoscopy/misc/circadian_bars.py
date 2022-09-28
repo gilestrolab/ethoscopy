@@ -14,12 +14,12 @@ def fancy_range(start, stop, steps=(1,)):
         yield val
         val += next(steps)
 
-def make_bars(bar, bar_col, size, split):
+def make_bars(bar, bar_col, size, split, y_size1, y_size2):
     shaped_bar = go.layout.Shape(type="rect", 
                                 x0=bar, 
-                                y0=-0.025, 
+                                y0= y_size1, 
                                 x1=bar+size, 
-                                y1=0,
+                                y1= y_size2,
                                 line=dict(
                                     color="black", 
                                     width=1) ,
@@ -38,6 +38,12 @@ def circadian_bars(t_min, t_max, circadian_night = 12, split = False):
     @t_max = int, the maximum time point as a multiple of 12
     @circadian_night = int, the hour the lights turn off, must be between 1 and 23
     """
+    if split == True:
+        y_size1 = -0.05
+        y_size2 = -0.02
+    else:
+        y_size1 = -0.025
+        y_size2 = 0
 
     if circadian_night < 1 or circadian_night > 23:
         warnings.warn("The arugment for circadian_night must be between 1 and 23")
@@ -55,11 +61,11 @@ def circadian_bars(t_min, t_max, circadian_night = 12, split = False):
 
         for c in range(4):
             if bars % 24 == 0:
-                white_bar = make_bars(bar = bars, bar_col = 'white', size = circadian_night, split = c)
-                bar_shapes[f'shape_{i}'] = white_bar
+                white_bar = make_bars(bar = bars, bar_col = 'white', size = circadian_night, split = c, y_size1 = y_size1, y_size2 = y_size2)
+                bar_shapes[f'shape_{i}{c}'] = white_bar
             else:
-                black_bar = make_bars(bar = bars, bar_col = 'black', size = 24 - circadian_night, split = c)
-                bar_shapes[f'shape_{i}'] = black_bar
+                black_bar = make_bars(bar = bars, bar_col = 'black', size = 24 - circadian_night, split = c, y_size1 = y_size1, y_size2 = y_size2)
+                bar_shapes[f'shape_{i}{c}'] = black_bar
             
             if split is False:
                 if c == 0:
