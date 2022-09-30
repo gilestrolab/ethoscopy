@@ -28,7 +28,7 @@ def hmm_pct_transition(state_array, total_states):
 
     return df
 
-def hmm_mean_length(state_array, delta_t = 60):
+def hmm_mean_length(state_array, delta_t = 60, raw = False):
     """
     Finds the mean length of each state run per array/fly 
     returns a dataframe with a state column containing the states id and a mean_length column
@@ -36,19 +36,23 @@ def hmm_mean_length(state_array, delta_t = 60):
     @state_array =  1D numpy array produced from a HMM decoder
     @delta_t = the time difference between each element of the array
     """
-
+    assert(isinstance(raw, bool))
     delta_t_mins = delta_t / 60
 
     v, s, l = rle(state_array)
 
     df = pd.DataFrame(data = zip(v, l), columns = ['state', 'length'])
     df['length_adjusted'] = df['length'].map(lambda l: l * delta_t_mins)
-    gb_bout = df.groupby('state').agg(**{
-                        'mean_length' : ('length_adjusted', 'mean')
-    })
-    gb_bout.reset_index(inplace = True)
+    
+    if raw == True:
+        return df
+    else:
+        gb_bout = df.groupby('state').agg(**{
+                            'mean_length' : ('length_adjusted', 'mean')
+        })
+        gb_bout.reset_index(inplace = True)
 
-    return gb_bout
+        return gb_bout
 
 def hmm_pct_state(state_array, time, total_states, avg_window = 30):
     """

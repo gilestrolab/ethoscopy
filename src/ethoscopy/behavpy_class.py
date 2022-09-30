@@ -27,7 +27,9 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _pop_std(array):
-        return np.std(array, ddof = 0)  
+        return np.std(array, ddof = 0)
+
+    
 
     @staticmethod
     def _check_conform(dataframe):
@@ -69,6 +71,40 @@ class behavpy(pd.DataFrame):
                 warnings.warn("There are ID's in the data that are not in the metadata, please check. You can skip this process by changing the parameter skip to False")
                 exit()
 
+    def _check_lists(self, f_col, f_arg, f_lab):
+        """
+        Check if the facet arguments match the labels or populate from the column if not.
+        """
+
+        if f_col is not None:
+            if f_col not in self.meta.columns:
+                warnings.warn(f'Column "{f_col}" is not a metadata column')
+                exit()
+            if f_arg is None:
+                f_arg = list(set(self.meta[f_col].tolist()))
+                string_args = []
+                for i in f_arg:
+                    string_args.append(str(i))
+                if f_lab is None:
+                    f_lab = string_args
+                elif len(f_arg) != len(f_lab):
+                    warnings.warn("The facet labels don't match the length of the variables in the column. Using column variables instead")
+                    f_lab = string_args
+            else:
+                string_args = []
+                for i in f_arg:
+                    string_args.append(str(i))
+                if f_lab is None:
+                    f_lab = string_args
+                elif len(f_arg) != len(f_lab):
+                    warnings.warn("The facet labels don't match the entered facet arguments in length. Using column variables instead")
+                    f_lab = string_args
+        else:
+            f_arg = [None]
+            if f_lab is None:
+                f_lab = ['']
+
+        return f_arg, f_lab
     @staticmethod
     def _plot_ylayout(range, t0, dtick, ylabel, type = "-"):
         layout = go.Layout(
@@ -304,7 +340,7 @@ class behavpy(pd.DataFrame):
             data_list.append(df)
 
         meta = pd.concat(meta_list)
-        new = pd.concat(data_list) 
+        new = pd.concat(data_list)
 
         new.meta = meta
 
@@ -826,36 +862,17 @@ class behavpy(pd.DataFrame):
         
         return self.remove('id', id_list)
 
-    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_args = None, labels = None, avg_window = 30, circadian_night = 12, save = False, location = ''):
+    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, circadian_night = 12, save = False, location = ''):
 
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        d_list = []
         if facet_col is not None:
-            if facet_col not in self.meta.columns:
-                warnings.warn(f'Column "{facet_col}" is not a metadata column')
-                exit()
-            d_list = []
-            if facet_args is None:
-                arg_list = list(set(self.meta[facet_col].tolist()))
-                for arg in arg_list:
-                    temp_df = self.xmv(facet_col, arg)
-                    d_list.append(temp_df)
-                if labels is None:
-                    labels = arg_list
-                elif len(d_list) != len(labels):
-                    labels = arg_list
-            else:
-                assert isinstance(facet_args, list)
-                arg_list = facet_args
-                for arg in arg_list:
-                    temp_df = self.xmv(facet_col, arg)
-                    d_list.append(temp_df)
-                if labels is None:
-                    labels = arg_list
-                elif len(d_list) != len(labels):
-                    labels = arg_list
-
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
         else:
             d_list = [self.copy(deep = True)]
-            labels = ['']
+            facet_labels = ['']
 
         if len(d_list) < 11:
             col_list = self._colours_small
@@ -874,7 +891,9 @@ class behavpy(pd.DataFrame):
         
         max_var = []
 
-        for data, name, col in zip(d_list, labels, col_list):
+
+
+        for data, name, col in zip(d_list, facet_labels, col_list):
 
             if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
                 col = 'grey'
@@ -961,36 +980,17 @@ class behavpy(pd.DataFrame):
         else:
             fig.show()
 
-    def plot_quantify(self, variable, facet_col = None, facet_arg = None, labels = None, save = False, location = ''):
+    def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, save = False, location = ''):
 
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        d_list = []
         if facet_col is not None:
-            if facet_col not in self.meta.columns:
-                warnings.warn(f'Column "{facet_col}" is not a metadata column')
-                exit()
-            d_list = []
-            if facet_arg is None:
-                arg_list = list(set(self.meta[facet_col].tolist()))
-                for arg in arg_list:
-                    temp_df = self.xmv(facet_col, arg)
-                    d_list.append(temp_df)
-                if labels is None:
-                    labels = arg_list
-                elif len(d_list) != len(labels):
-                    labels = arg_list
-            else:
-                assert isinstance(facet_arg, list)
-                arg_list = facet_arg
-                for arg in arg_list:
-                    temp_df = self.xmv(facet_col, arg)
-                    d_list.append(temp_df)
-                if labels is None:
-                    labels = arg_list
-                elif len(d_list) != len(labels):
-                    labels = arg_list
-
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
         else:
             d_list = [self.copy(deep = True)]
-            labels = ['']
+            facet_labels = ['']
 
         if len(d_list) < 11:
             col_list = self._colours_small
@@ -1044,7 +1044,7 @@ class behavpy(pd.DataFrame):
 
         max_var = []
 
-        for data, name, col in zip(d_list, labels, col_list):
+        for data, name, col in zip(d_list, facet_labels, col_list):
 
             if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
                 col = 'grey'
