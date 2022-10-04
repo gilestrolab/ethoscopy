@@ -13,7 +13,6 @@ from colour import Color
 from scipy.stats import zscore
 
 from ethoscopy.behavpy_class import behavpy
-from ethoscopy.misc.rle import rle
 from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
 from ethoscopy.misc.bootstrap_CI import bootstrap
 from ethoscopy.misc.circadian_bars import circadian_bars
@@ -788,7 +787,10 @@ class behavpy_HMM(behavpy):
             fig = self._plot_xlayout(fig, range = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
         if save is True:
-            fig.write_image(location, width=1500, height=650)
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
             print(f'Saved to {location}')
             fig.show()
         else:
@@ -927,7 +929,10 @@ class behavpy_HMM(behavpy):
             fig = self._plot_xlayout(fig, range = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
         if save is True:
-            fig.write_image(location, width=1500, height=650)
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
             print(f'Saved to {location}')
             fig.show()
         else:
@@ -935,127 +940,93 @@ class behavpy_HMM(behavpy):
 
     def plot_hmm_quantify_length_min_max(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', save = False, location = ''):
             
-            labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-            list_states = list(range(len(labels)))
-            facet_arg, facet_labels, h_list, b_list = self._check_lists(facet_col, facet_arg, facet_labels, hmm, bin)
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        list_states = list(range(len(labels)))
+        facet_arg, facet_labels, h_list, b_list = self._check_lists(facet_col, facet_arg, facet_labels, hmm, bin)
 
-            if facet_col is not None:
-                df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
-            else:
-                df_list = [self.copy(deep = True)]
-            ite_len = len(df_list)
+        if facet_col is not None:
+            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            df_list = [self.copy(deep = True)]
+        ite_len = len(df_list)
 
-            decoded_dict = {f'df{c}' : self._hmm_decode(d, h, b, variable, func) for c, (d, h, b) in enumerate(zip(df_list, h_list, b_list))}
+        decoded_dict = {f'df{c}' : self._hmm_decode(d, h, b, variable, func) for c, (d, h, b) in enumerate(zip(df_list, h_list, b_list))}
 
-            def analysis(states, t_diff):
-                df_lengths = pd.DataFrame()
-                for l in states:
-                    length = hmm_mean_length(l, delta_t = t_diff, raw = True) 
-                    df_lengths = pd.concat([df_lengths, length], ignore_index= True)
-                return df_lengths
+        def analysis(states, t_diff):
+            df_lengths = pd.DataFrame()
+            for l in states:
+                length = hmm_mean_length(l, delta_t = t_diff, raw = True) 
+                df_lengths = pd.concat([df_lengths, length], ignore_index= True)
+            return df_lengths
 
-            analysed_dict = {f'df{c}' : analysis(v[0], b) for c, (v, b) in enumerate(zip(decoded_dict.values(), b_list))}
+        analysed_dict = {f'df{c}' : analysis(v[0], b) for c, (v, b) in enumerate(zip(decoded_dict.values(), b_list))}
 
-            layout = self._plot_ylayout(False, 0, 0.69897000433, 'Length of state bout (mins)', 'log')
+        layout = self._plot_ylayout(False, 0, 0.69897000433, 'Length of state bout (mins)', 'log')
 
-            fig = go.Figure(layout = layout)
+        fig = go.Figure(layout = layout)
 
-            for c, v in enumerate(analysed_dict.values()):
-                v['labels'] = facet_labels[c]
+        for c, v in enumerate(analysed_dict.values()):
+            v['labels'] = facet_labels[c]
 
-            gb_dict = {f'gb{c}' : v.groupby('state') for c, v in enumerate(analysed_dict.values())}
+        gb_dict = {f'gb{c}' : v.groupby('state') for c, v in enumerate(analysed_dict.values())}
 
-            for state, col, lab in zip(list_states, colours, labels):
+        for state, col, lab in zip(list_states, colours, labels):
 
-                median_list = np.array([])
-                q3_list = np.array([])
-                q1_list = np.array([])
+            median_list = np.array([])
+            q3_list = np.array([])
+            q1_list = np.array([])
 
-                for i in range(ite_len):
-                    array = gb_dict[f'gb{i}'].get_group(state)['length_adjusted'].to_numpy()
-                    median_list = np.append(median_list, array.mean())
-                    q3_list = np.append(q3_list, np.max(array))
-                    q1_list = np.append(q1_list, np.min(array))
+            for i in range(ite_len):
+                array = gb_dict[f'gb{i}'].get_group(state)['length_adjusted'].to_numpy()
+                median_list = np.append(median_list, array.mean())
+                q3_list = np.append(q3_list, np.max(array))
+                q1_list = np.append(q1_list, np.min(array))
 
-                for c, i in enumerate(facet_labels):
+            for c, i in enumerate(facet_labels):
 
-                    if 'baseline' in i or 'control' in i:
-                        if 'rebound' in i:
-                            marker_col = 'black'
-                        else:
-                            marker_col = 'grey'
+                if 'baseline' in i or 'control' in i:
+                    if 'rebound' in i:
+                        marker_col = 'black'
                     else:
-                        if 'rebound' in i:
-                            marker_col = f'dark{col}'
-                        else:
-                            marker_col = col
+                        marker_col = 'grey'
+                else:
+                    if 'rebound' in i:
+                        marker_col = f'dark{col}'
+                    else:
+                        marker_col = col
 
-                    trace_box = go.Box(
-                        showlegend = False,
-                        median = [median_list[c]],
-                        q3 = [q3_list[c]],
-                        q1 = [q1_list[c]],
-                        x = [i],
-                        xaxis = f'x{state+1}',
-                        marker = dict(
-                            color = marker_col,
-                            opacity = 0.5,
-                            size = 4
-                        ),
-                        boxpoints = False,
-                        jitter = 0.75, 
-                        pointpos = 0, 
-                        width = 0.9,
-                    )
-                    fig.add_trace(trace_box)
+                trace_box = go.Box(
+                    showlegend = False,
+                    median = [median_list[c]],
+                    q3 = [q3_list[c]],
+                    q1 = [q1_list[c]],
+                    x = [i],
+                    xaxis = f'x{state+1}',
+                    marker = dict(
+                        color = marker_col,
+                        opacity = 0.5,
+                        size = 4
+                    ),
+                    boxpoints = False,
+                    jitter = 0.75, 
+                    pointpos = 0, 
+                    width = 0.9,
+                )
+                fig.add_trace(trace_box)
 
-                    # try:
-                    #     array = gb_dict[f'gb{c}'].get_group(state)
-                    #     if len(array) == 1:
-                    #         con_list = array['length_adjusted']
-                    #         label_list = array['labels']
-                    #     elif all(array['length_adjusted'].to_numpy() == array['length_adjusted'].to_numpy()[0]):
-                    #         con_list = array['length_adjusted']
-                    #         label_list = array['labels']
-                    #     else:
-                    #         con_list = array['length_adjusted'][np.abs(zscore(array['length_adjusted'])) < 3]
-                    #         label_list = array['labels'][np.abs(zscore(array['length_adjusted'])) < 3]
+            domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
+            axis = f'xaxis{state+1}'
+            fig = self._plot_xlayout(fig, range = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
-                    # except:
-                    #     con_list = np.array([0])
-                    #     label_list = np.array([i])
-
-                    # trace_box2 = go.Box(
-                    #     showlegend = False,
-                    #     y = con_list, 
-                    #     x = label_list,
-                    #     xaxis = f'x{state+1}',
-                    #     line = dict(
-                    #         color = 'rgba(0,0,0,0)'
-                    #     ),
-                    #     fillcolor = 'rgba(0,0,0,0)',
-                    #     marker = dict(
-                    #         color = marker_col,
-                    #         opacity = 0.5,
-                    #         size = 4
-                    #     ),
-                    #     boxpoints = 'all',
-                    #     jitter = 0.75, 
-                    #     pointpos = 0, 
-                    #     width = 0.9
-                    # )
-                    # fig.add_trace(trace_box2)
-
-                domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
-                axis = f'xaxis{state+1}'
-                fig = self._plot_xlayout(fig, range = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
-
-            if save is True:
-                fig.write_image(location, width=1500, height=650)
-                print(f'Saved to {location}')
-                fig.show()
+        if save is True:
+            if location.endswith('.html'):
+                fig.write_html(location)
             else:
-                fig.show()
+                fig.write_image(location, width=1500, height=650)
+            print(f'Saved to {location}')
+            fig.show()
+        else:
+            fig.show()
             
     def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', save = False, location = ''):
 
@@ -1155,7 +1126,10 @@ class behavpy_HMM(behavpy):
             fig = self._plot_xlayout(fig, range = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
         if save is True:
-            fig.write_image(location, width=1500, height=650)
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
             print(f'Saved to {location}')
             fig.show()
         else:

@@ -105,6 +105,7 @@ class behavpy(pd.DataFrame):
                 f_lab = ['']
 
         return f_arg, f_lab
+
     @staticmethod
     def _plot_ylayout(range, t0, dtick, ylabel, type = "-"):
         layout = go.Layout(
@@ -235,9 +236,8 @@ class behavpy(pd.DataFrame):
         returns a behavpy object with filtered data and metadata
         """
 
-        if len(args) == 1:
-            if type(args[0]) == list:
-                args = args[0]
+        if type(args[0]) == list:
+            args = args[0]
 
         if column == 'id':
             index_list = []
@@ -509,7 +509,7 @@ class behavpy(pd.DataFrame):
         if column not in self.columns:
             warnings.warn('Column heading "{}", is not in the data table'.format(column))
             exit()
-
+        self = self.copy(deep = True)
         def wrapped_bin_data(data, column = column, bin_column = t_column, function = function, bin_secs = bin_secs):
 
             index_name = data['id'].iloc[0]
@@ -797,20 +797,37 @@ class behavpy(pd.DataFrame):
         returns a behavpy object with filtered data and metadata
         """
 
-        if len(args) == 1:
-            if type(args[0]) == list:
-                args = args[0]
-
+        if type(args[0]) == list:
+            args = args[0]
+    
         if column == 'id':
-            remove_index_list = []
             for m in args:
                 if m not in self.meta.index.tolist():
                     warnings.warn('Metavariable "{}" is not in the id column'.format(m))
                     exit()
+            index_list = [x for x in self.meta.index.tolist() if x not in args]
+            # find interection of meta and data id incase metadata contains more id's than in data
+            data_id = list(set(self.index.values))
+            new_index_list = np.intersect1d(index_list, data_id)
+            self = self[self.index.isin(index_list)]
+            self.meta = self.meta[self.meta.index.isin(new_index_list)]
+            return self
+        else:
+            if column not in self.meta.columns:
+                warnings.warn('Column heading "{}" is not in the metadata table'.format(column))
+                exit()
+            column_varaibles = list(set(self.meta[column].tolist()))
+
+            index_list = []
+            for m in args:
+                if m not in self.meta[column].tolist():
+                    warnings.warn('Metavariable "{}" is not in the column'.format(m))
+                    exit()
                 else:
-                    small_list = self.meta[self.meta.index == m].index.values
-                    remove_index_list.extend(small_list)
-            index_list = [x for x in self.meta.index.tolist() if x not in remove_index_list]
+                    column_varaibles.remove(m)
+            for v in column_varaibles:
+                small_list = self.meta[self.meta[column] == v].index.values
+                index_list.extend(small_list)
 
             # find interection of meta and data id incase metadata contains more id's than in data
             data_id = list(set(self.index.values))
@@ -818,26 +835,6 @@ class behavpy(pd.DataFrame):
             self = self[self.index.isin(index_list)]
             self.meta = self.meta[self.meta.index.isin(new_index_list)]
             return self
-
-        if column not in self.meta.columns:
-            warnings.warn('Column heading "{}" is not in the metadata table'.format(column))
-            exit()
-        
-        index_list = []
-        for m in args:
-            if m not in self.meta[column].tolist():
-                warnings.warn('Metavariable "{}" is not in the column'.format(m))
-                exit()
-            else:
-                small_list = self.meta[self.meta[column] != m].index.values
-                index_list.extend(small_list)
-
-        # find interection of meta and data id incase metadata contains more id's than in data
-        data_id = list(set(self.index.values))
-        new_index_list = np.intersect1d(index_list, data_id)
-        self = self[self.index.isin(index_list)]
-        self.meta = self.meta[self.meta.index.isin(new_index_list)]
-        return self
 
     def curate(self, points):
         """
@@ -974,7 +971,10 @@ class behavpy(pd.DataFrame):
             fig['layout']['yaxis'].update(range = [0, max_var])
 
         if save is True:
-            fig.write_image(location, width=1500, height=650)
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
             print(f'Saved to {location}')
             fig.show()
         else:
@@ -1105,7 +1105,10 @@ class behavpy(pd.DataFrame):
                 )
 
         if save is True:
-            fig.write_image(location, width=1500, height=650)
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
             print(f'Saved to {location}')
             fig.show()
         else:
