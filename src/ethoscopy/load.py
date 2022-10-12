@@ -384,7 +384,7 @@ def load_ethoscope(metadata, min_time = 0 , max_time = float('inf'), reference_h
     min_time = int, the minimum time you want to load data from with 0 being the experiment start or first reference hour (in hours), for all experiments
     max_time = int, same as above
     reference_hour = int, the hour at which lights on occurs when the experiment is begun. None equals the start of the experiment
-    cache = string, the local path to find and store cached versions of each ROI per database. Cached files are in the pickle format
+    cache = string, the local path to find and store cached versions of each ROI per database. Cached files are in a pickle format
     FUN = function, a function to apply indiviual curatation to each ROI, if None the data remains as found in the database
 
     returns a pandas DataFrame object containing the database data and unique ids per fly as the index
@@ -406,11 +406,11 @@ def load_ethoscope(metadata, min_time = 0 , max_time = float('inf'), reference_h
                                     )
 
             if roi_1 is None:
-                print('ROI_{} from {} was unable to load due to error formatting roi'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
+                print('ROI_{} from {} was unable to load due to an error formatting roi'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
                 continue
 
             if FUN is not None:
-                    roi_1 = FUN(roi_1) 
+                roi_1 = FUN(roi_1) 
 
             if roi_1 is None:
                 print('ROI_{} from {} was unable to load due to an error in applying the function'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
@@ -418,7 +418,7 @@ def load_ethoscope(metadata, min_time = 0 , max_time = float('inf'), reference_h
             roi_1.insert(0, 'id', metadata['id'].iloc[i])
             data = pd.concat([data, roi_1], ignore_index= True)
         except:
-            print('ROI_{} from {} was unable to load due to error loading roi'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
+            print('ROI_{} from {} was unable to load due to an error loading roi'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
             continue
 
     return data

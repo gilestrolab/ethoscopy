@@ -12,8 +12,7 @@ def max_velocity_detector(data,
                         time_window_length,
                         velocity_correction_coef = 3e-3,
                         masking_duration = 6,
-                        optional_columns = 'has_interacted',
-                        raw = False
+                        optional_columns = 'has_interacted'
                         ):
     """ 
     Max_velocity_detector is the default movement classification for real-time ethoscope experiments.
@@ -34,10 +33,7 @@ def max_velocity_detector(data,
     if len(data.index) < 100:
         return None
 
-    if raw == False:
-        needed_columns =  ['t', 'x','xy_dist_log10x1000']
-    else:
-        needed_columns = ['t', 'x', 'y', 'w', 'h', 'phi', 'xy_dist_log10x1000']
+    needed_columns = ['t', 'x', 'y', 'w', 'h', 'phi', 'xy_dist_log10x1000']
 
     dt = prep_data_motion_detector(data,
                                 needed_columns = needed_columns,
@@ -63,28 +59,18 @@ def max_velocity_detector(data,
     dt['beam_cross'] = dt['beam_cross'] & ~dt['mask']
     dt = dt.drop(columns = ['interaction_id', 'mask'])
 
-    if raw == False:
-        d_small = dt.groupby('t_round').agg(
-        x = pd.NamedAgg(column='x', aggfunc='mean'),
-        max_velocity = pd.NamedAgg(column='velocity', aggfunc='max'),
-        mean_velocity = pd.NamedAgg(column='velocity', aggfunc='mean'),
-        max_distance = pd.NamedAgg(column='dist', aggfunc='max'),
-        mean_distance = pd.NamedAgg(column='dist', aggfunc='mean'),
-        interactions = pd.NamedAgg(column='has_interacted', aggfunc='sum'),
-        beam_crosses = pd.NamedAgg(column='beam_cross', aggfunc= 'sum')
-        )
-    else:
-        d_small = dt.groupby('t_round').agg(
-        x = pd.NamedAgg(column='x', aggfunc='mean'),
-        y = pd.NamedAgg(column='y', aggfunc='mean'),
-        w = pd.NamedAgg(column='w', aggfunc='mean'),
-        h = pd.NamedAgg(column='h', aggfunc='mean'),
-        phi = pd.NamedAgg(column='phi', aggfunc='mean'),
-        max_velocity = pd.NamedAgg(column='velocity', aggfunc='max'),
-        mean_velocity = pd.NamedAgg(column='velocity', aggfunc='mean'),
-        interactions = pd.NamedAgg(column='has_interacted', aggfunc='sum'),
-        beam_crosses = pd.NamedAgg(column='beam_cross', aggfunc= 'sum')
-        )
+    d_small = dt.groupby('t_round').agg(
+    x = pd.NamedAgg(column='x', aggfunc='mean'),
+    y = pd.NamedAgg(column='y', aggfunc='mean'),
+    w = pd.NamedAgg(column='w', aggfunc='mean'),
+    h = pd.NamedAgg(column='h', aggfunc='mean'),
+    phi = pd.NamedAgg(column='phi', aggfunc='mean'),
+    max_velocity = pd.NamedAgg(column='velocity', aggfunc='max'),
+    mean_velocity = pd.NamedAgg(column='velocity', aggfunc='mean'),
+    distance = pd.NamedAgg(column='dist', aggfunc='sum'),
+    interactions = pd.NamedAgg(column='has_interacted', aggfunc='sum'),
+    beam_crosses = pd.NamedAgg(column='beam_cross', aggfunc= 'sum')
+    )
 
     d_small['moving'] = np.where(d_small['max_velocity'] > 1, True, False)
     d_small['micro'] = np.where((d_small['max_velocity'] > 1) & (d_small['max_velocity'] < 2.5), True, False)

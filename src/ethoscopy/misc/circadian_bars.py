@@ -31,7 +31,7 @@ def make_bars(bar, bar_col, size, split, y_size1, y_size2):
 
     return shaped_bar
 
-def circadian_bars(t_min, t_max, circadian_night = 12, split = False):
+def circadian_bars(t_min, t_max, max_y = None, circadian_night = 12, split = False):
     """ 
     create boxes within plotly to represent the light, dark phases in light sensitive experiments
     @t_min = int, the minimum time point as a multiple of 12 
@@ -41,9 +41,12 @@ def circadian_bars(t_min, t_max, circadian_night = 12, split = False):
     if split == True:
         y_size1 = -0.05
         y_size2 = -0.02
-    else:
-        y_size1 = -0.025
+    elif max_y > 0:
+        y_size1 = -max_y/50
         y_size2 = 0
+    elif max_y < 0.2:
+        y_size1 = 0
+        y_size2 = max_y/10   
 
     if circadian_night < 1 or circadian_night > 23:
         warnings.warn("The arugment for circadian_night must be between 1 and 23")

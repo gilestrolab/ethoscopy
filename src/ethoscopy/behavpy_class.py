@@ -1,7 +1,10 @@
+from re import X
 import pandas as pd
 import numpy as np 
 import warnings
 import plotly.graph_objs as go 
+from plotly.subplots import make_subplots
+# import plotly.express as px
 from plotly.express.colors import qualitative
 
 from math import floor, ceil
@@ -10,7 +13,7 @@ from scipy.stats import zscore
 
 from ethoscopy.misc.format_warning import format_warning
 from ethoscopy.misc.circadian_bars import circadian_bars
-from ethoscopy.analyse import max_velocity_detector, sleep_annotation
+from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
 from ethoscopy.misc.bootstrap_CI import bootstrap
 
@@ -25,11 +28,36 @@ class behavpy(pd.DataFrame):
     """
     warnings.formatwarning = format_warning
 
+    @property
+    def _constructor(self):
+        return behavpy._internal_constructor(self.__class__)
+
+    class _internal_constructor(object):
+        def __init__(self, cls):
+            self.cls = cls
+
+        def __call__(self, *args, **kwargs):
+            kwargs['meta'] = None
+            return self.cls(*args, **kwargs)
+
+        def _from_axes(self, *args, **kwargs):
+            return self.cls._from_axes(*args, **kwargs)
+
+    def __init__(self, data, meta, check = False, index= None, columns=None, dtype=None, copy=True):
+        super(behavpy, self).__init__(data=data,
+                                        index=index,
+                                        columns=columns,
+                                        dtype=dtype,
+                                        copy=copy)
+
+        self.meta = meta   
+
+        if check is True:
+            self._check_conform(self)
+
     @staticmethod
     def _pop_std(array):
         return np.std(array, ddof = 0)
-
-    
 
     @staticmethod
     def _check_conform(dataframe):
@@ -107,14 +135,38 @@ class behavpy(pd.DataFrame):
         return f_arg, f_lab
 
     @staticmethod
-    def _plot_ylayout(range, t0, dtick, ylabel, type = "-"):
-        layout = go.Layout(
-                    yaxis= dict(
-                        showgrid = False,
+    def _check_boolean(lst):
+        if all(isinstance(i, bool) for i in lst):
+            y_range = [-0.025, 1.01]
+            dtick = 0.2
+        else:
+            y_range = False
+            dtick = False
+        return y_range, dtick
+
+    @staticmethod
+    def _plot_ylayout(fig, yrange, t0, dtick, ylabel, title, secondary = False, xdomain = False, ytype = "-", grid = False):
+        if secondary is not False:
+            fig['layout']['yaxis2'] = {}
+            axis = 'yaxis2'
+        else:
+            axis = 'yaxis'
+            fig['layout'].update(title = title,
+                            plot_bgcolor = 'white',
+                            legend = dict(
+                            bgcolor = 'rgba(201, 201, 201, 1)',
+                            bordercolor = 'grey',
+                            font = dict(
+                                size = 12
+                                ),
+                                x = 0.85,
+                                y = 0.99
+                            )
+                        )
+        fig['layout'][axis].update(
                         linecolor = 'black',
-                        type = type,
+                        type = ytype,
                         tick0 = t0,
-                        dtick = dtick,
                         title = dict(
                             text = ylabel,
                             font = dict(
@@ -130,24 +182,23 @@ class behavpy(pd.DataFrame):
                             color = 'black'
                         ),
                         linewidth = 4
-                    ),
-                    plot_bgcolor = 'white',
-                    legend = dict(
-                    bgcolor = 'rgba(201, 201, 201, 1)',
-                    bordercolor = 'grey',
-                    font = dict(
-                        size = 12
-                        ),
-                        x = 0.85,
-                        y = 0.99
                     )
-                )
-        if range is not False:
-            layout['yaxis']['range'] = range
-        return layout
+        if yrange is not False:
+            fig['layout'][axis]['range'] = yrange
+        if dtick is not False:
+            fig['layout'][axis]['dtick'] = dtick
+        if secondary is not False:
+            fig['layout'][axis]['side'] = 'right'
+            fig['layout'][axis]['overlaying'] = 'y'
+            fig['layout'][axis]['anchor'] = xdomain
+        if grid is False:
+            fig['layout'][axis]['showgrid'] = False
+        else:
+            fig['layout'][axis]['showgrid'] = True
+            fig['layout'][axis]['gridcolor'] = 'black'
 
     @staticmethod
-    def _plot_xlayout(fig, range, t0, dtick, xlabel, domains = False, axis = None, type = "-"):
+    def _plot_xlayout(fig, xrange, t0, dtick, xlabel, domains = False, axis = None, type = "-"):
         if domains is not False:
             fig['layout'][axis] = {}
         else:
@@ -172,8 +223,8 @@ class behavpy(pd.DataFrame):
                         linewidth = 4
                     )
 
-        if range is not False:
-            fig['layout'][axis].update(range = range)
+        if xrange is not False:
+            fig['layout'][axis].update(range = xrange)
         if t0 is not False:
             fig['layout'][axis].update(tick0 = t0)
         if dtick is not False:
@@ -182,37 +233,62 @@ class behavpy(pd.DataFrame):
             fig['layout'][axis]['title'].update(text = xlabel)
         if domains is not False:
             fig['layout'][axis].update(domain = domains)
-        return fig
-
+    
+    @staticmethod
+    def _plot_meanbox(median, q3, q1, x, colour, showlegend, name, xaxis):
+        trace_box = go.Box(
+            showlegend = showlegend,
+            median = median,
+            q3 = q3,
+            q1 = q1,
+            x = x,
+            xaxis = xaxis,
+            marker = dict(
+                color = colour,
+            ),
+            boxpoints = False,
+            jitter = 0.75, 
+            pointpos = 0, 
+            width = 0.9,
+            name = name
+        )
+        return trace_box
+    
+    @staticmethod
+    def _plot_boxpoints(y, x, colour, showlegend, name, xaxis):
+        trace_box = go.Box(
+            showlegend = showlegend,
+            y = y, 
+            x = x,
+            xaxis = xaxis,
+            line = dict(
+                color = 'rgba(0,0,0,0)'
+            ),
+            fillcolor = 'rgba(0,0,0,0)',
+            marker = dict(
+                color = colour,
+                opacity = 0.5,
+                size = 4
+            ),
+            boxpoints = 'all',
+            jitter = 0.75, 
+            pointpos = 0, 
+            width = 0.9,
+            name = name
+        )
+        return trace_box
+    @staticmethod
+    def _get_colours(plot_list):
+        if len(plot_list) <= 11:
+            return qualitative.Safe
+        elif len(plot_list) < 24:
+            return qualitative.Dark24
+        else:
+            warnings.warn('Too many sub groups to plot with the current colour palette')
+            exit()
+            
     # set meta as permenant attribute
     _metadata = ['meta']
-
-    @property
-    def _constructor(self):
-        return behavpy._internal_constructor(self.__class__)
-
-    class _internal_constructor(object):
-        def __init__(self, cls):
-            self.cls = cls
-
-        def __call__(self, *args, **kwargs):
-            kwargs['meta'] = None
-            return self.cls(*args, **kwargs)
-
-        def _from_axes(self, *args, **kwargs):
-            return self.cls._from_axes(*args, **kwargs)
-
-    def __init__(self, data, meta, check = False, index= None, columns=None, dtype=None, copy=True):
-        super(behavpy, self).__init__(data=data,
-                                        index=index,
-                                        columns=columns,
-                                        dtype=dtype,
-                                        copy=copy)
-
-        self.meta = meta   
-
-        if check is True:
-            self._check_conform(self)
         
     _colours_small = qualitative.Safe
     _colours_large = qualitative.Dark24
@@ -434,6 +510,10 @@ class behavpy(pd.DataFrame):
                 old_index = pd.Index([index_name] * len(bout_gb.index), name = 'id')
                 bout_gb.set_index(old_index, inplace =True)
 
+                # bout_times = bout_times[(bout_times['moving'] == True) & (bout_times['duration'] < (max_bins*60))]
+                # fig = px.histogram(bout_times, x="duration", histnorm='percent')
+                # fig.show()
+
                 return bout_gb
 
             else:
@@ -636,7 +716,7 @@ class behavpy(pd.DataFrame):
         self.reset_index(inplace = True)
         return  behavpy(self.groupby('id', group_keys = False).apply(wrapped_motion_detector), self.meta)
 
-    def sleep_annotation(self, time_window_length = 10, min_time_immobile = 300, motion_detector_FUN = max_velocity_detector, masking_duration = 0):
+    def sleep_contiguous(self, mov_column = 'moving', t_column = 't', time_window_length = 10, min_time_immobile = 300):
         """
         Method version of the sleep annotation function.
         This function first uses a motion classifier to decide whether an animal is moving during a given time window.
@@ -645,30 +725,58 @@ class behavpy(pd.DataFrame):
 
         returns a behavpy object with added columns like 'moving' and 'asleep'
         """
+        if mov_column not in self.columns.tolist():
+            warnings.warn(f'The movement column {mov_column} is not in the dataset')
+            exit()
+        if t_column not in self.columns.tolist():
+            warnings.warn(f'The time column {t_column} is not in the dataset')
+            exit()
 
-        def wrapped_sleep_annotation(data, 
-                                    time_window_length = time_window_length, 
-                                    min_time_immobile = min_time_immobile, 
-                                    motion_detector_FUN = motion_detector_FUN, 
-                                    masking_duration = masking_duration):
+        def sleep_contiguous(moving, fs, min_valid_time = 300):
+            """ 
+            Checks if contiguous bouts of immobility are greater than the minimum valid time given
+
+            Params:
+            @moving = pandas series, series object comtaining the movement data of individual flies
+            @fs = int, sampling frequency (Hz) to scale minimum length to time in seconds
+            @min_valid_time = min amount immobile time that counts as sleep, default is 300 (i.e 5 mins) 
             
-            index_name = data['id'].iloc[0]
-            
-            df = sleep_annotation(data,                                   
-                                    time_window_length = time_window_length, 
-                                    min_time_immobile = min_time_immobile, 
-                                    motion_detector_FUN = motion_detector_FUN, 
-                                    masking_duration = masking_duration)
+            returns a list object to be added to a pandas dataframe
+            """
+            min_len = fs * min_valid_time
+            r_sleep =  rle(np.logical_not(moving)) 
+            valid_runs = r_sleep[2] >= min_len 
+            r_sleep_mod = valid_runs & r_sleep[0]
+            r_small = []
+            for c, i in enumerate(r_sleep_mod):
+                r_small += ([i] * r_sleep[2][c])
 
-            old_index = pd.Index([index_name] * len(df.index), name = 'id')
-            df.set_index(old_index, inplace =True)  
+            return r_small
 
-            return df    
+        def wrapped_sleep(d_small):
+            index_name = d_small['id'].iloc[0]
+
+            time_map = pd.Series(range(d_small.t.iloc[0], 
+                                d_small.t.iloc[-1] + time_window_length, 
+                                time_window_length
+                                ), name = 't')
+
+            missing_values = time_map[~time_map.isin(d_small['t'].tolist())]
+            d_small = d_small.merge(time_map, how = 'right', on = 't', copy = False).sort_values(by=['t'])
+            d_small['is_interpolated'] = np.where(d_small['t'].isin(missing_values), True, False)
+            d_small[mov_column] = np.where(d_small['is_interpolated'] == True, False, d_small[mov_column])
+
+            d_small['asleep'] = sleep_contiguous(d_small[mov_column], 1/time_window_length, min_valid_time = min_time_immobile)
+
+            old_index = pd.Index([index_name] * len(d_small.index), name = 'id')
+            d_small.set_index(old_index, inplace =True)  
+
+            return d_small    
 
         self.reset_index(inplace = True)
-        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_sleep_annotation), self.meta)
+        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_sleep), self.meta)
 
-    def wrap_time(self, wrap_time = 24, time_column = 't'):
+    def wrap_time(self, wrap_time = 24, time_column = 't', inplace = False):
         """
         Replaces linear values of time in column 't' with a value which is a decimal of the wrap_time input
 
@@ -678,9 +786,13 @@ class behavpy(pd.DataFrame):
 
         returns nothig, all actions are inplace generating a modified version of the given behavpy table
         """
-
         hours_in_seconds = wrap_time * 60 * 60
-        self[time_column] = self[time_column].map(lambda t: t % hours_in_seconds)
+        if inplace == False:
+            new = self.copy(deep = True)
+            new[time_column] = new[time_column].map(lambda t: t % hours_in_seconds)
+            return new
+        else:
+            self[time_column] = self[time_column].map(lambda t: t % hours_in_seconds)
 
     def baseline(self, column, t_column = 't', inplace = False):
         """
@@ -859,7 +971,7 @@ class behavpy(pd.DataFrame):
         
         return self.remove('id', id_list)
 
-    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, circadian_night = 12, save = False, location = ''):
+    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, circadian_night = 12, title = '', grids = False, save = False, location = ''):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -878,17 +990,21 @@ class behavpy(pd.DataFrame):
         else:
             warnings.warn('Too many sub groups to plot with the current colour palette')
             exit()
-
-        layout = self._plot_ylayout([-0.025, 1.01], 0, 0.2, f'Probability of {variable}')
-        fig = go.Figure(layout = layout)
-        fig = self._plot_xlayout(fig, False, 0, 6, 'ZT (Hours)')
+        if self._check_boolean(list(self[variable].dropna())):
+            y_range = [-0.025, 1.01]
+            dtick = 0.2
+        else:
+            y_range = False
+            dtick = False
+        
+        fig = go.Figure() 
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
+        self._plot_xlayout(fig, False, 0, 6, 'ZT (Hours)')
 
         min_t = []
         max_t = []
         
         max_var = []
-
-
 
         for data, name, col in zip(d_list, facet_labels, col_list):
 
@@ -897,6 +1013,7 @@ class behavpy(pd.DataFrame):
 
             rolling_col = data.groupby(data.index, sort = False)[variable].rolling(avg_window).mean().reset_index(level = 0, drop = True)
             data['rolling'] = rolling_col.to_numpy()
+            data = data.dropna(subset = ['rolling'])
 
             if wrapped is True:
                 data['t'] = data['t'].map(lambda t: t % 86400)
@@ -963,12 +1080,10 @@ class behavpy(pd.DataFrame):
             fig.add_trace(lower_bound)
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, circadian_night = circadian_night)
+        bar_shapes = circadian_bars(t_min, t_max, max_y = max(max_var), circadian_night = circadian_night)
         fig.update_layout(shapes=list(bar_shapes.values()))
-        
+    
         fig['layout']['xaxis'].update(range = [t_min, t_max])
-        if max(max_var) > 1.01:
-            fig['layout']['yaxis'].update(range = [0, max_var])
 
         if save is True:
             if location.endswith('.html'):
@@ -980,7 +1095,7 @@ class behavpy(pd.DataFrame):
         else:
             fig.show()
 
-    def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, save = False, location = ''):
+    def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False, location = ''):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -992,117 +1107,31 @@ class behavpy(pd.DataFrame):
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
 
-        if len(d_list) < 11:
-            col_list = self._colours_small
-        elif len(d_list) < 24:
-            col_list = self._colours_large
-        else:
-            warnings.warn('Too many sub groups to plot with the current colour palette')
-            exit()
-        
-        layout = go.Layout(
-            yaxis = dict(
-                color = 'black',
-                linecolor = 'black',
-                title = dict(
-                    text = f'Fraction of time spent {variable}',
-                    font = dict(
-                        size = 24,
-                    )
-                ),
-                range = [0, 1.01], 
-                tick0 = 0,
-                dtick = 0.2,
-                ticks = 'outside',
-                tickwidth = 2,
-                tickfont = dict(
-                    size = 18
-                )
-            ),
-            xaxis = dict(
-                color = 'black',
-                linecolor = 'black',
-                gridcolor = 'black',
-                title = dict(
-                    font = dict(
-                        size = 24,
-                        color = 'black'
-                    )
-                ),
-                ticks = 'outside',
-                tickwidth = 2,
-                tickfont = dict(
-                    size = 18
-                )
-            ),
-            plot_bgcolor = 'white',
-            yaxis_showgrid=False,
-            xaxis_showgrid = False,
-        )
+        col_list = self._get_colours(d_list)
 
-        fig = go.Figure(layout = layout)
-
-        max_var = []
+        fig = go.Figure() 
+        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = '')
 
         for data, name, col in zip(d_list, facet_labels, col_list):
 
             if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
                 col = 'grey'
 
-            data = data.reset_index()
-            gdf = data.groupby('id').agg(**{
-                                    'mean' : (variable, 'mean'),
-                })
-            zscore_list = gdf['mean'].to_numpy()[np.abs(zscore(gdf['mean'].to_numpy())) < 3]
-
-            max_var.append(max(zscore_list))
-
+            data = data.dropna(subset = [variable])
+            gdf = data.pivot(column = variable, function = 'mean')
+            
+            zscore_list = gdf[f'{variable}_mean'].to_numpy()[np.abs(zscore(gdf[f'{variable}_mean'].to_numpy())) < 3]
             median_list = [np.mean(zscore_list)]
             q3_list = [bootstrap(zscore_list)[1]]
             q1_list = [bootstrap(zscore_list)[0]]
 
-            trace_box = go.Box(
-                showlegend = False,
-                median = median_list,
-                q3 = q3_list,
-                q1 = q1_list,
-                x = [name],
-                marker = dict(
-                    color = col,
-                    opacity = 0.5,
-                    size = 4
-                ),
-                boxpoints = False,
-                jitter = 0.75, 
-                pointpos = 0, 
-                width = 0.9,
-            )
-            fig.add_trace(trace_box)
+            fig.add_trace(self._plot_meanbox(median = median_list, q3 = q3_list, q1 = q1_list, 
+            x = [name], colour =  col, showlegend = False, name = name, xaxis = 'x'))
 
-            trace_box2 = go.Box(
-                showlegend = False,
-                y = zscore_list, 
-                x = len(zscore_list) * [name],
-                line = dict(
-                    color = 'rgba(0,0,0,0)'
-                ),
-                fillcolor = 'rgba(0,0,0,0)',
-                marker = dict(
-                    color = col,
-                    opacity = 0.5,
-                    size = 4
-                ),
-                boxpoints = 'all',
-                jitter = 0.75, 
-                pointpos = 0, 
-                width = 0.9
-            )
-            fig.add_trace(trace_box2)
-
-        if max(max_var) > 1.01:
-            fig['layout']['yaxis'].update(
-                    range = [0, max_var]
-                )
+            fig.add_trace(self._plot_boxpoints(y = zscore_list, x = len(zscore_list) * [name], colour = col, 
+            showlegend = False, name = name, xaxis = 'x'))
 
         if save is True:
             if location.endswith('.html'):
@@ -1114,5 +1143,242 @@ class behavpy(pd.DataFrame):
         else:
             fig.show()
 
+    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False, location = ''):
 
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+
+        fig = go.Figure()
+        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
+
+        def analysis(data_list, phase):
+            median_list = []
+            q3_list = []
+            q1_list = []
+            con_list = []
+            label_list = []
+            for d, l in zip(data_list, facet_labels):
+                d = d.copy(deep = True)
+                d.add_day_phase()
+                d = d[d['phase'] == phase]
+                d.drop(['phase', 'day'], axis = 1, inplace = True)
+                t_gb = d.pivot(column = variable, function = 'mean')
+                x = t_gb[f'{variable}_mean'].to_numpy()[~np.isnan(t_gb[f'{variable}_mean'].to_numpy())]
+                zscore_list = x[np.abs(zscore(x)) < 3]
+                median_list.append(np.mean(zscore_list))
+                q3_list.append(bootstrap(zscore_list)[1])
+                q1_list.append(bootstrap(zscore_list)[0])
+                con_list.append(zscore_list)
+                label_list.append(len(zscore_list) * [l])
+            return median_list, q3_list, q1_list, con_list, label_list
+
+        for c, phase in enumerate(['Light', 'Dark']):
+            
+            median_list, q3_list, q1_list, con_list, label_list = analysis(d_list, phase = phase)
+
+            if phase == 'light':
+                col = 'goldenrod'
+            else:
+                col = 'black'
+
+            for c2, label in enumerate(facet_labels):
+
+                fig.add_trace(self._plot_meanbox(median = [median_list[c2]], q3 = [q3_list[c2]], q1 = [q1_list[c2]], 
+                x = [label], colour =  col, showlegend = False, name = label, xaxis = f'x{c+1}'))
+
+                fig.add_trace(self._plot_boxpoints(y = con_list[c2], x = label_list[c2], colour = col, 
+                showlegend = False, name = label, xaxis = f'x{c+1}'))
+
+            domains = np.arange(0, 2, 1/2)
+            axis = f'xaxis{c+1}'
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = phase, domains = domains[c:c+2], axis = axis)
+
+        if save is True:
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
+            print(f'Saved to {location}')
+            fig.show()
+        else:
+            fig.show()
+    
+    def plot_compare_variables(self, variables, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False, location = ''):
+        """the first variable in the list is the left hand axis, the last is the right hand axis"""
+
+        assert(isinstance(variables, list))
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+        
+        if facet_col is None:
+            facet_arg = ['']
+            facet_labels = ['']
+
+        col_list = self._get_colours(facet_arg)
+
+        fig = make_subplots(specs=[[{ "secondary_y" : True}]])
+
+        def analysis(data):
+            median_list = []
+            q3_list = []
+            q1_list = []
+            con_list = []
+            label_list = []
+
+            for arg in facet_arg:
+                if arg != '':
+                    d = data.xmv(facet_col, arg)
+                else:
+                    d = data.copy(deep=True)
+
+                for v in variables:
+                    t_gb = d.pivot(column = v, function = 'mean')
+                    x = t_gb[f'{v}_mean'].to_numpy()[~np.isnan(t_gb[f'{v}_mean'].to_numpy())]
+                    zscore_list = x[np.abs(zscore(x)) < 3]
+                    median_list.append(np.mean(zscore_list))
+                    q3_list.append(bootstrap(zscore_list)[1])
+                    q1_list.append(bootstrap(zscore_list)[0])
+                    con_list.append(zscore_list)
+                    label_list.append(len(zscore_list) * [v])
+            return median_list, q3_list, q1_list, con_list, label_list
+
+        for c, (arg,lab) in enumerate(zip(facet_arg, facet_labels)):
+            
+            median_list, q3_list, q1_list, con_list, label_list = analysis(self)
+
+            bool_list = len(variables) * [False]
+            bool_list[-1] = True
+
+            for c2, (label, secondary) in enumerate(zip(variables, bool_list)):
+                if len(facet_arg) == 1:
+                    col_index = c2
+                else:
+                    col_index = c
+                fig.add_trace(self._plot_meanbox(median = [median_list[c2]], q3 = [q3_list[c2]], q1 = [q1_list[c2]], 
+                x = [label], colour =  col_list[col_index], showlegend = False, name = label, xaxis = f'x{c+1}'), secondary_y = secondary)
+
+                fig.add_trace(self._plot_boxpoints(y = con_list[c2], x = label_list[c2], colour = col_list[col_index], 
+                showlegend = False, name = label, xaxis = f'x{c+1}'), secondary_y = secondary)
+
+            domains = np.arange(0, 1+(1/len(facet_arg)), 1/len(facet_arg))
+            axis = f'xaxis{c+1}'
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[c:c+2], axis = axis)
+
+        axis_counter = 1
+        for i in range(len(facet_arg) * (len(variables) * 2)):
+            if i%((len(variables) * 2)) == 0 and i != 0:
+                axis_counter += 1
+            fig['data'][i]['xaxis'] = f'x{axis_counter}'
+
+        y_range, dtick = self._check_boolean(list(self[variables[0]].dropna()))
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variables[0], title = title, secondary = False, grid = grids)
+
+        y_range, dtick = self._check_boolean(list(self[variables[-1]].dropna()))
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variables[-1], title = title, secondary = True, xdomain = f'x{axis_counter}', grid = grids)
+
+        if save is True:
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
+            print(f'Saved to {location}')
+            fig.show()
+        else:
+            fig.show()
+
+    def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False, location = ''):
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+
+        col_list = self._get_colours(d_list)
+        fig = go.Figure()
+
+        self._plot_ylayout(fig, yrange = [0, 100], t0 = 0, dtick = 20, ylabel = 'Anticipatory Phase Score', title = title, grid = grids)
+
+        def ap_score(total, small):
+            try:
+                return (small / total) * 100
+            except ZeroDivisionError:
+                return 0
+        
+        def analysis(data_list, phase):
+            median_list = []
+            q3_list = []
+            q1_list = []
+            con_list = []
+            label_list = []
+
+            if phase == 'Lights Off':
+                start = [6, 9]
+                end = 11.8
+            elif phase == 'Lights On':
+                start = [18, 21]
+                end = 23.8
+
+            for d, l in zip(data_list, facet_labels):
+                d = d.dropna(subset = [mov_variable])
+                d.wrap_time(inplace = True)
+                d = d.t_filter(start_time = start[0], end_time = end)
+                total = d.pivot(column = 'moving', function = 'sum')
+                d = d.t_filter(start_time = start[1], end_time = end)
+                small = d.groupby(d.index).agg(**{
+                        'moving_small' : ('moving', 'sum')
+                        })
+                d = total.join(small)
+                d = d.dropna()
+                d['score'] = d[['moving_sum', 'moving_small']].apply(lambda x: ap_score(*x), axis = 1)   
+                zscore_list = d['score'].to_numpy()[np.abs(zscore(d['score'].to_numpy())) < 3]
+                median_list.append(np.mean(zscore_list))
+                q3_list.append(bootstrap(zscore_list)[1])
+                q1_list.append(bootstrap(zscore_list)[0])
+                con_list.append(zscore_list)
+                label_list.append(len(zscore_list) * [l])
+
+            return median_list, q3_list, q1_list, con_list, label_list
+            
+        for c, phase in enumerate(['Lights Off', 'Lights On']):
+
+            median_list, q3_list, q1_list, con_list, label_list = analysis(d_list, phase = phase)
+
+            for c2, label in enumerate(facet_labels):
+
+                if len(facet_arg) == 1:
+                    col_index = c
+                else:
+                    col_index = c2
+
+                fig.add_trace(self._plot_meanbox(median = [median_list[c2]], q3 = [q3_list[c2]], q1 = [q1_list[c2]], 
+                x = [label], colour =  col_list[col_index], showlegend = False, name = label, xaxis = f'x{c+1}'))
+
+                fig.add_trace(self._plot_boxpoints(y = con_list[c2], x = label_list[c2], colour = col_list[col_index], 
+                showlegend = False, name = label, xaxis = f'x{c+1}'))
+
+            domains = np.arange(0, 2, 1/2)
+            axis = f'xaxis{c+1}'
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = phase, domains = domains[c:c+2], axis = axis)
+
+        if save is True:
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
+            print(f'Saved to {location}')
+            fig.show()
+        else:
+            fig.show()

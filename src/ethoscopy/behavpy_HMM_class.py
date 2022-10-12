@@ -210,23 +210,19 @@ class behavpy_HMM(behavpy):
             """ 
             Bins the time to the given integer and creates a nested list of the movement column by id
             """
-            if mov_var == 'moving':
-                stat = 'max'
-            else:
-                stat = 'mean'
+            stat = 'max'
 
             t_delta = data[t_column].iloc[1] - data[t_column].iloc[0]
-
             if t_delta != bin:
                 data[t_var] = data[t_var].map(lambda t: bin * floor(t / bin))
-                bin_gb = self.groupby(['id', t_var]).agg(**{
+                bin_gb = data.groupby(['id', t_var]).agg(**{
                     mov_var : (var_column, stat)
                 })
                 bin_gb.reset_index(level = 1, inplace = True)
                 gb = np.array(bin_gb.groupby('id')[mov_var].apply(list).tolist(), dtype = 'object')
 
             else:
-                gb = np.array(self.groupby('id')[mov_var].apply(list).tolist(), dtype = 'object')
+                gb = np.array(data.groupby('id')[mov_var].apply(list).tolist(), dtype = 'object')
 
             return gb
 
@@ -262,7 +258,8 @@ class behavpy_HMM(behavpy):
             print(f"Iteration {i+1} of {iterations}")
             
             init_params = ''
-            h = hmm.MultinomialHMM(n_components = n_states, n_iter = hmm_iterations, tol = tol, params = 'ste', verbose = verbose)
+            # h = hmm.MultinomialHMM(n_components = n_states, n_iter = hmm_iterations, tol = tol, params = 'ste', verbose = verbose)
+            h = hmm.CategoricalHMM(n_components = n_states, n_iter = hmm_iterations, tol = tol, params = 'ste', verbose = verbose)
 
             if start_probs is None:
                 init_params += 's'
@@ -290,7 +287,7 @@ class behavpy_HMM(behavpy):
             h.init_params = init_params
 
             h.n_features = n_obs # number of emission states
-
+            print(seq_train)
             # call the fit function on the dataset input
             h.fit(seq_train, len_seq_train)
 
@@ -470,7 +467,7 @@ class behavpy_HMM(behavpy):
             fig.add_trace(lower_bound)
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, circadian_night = circadian_night)
+        bar_shapes = circadian_bars(t_min, t_max, max_y = 1, circadian_night = circadian_night)
         fig.update_layout(shapes=list(bar_shapes.values()))
 
         if save is True:
