@@ -7,7 +7,7 @@ from plotly.subplots import make_subplots
 # import plotly.express as px
 from plotly.express.colors import qualitative
 
-from math import floor, ceil
+from math import floor, ceil, sqrt
 from sys import exit
 from scipy.stats import zscore
 
@@ -121,6 +121,9 @@ class behavpy(pd.DataFrame):
             else:
                 string_args = []
                 for i in f_arg:
+                    if i not in self.meta[f_col].tolist():
+                        warnings.warn(f'Argument "{i}" is not in the meta column {f_col}')
+                        exit()
                     string_args.append(str(i))
                 if f_lab is None:
                     f_lab = string_args
@@ -174,6 +177,7 @@ class behavpy(pd.DataFrame):
                                 color = 'black'
                             )
                         ),
+                        rangemode = 'tozero',
                         zeroline = False,
                                 ticks = 'outside',
                         tickwidth = 2,
@@ -553,7 +557,7 @@ class behavpy(pd.DataFrame):
                                         resolution = resolution): 
             time_window = (60 * 60 * time_window)
 
-            d = data[[time_var, moving_var]]
+            d = data[[time_var, moving_var]].copy(deep = True)
             target_t = np.array(list(range(d.t.min().astype(int), d.t.max().astype(int), floor(time_window / resolution))))
             local_means = np.array([d[d[time_var].between(i, i + time_window)][moving_var].mean() for i in target_t])
 
@@ -569,7 +573,7 @@ class behavpy(pd.DataFrame):
 
         self.reset_index(inplace = True)
         
-        return self.groupby('id', group_keys = False).apply(wrapped_curate_dead_animals)
+        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_curate_dead_animals), self.meta)
 
     def bin_time(self, column, bin_secs, t_column = 't', function = 'mean'):
         """
@@ -659,7 +663,7 @@ class behavpy(pd.DataFrame):
 
             print(group)
 
-    def add_day_phase(self, circadian_night = 12):
+    def add_day_phase(self, time_column = 't', circadian_night = 12, inplace = True):
         """ 
         Adds a column called 'phase' with either light or dark as catergories according to its time compared to the reference hour
         Adds a column with the day the row in, starting with 1 as day zero and increasing sequentially.
@@ -667,17 +671,28 @@ class behavpy(pd.DataFrame):
         Params:
         @circadian_night = int, the ZT hour when the conditions shift to dark
             
-        returns nothing, all actions done inplace
+        returns a new df is inplace is False, else nothing
         """
 
-        from math import floor
+        if inplace == True:
+            self['day'] = self[time_column].map(lambda t: floor(t / 86400))
+            
+            night_in_secs = circadian_night * 60 * 60
 
-        self['day'] = self['t'].map(lambda t: floor(t / 86400))
-        
-        night_in_secs = circadian_night * 60 * 60
+            self['phase'] = np.where(((self[time_column] % 86400) > night_in_secs), 'dark', 'light')
+            self['phase'] = self['phase'].astype('category')
 
-        self['phase'] = np.where(((self.t % 86400) > night_in_secs), 'dark', 'light')
-        self['phase'] = self['phase'].astype('category')
+        elif inplace == False:
+            new_df = self.copy(deep = True)
+            new_df['day'] = new_df[time_column].map(lambda t: floor(t / 86400))
+            
+            night_in_secs = circadian_night * 60 * 60
+
+            new_df['phase'] = np.where(((new_df[time_column] % 86400) > night_in_secs), 'dark', 'light')
+            new_df['phase'] = new_df['phase'].astype('category')
+
+            return new_df
+
 
     def motion_detector(self, time_window_length = 10, velocity_correction_coef = 3e-3, masking_duration = 0, optional_columns = None):
         """
@@ -1372,6 +1387,132 @@ class behavpy(pd.DataFrame):
             domains = np.arange(0, 2, 1/2)
             axis = f'xaxis{c+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = phase, domains = domains[c:c+2], axis = axis)
+
+        if save is True:
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
+            print(f'Saved to {location}')
+            fig.show()
+        else:
+            fig.show()
+
+    def plot_actogram(self, mov_variable = 'moving', t_column = 't', individual = False, individual_label = None, facet_col = None, facet_arg = None, facet_labels = None, title = '', save = False, location = ''):
+        
+        if individual == True and facet_col != None:
+            warnings.warn('You cannot facet when looking at each individual in the dataframe')
+            exit()
+        elif individual == True:
+            assert(isinstance(individual_label, str))
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        def get_subplots(length):
+            """Get the nearest higher square number"""
+            square = sqrt(length) 
+            closest = [floor(square)**2, ceil(square)**2]
+            return int(sqrt(closest[1]))
+
+        def make_plots(d, col, row):
+            try:
+                max_days = int(d['day'].max())
+                for i in range(max_days):
+                    x_list_2 = d['t_bin'][d['day'] == i+1].to_numpy() + 24
+                    x_list = np.append(d['t_bin'][d['day'] == i].to_numpy(), x_list_2)
+                    y_list = np.append(d['moving_mean'][d['day'] == i].tolist(), d['moving_mean'][d['day'] == i+1].tolist())
+                    y_mod = np.array([i+1] * len(y_list)) - (y_list)
+                    fig.append_trace(go.Box(
+                        showlegend = False,
+                        median = (([i+1]*len(x_list) + y_mod) / 2),
+                        q1 = y_mod,
+                        q3 = [i+1]*len(x_list),
+                        x = x_list,
+                        marker = dict(
+                            color = 'black',
+                        ),
+                        fillcolor = 'black',
+                        boxpoints = False
+                    ), row = row, col = col)
+            except ValueError:
+                x_list = list(range(0,24,2))
+                fig.append_trace(go.Box(
+                    showlegend = False,
+                    x = x_list,
+                    marker = dict(
+                        color = 'black',
+                    ),
+                    fillcolor = 'black',
+                    boxpoints = False
+                ), row = row, col = col)
+
+        if individual == False:
+            root = get_subplots(len(facet_arg))
+            title_list = facet_labels
+        elif individual == True:
+            facet_arg = self.meta.index.tolist()
+            root =  get_subplots(len(facet_arg))
+            if individual_label is not None:
+                title_list = self.meta[individual_label].tolist()
+            else:
+                title_list = facet_arg
+
+        # make a square subplot domain
+        fig = make_subplots(rows=root, cols=root, shared_xaxes = False, subplot_titles = title_list)
+        col_list = list(range(1, root+1)) * root
+        row_list = list([i] * root for i in range(1, root+1))
+        row_list = [item for sublist in row_list for item in sublist]
+
+        self = self.bin_time(mov_variable, 1800, t_column = t_column)
+        self.add_day_phase(time_column = 't_bin')
+
+        for arg, col, row in zip(facet_arg, col_list, row_list): 
+            if individual == True:
+                d = self.xmv('id', arg)
+                d.wrap_time(24, time_column = 't_bin', inplace = True)
+                d['t_bin'] = d['t_bin'] / (60*60)
+
+            else:
+                d = self.xmv(facet_col, arg)
+                d = d.groupby('t_bin').agg(**{
+                    'moving_mean' : ('moving_mean', 'mean'),
+                    'day' : ('day', 'max')
+                })
+                d.reset_index(inplace = True)
+                d['t_bin'] = d['t_bin'].map(lambda t: (t % 86400) / (60*60))
+
+            make_plots(d, col, row)
+
+        fig.update_xaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            range = [0,48],
+            tick0 = 0,
+            dtick = 6,
+            ticks = 'outside',
+            tickfont = dict(
+                size = 1
+            ),
+            showgrid = False
+        )
+
+        fig.update_yaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            range = [0,int(self['day'].max())],
+            tick0 = 0,
+            dtick = 1,
+            ticks = 'outside',
+            showgrid = True,
+            autorange =  'reversed'
+        )
+        if individual == True:
+            fig.update_annotations(font_size=8)
+        fig['layout']['title'] = title
 
         if save is True:
             if location.endswith('.html'):
