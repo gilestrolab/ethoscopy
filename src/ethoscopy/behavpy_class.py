@@ -1014,7 +1014,7 @@ class behavpy(pd.DataFrame):
         
         fig = go.Figure() 
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
-        self._plot_xlayout(fig, False, 0, 6, 'ZT (Hours)')
+        self._plot_xlayout(fig, xrange = False, t = 0, dtick = 6, xlabel = 'ZT (Hours)')
 
         min_t = []
         max_t = []
@@ -1098,7 +1098,7 @@ class behavpy(pd.DataFrame):
         bar_shapes = circadian_bars(t_min, t_max, max_y = max(max_var), circadian_night = circadian_night)
         fig.update_layout(shapes=list(bar_shapes.values()))
     
-        fig['layout']['xaxis'].update(range = [t_min, t_max])
+        fig['layout']['xaxis']['range'] = [t_min, t_max]
 
         if save is True:
             if location.endswith('.html'):
@@ -1510,9 +1510,11 @@ class behavpy(pd.DataFrame):
             showgrid = True,
             autorange =  'reversed'
         )
+        
         if individual == True:
             fig.update_annotations(font_size=8)
         fig['layout']['title'] = title
+        fig['layout']['plot_bgcolor'] = 'white'
 
         if save is True:
             if location.endswith('.html'):
