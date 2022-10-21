@@ -154,6 +154,29 @@ class behavpy_HMM(behavpy):
         return f_arg, f_lab, h_list, b_list
 
     @staticmethod
+    def _zscore_bootstap(array, min_max = False):
+        try:
+            if len(array) == 1 or all(array == array[0]):
+                median, q3, q1 = array[0]
+                zlist = array
+            else:
+                zlist = array[np.abs(zscore(array)) < 3]
+                median = zlist.mean()
+                boot_array = bootstrap(zlist)
+                q3 = boot_array[1]
+                q1 = boot_array[0]
+
+        except ZeroDivisionError:
+            median, q3, q1 = 0
+            zlist = array
+
+        if min_max == True:
+            q3 = np.max(array)
+            q1 = np.min(array)
+            
+        return median, q3, q1, zlist
+
+    @staticmethod
     def _hmm_table(start_prob, trans_prob, emission_prob, state_names, observable_names):
         """ 
         Prints a formatted table of the probabilities from a hmmlearn MultinomialHMM object
@@ -355,9 +378,9 @@ class behavpy_HMM(behavpy):
             bout_gb.set_index(old_index, inplace =True)
 
             return bout_gb
-
-        self.reset_index(inplace = True)
-        return behavpy_HMM(self.groupby('id', group_keys = False).apply(wrapped_bin_data), self.meta)
+        tdf = self.copy(deep=True)
+        tdf.reset_index(inplace = True)
+        return behavpy_HMM(tdf.groupby('id', group_keys = False).apply(wrapped_bin_data), tdf.meta)
 
     def hmm_display(self, hmm, states, observables):
         """
@@ -720,18 +743,12 @@ class behavpy_HMM(behavpy):
         fig = go.Figure()
         self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Fraction of time in each state', title = title, grid = grids)
 
-        for c, v in enumerate(analysed_dict.values()):
-            v['labels'] = facet_labels[c]
-
         for state, col, lab in zip(list_states, colours, labels):
 
-            zscore_list = [analysed_dict[f'df{i}'][state].to_numpy()[np.abs(zscore(analysed_dict[f'df{i}'][state].tolist())) < 3] for i in facet_arg]
-            median_list = [i.mean() for i in zscore_list]
-            q3_list = [bootstrap(i)[1] for i in zscore_list]
-            q1_list = [bootstrap(i)[0] for i in zscore_list]
+            for arg, i in zip(facet_arg, facet_labels):
 
-            for c, (arg, i) in enumerate(zip(facet_arg, facet_labels)):
-
+                median, q3, q1, zlist = self._zscore_bootstap(analysed_dict[f'df{arg}'][state].to_numpy())
+                
                 if 'baseline' in i.lower() or 'control' in i.lower() or 'ctrl' in i.lower():
                     if 'rebound' in i.lower():
                         marker_col = 'black'
@@ -743,11 +760,11 @@ class behavpy_HMM(behavpy):
                     else:
                         marker_col = col
 
-                fig.add_trace(self._plot_meanbox(median = [median_list[c]], q3 = [q3_list[c]], q1 = [q1_list[c]], 
+                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
                 x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
 
-                label_list = [analysed_dict[f'df{arg}']['labels'].iloc[0]] * len(zscore_list[c])
-                fig.add_trace(self._plot_boxpoints(y = zscore_list[c], x = label_list, colour = marker_col, 
+                label_list = [i] * len(zlist)
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
                 showlegend = False, name = i, xaxis = f'x{state+1}'))
 
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
@@ -764,7 +781,7 @@ class behavpy_HMM(behavpy):
         else:
             fig.show()
     
-    def plot_hmm_quantify_length(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', save = False, location = ''):
+    def plot_hmm_quantify_length(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False, location = ''):
         
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
@@ -774,9 +791,8 @@ class behavpy_HMM(behavpy):
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             df_list = [self.copy(deep = True)]
-        ite_len = len(df_list)
 
-        decoded_dict = {f'df{c}' : self._hmm_decode(d, h, b, variable, func) for c, (d, h, b) in enumerate(zip(df_list, h_list, b_list))}
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
 
         def analysis(states, t_diff):
             df_lengths = pd.DataFrame()
@@ -785,45 +801,18 @@ class behavpy_HMM(behavpy):
                 df_lengths = pd.concat([df_lengths, length], ignore_index= True)
             return df_lengths
 
-        analysed_dict = {f'df{c}' : analysis(v[0], b) for c, (v, b) in enumerate(zip(decoded_dict.values(), b_list))}
+        analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0], b) for n, b in zip(facet_arg, b_list)}
 
-        layout = self._plot_ylayout(False, 0, 0.69897000433, 'Length of state bout (mins)', 'log')
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = 0.69897000433, ylabel = 'Length of state bout (mins)', ytype = 'log', title = title, grid = grids)
 
-        fig = go.Figure(layout = layout)
-
-        for c, v in enumerate(analysed_dict.values()):
-            v['labels'] = facet_labels[c]
-
-        gb_dict = {f'gb{c}' : v.groupby('state') for c, v in enumerate(analysed_dict.values())}
+        gb_dict = {f'gb{n}' : analysed_dict[f'df{n}'].groupby('state') for n in facet_arg}
 
         for state, col, lab in zip(list_states, colours, labels):
 
-            median_list = np.array([])
-            q3_list = np.array([])
-            q1_list = np.array([])
+            for arg, i in zip(facet_arg, facet_labels):
 
-            for i in range(ite_len):
-                array = gb_dict[f'gb{i}'].get_group(state)['mean_length'].to_numpy()
-                try:
-                    if len(array) == 1:
-                        median_list = np.append(median_list, array.mean())
-                        q3_list = np.append(q3_list, bootstrap(array)[1])
-                        q1_list = np.append(q1_list, bootstrap(array)[0])
-                    elif all(array == array[0]):
-                        median_list = np.append(median_list,array[0])
-                        q3_list = np.append(q3_list,array[0])
-                        q1_list = np.append(q1_list,array[0])
-                    else:
-                        median_list = np.append(median_list, array[np.abs(zscore(array)) < 3].mean())
-                        q3_list = np.append(q3_list, bootstrap(array[np.abs(zscore(array)) < 3])[1])
-                        q1_list = np.append(q1_list, bootstrap(array[np.abs(zscore(array)) < 3])[0])
-
-                except:
-                    median_list = np.append(median_list, 0)
-                    q3_list = np.append(q3_list, 0)
-                    q1_list = np.append(q1_list, 0)
-
-            for c, i in enumerate(facet_labels):
+                median, q3, q1, zlist = self._zscore_bootstap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy())
 
                 if 'baseline' in i or 'control' in i:
                     if 'rebound' in i:
@@ -836,65 +825,16 @@ class behavpy_HMM(behavpy):
                     else:
                         marker_col = col
 
-                trace_box = go.Box(
-                    showlegend = False,
-                    median = [median_list[c]],
-                    q3 = [q3_list[c]],
-                    q1 = [q1_list[c]],
-                    x = [i],
-                    xaxis = f'x{state+1}',
-                    marker = dict(
-                        color = marker_col,
-                        opacity = 0.5,
-                        size = 4
-                    ),
-                    boxpoints = False,
-                    jitter = 0.75, 
-                    pointpos = 0, 
-                    width = 0.9,
-                )
-                fig.add_trace(trace_box)
+                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
 
-                try:
-                    array = gb_dict[f'gb{c}'].get_group(state)
-                    if len(array) == 1:
-                        con_list = array['mean_length']
-                        label_list = array['labels']
-                    elif all(array['mean_length'].to_numpy() == array['mean_length'].to_numpy()[0]):
-                        con_list = array['mean_length']
-                        label_list = array['labels']
-                    else:
-                        con_list = array['mean_length'][np.abs(zscore(array['mean_length'])) < 3]
-                        label_list = array['labels'][np.abs(zscore(array['mean_length'])) < 3]
-
-                except:
-                    con_list = np.array([0])
-                    label_list = np.array([i])
-
-                trace_box2 = go.Box(
-                    showlegend = False,
-                    y = con_list, 
-                    x = label_list,
-                    xaxis = f'x{state+1}',
-                    line = dict(
-                        color = 'rgba(0,0,0,0)'
-                    ),
-                    fillcolor = 'rgba(0,0,0,0)',
-                    marker = dict(
-                        color = marker_col,
-                        opacity = 0.5,
-                        size = 4
-                    ),
-                    boxpoints = 'all',
-                    jitter = 0.75, 
-                    pointpos = 0, 
-                    width = 0.9
-                )
-                fig.add_trace(trace_box2)
+                label_list = [i] * len(zlist)
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
+                showlegend = False, name = i, xaxis = f'x{state+1}'))
 
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
             axis = f'xaxis{state+1}'
-            fig = self._plot_xlayout(fig, range = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
         if save is True:
             if location.endswith('.html'):
@@ -906,7 +846,7 @@ class behavpy_HMM(behavpy):
         else:
             fig.show()
 
-    def plot_hmm_quantify_length_min_max(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', save = False, location = ''):
+    def plot_hmm_quantify_length_min_max(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False, location = ''):
             
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
@@ -916,9 +856,8 @@ class behavpy_HMM(behavpy):
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             df_list = [self.copy(deep = True)]
-        ite_len = len(df_list)
 
-        decoded_dict = {f'df{c}' : self._hmm_decode(d, h, b, variable, func) for c, (d, h, b) in enumerate(zip(df_list, h_list, b_list))}
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
 
         def analysis(states, t_diff):
             df_lengths = pd.DataFrame()
@@ -927,30 +866,18 @@ class behavpy_HMM(behavpy):
                 df_lengths = pd.concat([df_lengths, length], ignore_index= True)
             return df_lengths
 
-        analysed_dict = {f'df{c}' : analysis(v[0], b) for c, (v, b) in enumerate(zip(decoded_dict.values(), b_list))}
+        analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0], b) for n, b in zip(facet_arg, b_list)}
 
-        layout = self._plot_ylayout(False, 0, 0.69897000433, 'Length of state bout (mins)', 'log')
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = 0.69897000433, ylabel = 'Length of state bout (mins)', ytype = 'log', title = title, grid = grids)
 
-        fig = go.Figure(layout = layout)
-
-        for c, v in enumerate(analysed_dict.values()):
-            v['labels'] = facet_labels[c]
-
-        gb_dict = {f'gb{c}' : v.groupby('state') for c, v in enumerate(analysed_dict.values())}
+        gb_dict = {f'gb{n}' : analysed_dict[f'df{n}'].groupby('state') for n in facet_arg}
 
         for state, col, lab in zip(list_states, colours, labels):
 
-            median_list = np.array([])
-            q3_list = np.array([])
-            q1_list = np.array([])
+            for arg, i in zip(facet_arg, facet_labels):
 
-            for i in range(ite_len):
-                array = gb_dict[f'gb{i}'].get_group(state)['length_adjusted'].to_numpy()
-                median_list = np.append(median_list, array.mean())
-                q3_list = np.append(q3_list, np.max(array))
-                q1_list = np.append(q1_list, np.min(array))
-
-            for c, i in enumerate(facet_labels):
+                median, q3, q1, _ = self._zscore_bootstap(gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy(), min_max = True)
 
                 if 'baseline' in i or 'control' in i:
                     if 'rebound' in i:
@@ -962,29 +889,12 @@ class behavpy_HMM(behavpy):
                         marker_col = f'dark{col}'
                     else:
                         marker_col = col
-
-                trace_box = go.Box(
-                    showlegend = False,
-                    median = [median_list[c]],
-                    q3 = [q3_list[c]],
-                    q1 = [q1_list[c]],
-                    x = [i],
-                    xaxis = f'x{state+1}',
-                    marker = dict(
-                        color = marker_col,
-                        opacity = 0.5,
-                        size = 4
-                    ),
-                    boxpoints = False,
-                    jitter = 0.75, 
-                    pointpos = 0, 
-                    width = 0.9,
-                )
-                fig.add_trace(trace_box)
+                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
 
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
             axis = f'xaxis{state+1}'
-            fig = self._plot_xlayout(fig, range = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
         if save is True:
             if location.endswith('.html'):
@@ -996,7 +906,7 @@ class behavpy_HMM(behavpy):
         else:
             fig.show()
             
-    def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', save = False, location = ''):
+    def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False, location = ''):
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
@@ -1006,9 +916,8 @@ class behavpy_HMM(behavpy):
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             df_list = [self.copy(deep = True)]
-        ite_len = len(df_list)
 
-        decoded_dict = {f'df{c}' : self._hmm_decode(d, h, b, variable, func) for c, (d, h, b) in enumerate(zip(df_list, h_list, b_list))}
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
 
         def analysis(states):
             df_trans = pd.DataFrame()
@@ -1017,20 +926,16 @@ class behavpy_HMM(behavpy):
                 df_trans = pd.concat([df_trans, trans], ignore_index= True)
             return df_trans
 
-        analysed_dict = {f'df{c}' : analysis(v[0]) for c, v in enumerate(decoded_dict.values())}
+        analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0]) for n in facet_arg}
 
-        layout = self._plot_ylayout([0, 1.05], 0, 0.2, 'Fraction of runs of each state')
-        fig = go.Figure(layout = layout)
-
-        for c, v in enumerate(analysed_dict.values()):
-            v['labels'] = facet_labels[c]
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = [0, 1.05], t0 = 0, dtick = 0.2, ylabel = 'Fraction of runs of each state', title = title, grid = grids)
 
         for state, col, lab in zip(list_states, colours, labels):
-            median_list = [analysed_dict[f'df{i}'][str(state)][np.abs(zscore(analysed_dict[f'df{i}'][str(state)])) < 3].mean() for i in range(ite_len)]
-            q3_list = [bootstrap(analysed_dict[f'df{i}'][str(state)][np.abs(zscore(analysed_dict[f'df{i}'][str(state)])) < 3])[1] for i in range(ite_len)]
-            q1_list = [bootstrap(analysed_dict[f'df{i}'][str(state)][np.abs(zscore(analysed_dict[f'df{i}'][str(state)])) < 3])[0] for i in range(ite_len)]
 
-            for c, i in enumerate(facet_labels):
+            for arg, i in zip(facet_arg, facet_labels):
+
+                median, q3, q1, zlist = self._zscore_bootstap(analysed_dict[f'df{arg}'][str(state)].to_numpy())  
 
                 if 'baseline' in i.lower() or 'control' in i.lower():
                     if 'rebound' in i.lower():
@@ -1043,55 +948,17 @@ class behavpy_HMM(behavpy):
                     else:
                         marker_col = col
 
-                trace_box = go.Box(
-                    showlegend = False,
-                    median = [median_list[c]],
-                    q3 = [q3_list[c]],
-                    q1 = [q1_list[c]],
-                    x = [i],
-                    xaxis = f'x{state+1}',
-                    marker = dict(
-                        color = marker_col,
-                        opacity = 0.5,
-                        size = 4
-                    ),
-                    boxpoints = False,
-                    jitter = 0.75, 
-                    pointpos = 0, 
-                    width = 0.9,
-                )
-                fig.add_trace(trace_box)
+                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
 
-                con_list = pd.Series(dtype = 'float64')
-                label_list = pd.Series(dtype = 'str')
-                con_list = pd.concat([con_list, analysed_dict[f'df{c}'][str(state)][np.abs(zscore(analysed_dict[f'df{c}'][str(state)])) < 3]])
-                label_list = pd.concat([label_list, analysed_dict[f'df{c}']['labels'][np.abs(zscore(analysed_dict[f'df{c}'][str(state)])) < 3]])
-
-                trace_box2 = go.Box(
-                    showlegend = False,
-                    y = con_list, 
-                    x = label_list,
-                    xaxis = f'x{state+1}',
-                    line = dict(
-                        color = 'rgba(0,0,0,0)'
-                    ),
-                    fillcolor = 'rgba(0,0,0,0)',
-                    marker = dict(
-                        color = marker_col,
-                        opacity = 0.5,
-                        size = 4
-                    ),
-                    boxpoints = 'all',
-                    jitter = 0.75, 
-                    pointpos = 0, 
-                    width = 0.9
-                )
-                fig.add_trace(trace_box2)
+                label_list = [i] * len(zlist)
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
+                showlegend = False, name = i, xaxis = f'x{state+1}'))
 
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
 
             axis = f'xaxis{state+1}'
-            fig = self._plot_xlayout(fig, range = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
         if save is True:
             if location.endswith('.html'):
@@ -1103,5 +970,161 @@ class behavpy_HMM(behavpy):
         else:
             fig.show()
 
-    def plot_hmm_raw_states(self):
-        return None
+    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, bin = 60, mago_df = None, func = 'max', title = '', save = False, location = ''):
+        """ plots the raw dedoded hmm model per fly (total = num_plots) 
+            If hmm is a list of hmm objects, the number of plots will equal the length of that list. Use this to compare hmm models.
+            If hmm_compare is True the same specimens data will be used for each plot with a different hmm """
+
+        if colours is None:
+            if isinstance(hmm, list):
+                h = hmm[0]
+            else:
+                h = hmm
+            states = h.transmat_.shape[0]
+            if states == 4:
+                colours = self._colours_four
+            else:
+                warnings.warn(f'Your trained HMM is not 4 states, please provide the {h.transmat_.shape[0]} colours for this hmm. See doc string for more info')
+                exit() 
+
+        colours_index = {c : col for c, col in enumerate(colours)}
+
+        if mago_df is not None:
+            assert isinstance(mago_df, behavpy) or isinstance(mago_df, behavpy_HMM), 'The mAGO dataframe is not a behavpy or behavpy_HMM class'
+
+        if isinstance(hmm, list):
+            num_plots = len(hmm)
+            rand_flies = [np.random.permutation(list(set(self.meta.index)))[0]] * num_plots
+            h_list = hmm
+            if isinstance(bin, list):
+                b_list = bin 
+            else:
+                b_list = [bin] * num_plots
+        else:
+            rand_flies = np.random.permutation(list(set(self.meta.index)))[:num_plots]
+            h_list = [hmm] * num_plots
+            b_list = [bin] * num_plots
+
+        df_list = [self.xmv('id', id) for id in rand_flies]
+        decoded = [self._hmm_decode(d, h, b, variable, func) for d, h, b in zip(df_list, h_list, b_list)]
+
+        def analyse(data, df_variable):
+            states = data[0][0]
+            time = data[1][0]
+            id = df_variable.index.tolist()
+            var = df_variable[variable].tolist()
+            previous_states = np.array(states[:-1], dtype = float)
+            previous_states = np.insert(previous_states, 0, np.nan)
+            previous_var = np.array(var[:-1], dtype = float)
+            previous_var = np.insert(previous_var, 0, np.nan)
+            all_df = pd.DataFrame(data = zip(id, states, time, var, previous_states, previous_var))
+            all_df.columns = ['id','state', 't', 'var','previous_state', 'previous_var']
+            all_df.dropna(inplace = True)
+            all_df['colour'] = all_df['previous_state'].map(colours_index)
+            all_df.set_index('id', inplace = True)
+            return all_df
+
+        analysed = [analyse(i, v) for i, v in zip(decoded, df_list)]
+
+        fig = make_subplots(
+        rows= num_plots, 
+        cols=1,
+        shared_xaxes=True, 
+        shared_yaxes=True, 
+        vertical_spacing=0.02,
+        horizontal_spacing=0.02
+        )
+
+        for c, (df, b) in enumerate(zip(analysed, b_list)):
+            id = df.first_valid_index()
+            print(f'Plotting: {id}')
+            if mago_df is not None:
+                df2 = mago_df.xmv('id', id)
+                df2 = df2[df2['has_interacted'] == 1]
+                df2['t'] = df2['interaction_t'].map(lambda t:  b * floor(t / b))
+                df2.reset_index(inplace = True)
+                df = pd.merge(df, df2, how = 'outer', on = ['id', 't'])
+                df['colour'] = np.where(df['has_responded'] == True, 'purple', df['col'])
+                df['colour'] = np.where(df['has_responded'] == False, 'lime', df['col'])
+                df['t'] = df['t'].map(lambda t: t / (60*60))
+            
+            else:
+                df['t'] = df['t'].map(lambda t: t / (60*60))
+
+            trace1 = go.Scatter(
+                showlegend = False,
+                y = df['previous_state'],
+                x = df['t'],
+                mode = 'markers+lines', 
+                marker = dict(
+                    color = df['colour'],
+                    ),
+                line = dict(
+                    color = 'black',
+                    width = 0.5
+                )
+                )
+            fig.add_trace(trace1, row = c+1, col= 1)
+
+        y_range = [-0.2, states-0.8]
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = False, ylabel = '', title = title)
+
+        fig.update_yaxes(
+            showgrid = False,
+            linecolor = 'black',
+            zeroline = False,
+            ticks = 'outside',
+            range = y_range, 
+            tick0 = 0, 
+            dtick = 1,
+            tickwidth = 2,
+            tickfont = dict(
+                size = 18
+            ),
+            linewidth = 4
+        )
+        fig.update_xaxes(
+            showgrid = False,
+            color = 'black',
+            linecolor = 'black',
+            ticks = 'outside',
+            tickwidth = 2,
+            tickfont = dict(
+                size = 18
+            ),
+            linewidth = 4
+        )
+
+        fig.update_yaxes(
+            title = dict(
+                text = 'Predicted State',
+                font = dict(
+                    size = 18,
+                    color = 'black'
+                )
+            ),
+            row = ceil(num_plots/2),
+            col = 1
+        )
+
+        fig.update_xaxes(
+            title = dict(
+                text = 'ZT Hours',
+                font = dict(
+                    size = 18,
+                    color = 'black'
+                )
+            ),
+            row = num_plots,
+            col = 1
+        )
+
+        if save is True:
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
+            print(f'Saved to {location}')
+            fig.show()
+        else:
+            fig.show()

@@ -1,10 +1,8 @@
-from re import X
 import pandas as pd
 import numpy as np 
 import warnings
 import plotly.graph_objs as go 
 from plotly.subplots import make_subplots
-# import plotly.express as px
 from plotly.express.colors import qualitative
 
 from math import floor, ceil, sqrt
@@ -571,9 +569,9 @@ class behavpy(pd.DataFrame):
             curated_data = data[data[time_var].between(data.t.min(), last_valid_point[0])]
             return curated_data
 
-        self.reset_index(inplace = True)
-        
-        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_curate_dead_animals), self.meta)
+        tdf = self.copy(deep=True)
+        tdf.reset_index(inplace = True)
+        return behavpy(tdf.groupby('id', group_keys = False).apply(wrapped_curate_dead_animals), tdf.meta)
 
     def bin_time(self, column, bin_secs, t_column = 't', function = 'mean'):
         """
@@ -614,8 +612,9 @@ class behavpy(pd.DataFrame):
 
             return bout_gb
 
-        self.reset_index(inplace = True)
-        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_bin_data), self.meta)
+        tdf = self.copy(deep=True)
+        tdf.reset_index(inplace = True)
+        return behavpy(tdf.groupby('id', group_keys = False).apply(wrapped_bin_data), tdf.meta)
 
     def summary(self, detailed = False):
         """ 
@@ -1525,3 +1524,6 @@ class behavpy(pd.DataFrame):
             fig.show()
         else:
             fig.show()
+
+    def plot_fourier(self, varaible = 'moving'):
+        return None
