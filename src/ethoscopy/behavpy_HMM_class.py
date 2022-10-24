@@ -89,7 +89,7 @@ class behavpy_HMM(behavpy):
                 warnings.warn('Your trained HMM is not 4 states, please provide the lables and colours for this hmm. See doc string for more info')
                 exit()
             elif len(col) != len(lab):
-                warnings.warn('You have more or less states than colours, please rectify so they are equal in length')
+                warnings.warn('You have more or less states than colours, please rectify so the lists are equal in length')
                 exit()
         else:
             _labels = lab
@@ -101,7 +101,7 @@ class behavpy_HMM(behavpy):
         
         return _labels, _colours
 
-    def _check_lists(self, f_col, f_arg, f_lab, h, b):
+    def _check_lists_hmm(self, f_col, f_arg, f_lab, h, b):
         """
         Check if the facet arguments match the labels or populate from the column if not.
         Check if there is more than one HMM object for HMM comparison. Populate hmm and bin lists accordingly.
@@ -175,6 +175,26 @@ class behavpy_HMM(behavpy):
             q1 = np.min(array)
             
         return median, q3, q1, zlist
+
+    @staticmethod
+    def _adjust_colours(colour_list):
+
+        def adjust_color_lighten(r,g,b, factor):
+            return [round(255 - (255-r)*(1-factor)), round(255 - (255-g)*(1-factor)), round(255 - (255-b)*(1-factor))]
+
+        start_colours = []
+        end_colours = []
+        for col in colour_list:
+            c = Color(col)
+            c_hex = c.hex
+            end_colours.append(c_hex)
+            r, g, b = c.rgb
+            r, g, b = adjust_color_lighten(r*255, g*255, b*255, 0.75)
+            start_hex = "#%02x%02x%02x" % (r,g,b)
+            start_colours.append(start_hex)
+
+        return start_colours, end_colours
+
 
     @staticmethod
     def _hmm_table(start_prob, trans_prob, emission_prob, state_names, observable_names):
@@ -339,49 +359,6 @@ class behavpy_HMM(behavpy):
                 self._hmm_table(start_prob = h.startprob_, trans_prob = h.transmat_, emission_prob = h.emissionprob_, state_names = states, observable_names = observables)
                 return h
 
-    def bin_time(self, column, bin_secs, t_column = 't', function = 'mean'):
-        """
-        Bin the time series data into entered groups, pivot by the time series column and apply a function to the selected columns.
-
-        This is the same as the behavpy method, but requires re-inilisation.
-        
-        Params:
-        @column = string, column in the data that you want to the function to be applied to post pivot
-        @bin_secs = float, the amount of time you want in each bin in seconds, e.g. 60 would be bins for every minutes
-        @t_column = string, column same for the time series data that you want to group and pivot by
-        @function = string or user defined function. The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
-        
-        returns a behavpy object with a single data column
-        """
-
-        from math import floor
-
-        if column not in self.columns:
-            warnings.warn('Column heading "{}", is not in the data table'.format(column))
-            exit()
-
-        def wrapped_bin_data(data, column = column, bin_column = t_column, function = function, bin_secs = bin_secs):
-            index_name = data['id'].iloc[0]
-
-            data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
-            
-            output_parse_name = f'{column}_{function}' # create new column name
-        
-            bout_gb = data.groupby(bin_column).agg(**{
-                output_parse_name : (column, function)    
-            })
-
-            bin_parse_name = f'{bin_column}_bin'
-            bout_gb.rename_axis(bin_parse_name, inplace = True)
-            bout_gb.reset_index(level=0, inplace=True)
-            old_index = pd.Index([index_name] * len(bout_gb.index), name = 'id')
-            bout_gb.set_index(old_index, inplace =True)
-
-            return bout_gb
-        tdf = self.copy(deep=True)
-        tdf.reset_index(inplace = True)
-        return behavpy_HMM(tdf.groupby('id', group_keys = False).apply(wrapped_bin_data), tdf.meta)
-
     def hmm_display(self, hmm, states, observables):
         """
         Prints to screen the transion probabilities for the hidden state and observables for a given hmmlearn hmm object
@@ -418,79 +395,29 @@ class behavpy_HMM(behavpy):
 
         states_list, time_list = self._hmm_decode(df, hmm, bin, variable, func)
 
-        df_list = pd.DataFrame()
+        df = pd.DataFrame()
         for l, t in zip(states_list, time_list):
-            df = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
-            df_list = pd.concat([df_list, df], ignore_index = True)
+            tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
+            df = pd.concat([df, tdf], ignore_index = True)
 
         if wrapped is True:
-            df_list['t'] = df_list['t'].map(lambda t: t % 86400)
+            df['t'] = df['t'].map(lambda t: t % 86400)
 
-        df_list['t'] = df_list['t'] / (60*60)
-        t_min = int(12 * floor(df_list.t.min() / 12))
-        t_max = int(12 * ceil(df_list.t.max() / 12))    
+        df['t'] = df['t'] / (60*60)
+        t_min = int(12 * floor(df.t.min() / 12))
+        t_max = int(12 * ceil(df.t.max() / 12))    
         t_range = [t_min, t_max]  
 
         fig = go.Figure()
         self._plot_ylayout(fig, yrange = [-0.025, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Probability of being in state', title = title, grid = grids)
-        fig = self._plot_xlayout(fig, xrange = t_range, t0 = 0, dtick = 6, xlabel = 'ZT (Hours)')
+        self._plot_xlayout(fig, xrange = t_range, t0 = 0, dtick = 6, xlabel = 'ZT (Hours)')
 
-        for i, c, n in zip(range(len(labels)), colours, labels):
+        for c, (col, n) in enumerate(zip(colours, labels)):
 
-            loop_df = df_list.groupby('t').agg(**{
-                        'mean' : (f'state_{i}', 'mean'), 
-                        'SD' : (f'state_{i}', self._pop_std),
-                        'count' : (f'state_{i}', 'count')
-                    })
-
-            loop_df['SE'] = (1.96*loop_df['SD']) / np.sqrt(loop_df['count'])
-            loop_df['y_max'] = loop_df['mean'] + loop_df['SE']
-            loop_df['y_min'] = loop_df['mean'] - loop_df['SE']
-
-            y = loop_df['mean']
-            y_upper = loop_df['y_max']
-            y_lower = loop_df['y_min']
-            x = loop_df.index.values
-
-            upper_bound = go.Scatter(
-            showlegend = False,
-            x = x,
-            y = y_upper,
-            mode='lines',
-            marker=dict(color="#444"),
-            line=dict(width=0,
-                    shape = 'spline'
-                    ),
-            )
-            fig.add_trace(upper_bound)
-
-            trace = go.Scatter(
-            x = x,
-            y = y,
-            mode = 'lines',
-            name = n,
-            line = dict(
-                shape = 'spline',
-                color = c
-                ),
-            fill = 'tonexty'
-            )
-            fig.add_trace(trace)
-
-            lower_bound = go.Scatter(
-            showlegend = False,
-            x = x,
-            y = y_lower,
-            mode='lines',
-            marker=dict(
-                color = c
-                ),
-            line=dict(width = 0,
-                    shape = 'spline'
-                    ),
-            fill = 'tonexty'
-            )  
-            fig.add_trace(lower_bound)
+            upper, trace, lower, _ = self._plot_line(df = df, column = f'state_{c}', name = n, marker_col = col)
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
 
         # Light-Dark annotaion bars
         bar_shapes = circadian_bars(t_min, t_max, max_y = 1, circadian_night = circadian_night)
@@ -506,25 +433,32 @@ class behavpy_HMM(behavpy):
         else:
             fig.show()
 
-    def plot_hmm_split(self, hmm, variable = 'moving', facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, circadian_night = 12, title = '', grids = False, save = False, location = ''):
-        """ Only works for 4 state models """
+    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, circadian_night = 12, title = '', grids = False, save = False, location = ''):
+        """ works for any number of states """
 
         assert isinstance(wrapped, bool)
 
-        facet_arg, facet_labels, h_list, b_list = self._check_lists(facet_col, facet_arg, facet_labels, hmm, bin)
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
 
-        fig = make_subplots(
-            rows=2, 
-            cols=2,
-            shared_xaxes=True, 
-            shared_yaxes=True, 
-            vertical_spacing=0.02,
-            horizontal_spacing=0.02
-            )
+        start_colours, end_colours = self._adjust_colours(colours)
+
+        if len(labels) <= 2:
+            nrows = 1
+            ncols =2
+        else:
+            nrows =  2
+            ncols = round(len(labels) / 2)
+
+        fig = make_subplots(rows= nrows, cols= ncols, shared_xaxes=True, shared_yaxes=True, vertical_spacing=0.02, horizontal_spacing=0.02)
+
+        col_list = list(range(1, ncols+1)) * nrows
+        row_list = list([i] * ncols for i in range(1, nrows+1))
+        row_list = [item for sublist in row_list for item in sublist]
 
         colour_range_dict = {}
-        for q in range(0,4):
-            colours_dict = {'start' : ['#0000ff', '#b3cbe2', '#ffcaca', '#da1d1d'], 'end' : ['#00006e', '#248bf0', '#ff0000', '#640000']}
+        for q in range(0,len(labels)):
+            colours_dict = {'start' : start_colours, 'end' : end_colours}
             start_color = colours_dict.get('start')[q]
             end_color = colours_dict.get('end')[q]
             N = len(facet_arg)
@@ -539,14 +473,14 @@ class behavpy_HMM(behavpy):
 
             states_list, time_list = self._hmm_decode(d, h, b, variable, func)
 
-            analsyed_df = pd.DataFrame()
+            analysed_df = pd.DataFrame()
             for l, t in zip(states_list, time_list):
                 temp_df = hmm_pct_state(l, t, [0, 1, 2, 3], avg_window = int((avg_window * 60)/b))
-                analsyed_df = pd.concat([analsyed_df, temp_df], ignore_index = False)
+                analysed_df = pd.concat([analysed_df, temp_df], ignore_index = False)
 
             if wrapped is True:
-                analsyed_df['t'] = analsyed_df['t'].map(lambda t: t % 86400)
-            analsyed_df['t'] = analsyed_df['t'] / (60*60)
+                analysed_df['t'] = analysed_df['t'].map(lambda t: t % 86400)
+            analysed_df['t'] = analysed_df['t'] / (60*60)
 
             if 'control' in n.lower() or 'baseline' in n.lower() or 'ctrl' in n.lower():
                 black_list = ['black'] * len(facet_arg)
@@ -555,99 +489,52 @@ class behavpy_HMM(behavpy):
             else:
                 marker_col = colour_range_dict
 
-            t_min = int(12 * floor(analsyed_df.t.min() / 12))
-            t_max = int(12 * ceil(analsyed_df.t.max() / 12))    
+            t_min = int(12 * floor(analysed_df.t.min() / 12))
+            t_max = int(12 * ceil(analysed_df.t.max() / 12))    
             t_range = [t_min, t_max]  
 
-            for i, row, col in zip(range(4), [1,1,2,2], [1,2,1,2]):
+            for i, (lab, row, col) in enumerate(zip(labels, row_list, col_list)):
+                upper, trace, lower, _ = self._plot_line(df = analysed_df, column = f'state_{i}', name = n, marker_col = marker_col.get(i)[c])
+                fig.add_trace(upper,row=row, col=col)
+                fig.add_trace(trace, row=row, col=col) 
+                fig.add_trace(lower, row=row, col=col)
+                if c == 0:
+                    fig.add_annotation(xref='x domain', yref='y domain',x=0.1, y=0.9, text = lab, font = {'size': 18, 'color' : 'black'}, showarrow = False,
+                    row=row, col=col)
 
-                loop_df = analsyed_df.groupby('t').agg(**{
-                            'mean' : (f'state_{i}', 'mean'), 
-                            'SD' : (f'state_{i}', self._pop_std),
-                            'count' : (f'state_{i}', 'count')
-                        })
+        for axis, lab in enumerate(labels):
+            fig['layout'][f'xaxis{axis+1}'].update(
+                zeroline = False,
+                color = 'black',
+                linecolor = 'black',
+                gridcolor = 'black',
+                range = t_range,
+                tick0 = 0,
+                dtick = 6,
+                ticks = 'outside',
+                tickwidth = 2,
+                tickfont = dict(
+                    size = 18
+                ),
+                linewidth = 2,
+                showgrid = False
+            )
 
-                loop_df['SE'] = (1.96*loop_df['SD']) / np.sqrt(loop_df['count'])
-                loop_df['y_max'] = loop_df['mean'] + loop_df['SE']
-                loop_df['y_min'] = loop_df['mean'] - loop_df['SE']
-
-                y = loop_df['mean']
-                y_upper = loop_df['y_max']
-                y_lower = loop_df['y_min']
-                x = loop_df.index.values
-
-                upper_bound = go.Scatter(
-                showlegend = False,
-                x = x,
-                y = y_upper,
-                mode='lines',
-                marker=dict(color="#444"),
-                line=dict(width=0,
-                        shape = 'spline'
-                        ),
-                )
-                fig.add_trace(upper_bound,row=row, col=col)
-
-                trace = go.Scatter(
-                x = x,
-                y = y,
-                mode = 'lines',
-                name = n,
-                line = dict(
-                    shape = 'spline',
-                    color = marker_col.get(i)[c]
-                    ),
-                fill = 'tonexty'
-                )
-                fig.add_trace(trace, row=row, col=col)
-
-                lower_bound = go.Scatter(
-                showlegend = False,
-                x = x,
-                y = y_lower,
-                mode='lines',
-                marker=dict(
-                    color = marker_col.get(i)[c]
-                    ),
-                line=dict(width = 0,
-                        shape = 'spline'
-                        ),
-                fill = 'tonexty'
-                )  
-                fig.add_trace(lower_bound, row=row, col=col)
-
-        fig.update_xaxes(
-            zeroline = False,
-            color = 'black',
-            linecolor = 'black',
-            gridcolor = 'black',
-            range = t_range,
-            tick0 = 0,
-            dtick = 6,
-            ticks = 'outside',
-            tickwidth = 2,
-            tickfont = dict(
-                size = 18
-            ),
-            linewidth = 2,
-            showgrid = False
-        )
-
-        fig.update_yaxes(
-            zeroline = False, 
-            color = 'black',
-            linecolor = 'black',
-            range = [-0.05, 1], 
-            tick0 = 0,
-            dtick = 0.2,
-            ticks = 'outside',
-            tickwidth = 2,
-            tickfont = dict(
-                size = 18
-            ),
-            linewidth = 4,
-            showgrid = grids
-        )
+            fig['layout'][f'yaxis{axis+1}'].update(
+                zeroline = False, 
+                color = 'black',
+                linecolor = 'black',
+                range = [-0.05, 1], 
+                tick0 = 0,
+                dtick = 0.2,
+                ticks = 'outside',
+                tickwidth = 2,
+                tickfont = dict(
+                    size = 18
+                ),
+                linewidth = 4,
+                showgrid = grids
+            )
 
         fig.update_layout(
             title = title,
@@ -663,42 +550,41 @@ class behavpy_HMM(behavpy):
             )
         )
 
-        fig.update_layout(
-            annotations=[
-                go.layout.Annotation({
-                    'font': {'size': 22, 'color' : 'black'},
-                    'showarrow': False,
-                    'text': 'ZT Time (Hours)',
-                    'x': 0.5,
-                    'xanchor': 'center',
-                    'xref': 'paper',
-                    'y': 0,
-                    'yanchor': 'top',
-                    'yref': 'paper',
-                    'yshift': -30
-                }),
-                go.layout.Annotation({
-                    'font': {'size': 22, 'color' : 'black'},
-                    'showarrow': False,
-                    'text': 'Likelihood to be in sleep state',
-                    'x': 0,
-                    'xanchor': 'left',
-                    'xref': 'paper',
-                    'y': 0.5,
-                    'yanchor': 'middle',
-                    'yref': 'paper',
-                    'xshift': -85,
-                    'textangle' : -90
-                })
-            ]
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = 'ZT Time (Hours)',
+                    x = 0.5,
+                    xanchor = 'center',
+                    xref = 'paper',
+                    y = 0,
+                    yanchor = 'top',
+                    yref = 'paper',
+                    yshift = -30
+                )
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = 'Likelihood to be in sleep state)',
+                    x = 0,
+                    xanchor = 'left',
+                    xref = 'paper',
+                    y = 0.5,
+                    yanchor = 'middle',
+                    yref = 'paper',
+                    xshift =  -85,
+                    textangle =  -90
         )
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, circadian_night = circadian_night, split = True)
+        bar_shapes = circadian_bars(t_min, t_max, circadian_night = circadian_night, split = len(labels))
         fig.update_layout(shapes=list(bar_shapes.values()))
 
         if save is True:
-            fig.write_image(location, width=1150, height=650)
+            if location.endswith('.html'):
+                fig.write_html(location)
+            else:
+                fig.write_image(location, width=1500, height=650)
             print(f'Saved to {location}')
             fig.show()
         else:
@@ -711,7 +597,7 @@ class behavpy_HMM(behavpy):
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
-        facet_arg, facet_labels, h_list, b_list = self._check_lists(facet_col, facet_arg, facet_labels, hmm, bin)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
 
         if facet_col is not None:
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
@@ -721,21 +607,15 @@ class behavpy_HMM(behavpy):
         decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
 
         def analysis(array_states):
-
-            counts_all = pd.DataFrame()
-
-            for c, i in enumerate(array_states):
-                if len(labels) == 3:
-                    count_df = pd.DataFrame(data = {0 : (i == 0).sum(), 1 : (i == 1).sum(), 2 : (i == 2).sum()}, index = [c])
-                if len(labels) == 4:
-                    count_df = pd.DataFrame(data = {0 : (i == 0).sum(), 1 : (i == 1).sum(), 2 : (i == 2).sum(), 3 : (i == 3).sum()}, index = [c])
-                if len(labels) == 5:
-                    count_df = pd.DataFrame(data = {0 : (i == 0).sum(), 1 : (i == 1).sum(), 2 : (i == 2).sum(), 3 : (i == 3).sum(), 4 : (i == 4).sum()}, index = [c])
-                counts_all = pd.concat([counts_all, count_df], ignore_index = True)
-                
+            rows = []
+            for array in array_states:
+                unique, counts = np.unique(array, return_counts=True)
+                row = dict(zip(unique, counts))
+                rows.append(row)
+            counts_all =  pd.DataFrame(rows)
             counts_all['sum'] = counts_all.sum(axis=1)
             counts_all = counts_all.iloc[:, list_states[0]: list_states[-1]+1].div(counts_all['sum'], axis=0)
-            
+            counts_all.fillna(0, inplace = True)
             return counts_all
 
         analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0]) for n in facet_arg}
@@ -785,7 +665,7 @@ class behavpy_HMM(behavpy):
         
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
-        facet_arg, facet_labels, h_list, b_list = self._check_lists(facet_col, facet_arg, facet_labels, hmm, bin)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
 
         if facet_col is not None:
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
@@ -850,7 +730,7 @@ class behavpy_HMM(behavpy):
             
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
-        facet_arg, facet_labels, h_list, b_list = self._check_lists(facet_col, facet_arg, facet_labels, hmm, bin)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
 
         if facet_col is not None:
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
@@ -910,7 +790,7 @@ class behavpy_HMM(behavpy):
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
-        facet_arg, facet_labels, h_list, b_list = self._check_lists(facet_col, facet_arg, facet_labels, hmm, bin)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
 
         if facet_col is not None:
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]

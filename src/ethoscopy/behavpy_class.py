@@ -279,6 +279,65 @@ class behavpy(pd.DataFrame):
             name = name
         )
         return trace_box
+
+    @staticmethod  
+    def _plot_line(df, column, name, marker_col, t_col = 't'):
+
+        def pop_std(array):
+            return np.std(array, ddof = 0)
+
+        gb_df = df.groupby(t_col).agg(**{
+                    'mean' : (column, 'mean'), 
+                    'SD' : (column, pop_std),
+                    'count' : (column, 'count')
+                })
+
+        max_var = max(gb_df['mean'])
+
+        gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
+        gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
+        gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
+
+        upper_bound = go.Scatter(
+        showlegend = False,
+        legendgroup = name,
+        x = gb_df.index.values,
+        y = gb_df['y_max'],
+        mode='lines',
+        marker=dict(color="#444"),
+        line=dict(width=0,
+                shape = 'spline'
+                ),
+        )
+        trace = go.Scatter(
+            legendgroup = name,
+            x = gb_df.index.values,
+            y = gb_df['mean'],
+            mode = 'lines',
+            name = name,
+            line = dict(
+                shape = 'spline',
+                color = marker_col
+                ),
+            fill = 'tonexty'
+        )
+
+        lower_bound = go.Scatter(
+            showlegend = False,
+            legendgroup = name,
+            x = gb_df.index.values,
+            y = gb_df['y_min'],
+            mode='lines',
+            marker=dict(
+                color = marker_col
+                ),
+            line=dict(width = 0,
+                    shape = 'spline'
+                    ),
+            fill = 'tonexty'
+        )  
+        return upper_bound, trace, lower_bound, max_var
+
     @staticmethod
     def _get_colours(plot_list):
         if len(plot_list) <= 11:
@@ -586,12 +645,10 @@ class behavpy(pd.DataFrame):
         returns a behavpy object with a single data column
         """
 
-        from math import floor
-
         if column not in self.columns:
             warnings.warn('Column heading "{}", is not in the data table'.format(column))
             exit()
-        self = self.copy(deep = True)
+
         def wrapped_bin_data(data, column = column, bin_column = t_column, function = function, bin_secs = bin_secs):
 
             index_name = data['id'].iloc[0]
@@ -1004,21 +1061,23 @@ class behavpy(pd.DataFrame):
         else:
             warnings.warn('Too many sub groups to plot with the current colour palette')
             exit()
+
+        max_var = []
+
         if self._check_boolean(list(self[variable].dropna())):
-            y_range = [-0.025, 1.01]
+            y_range = [-0.02, 1.01]
             dtick = 0.2
+            max_var.append(1)
         else:
             y_range = False
             dtick = False
         
         fig = go.Figure() 
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
-        self._plot_xlayout(fig, xrange = False, t = 0, dtick = 6, xlabel = 'ZT (Hours)')
+        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = 6, xlabel = 'ZT (Hours)')
 
         min_t = []
         max_t = []
-        
-        max_var = []
 
         for data, name, col in zip(d_list, facet_labels, col_list):
 
@@ -1038,60 +1097,12 @@ class behavpy(pd.DataFrame):
             t_max = int(12 * ceil(data.t.max() / 12)) 
             max_t.append(t_max)
 
-            gb = data.groupby('t').agg(**{
-                        'mean' : ('rolling', 'mean'), 
-                        'SD' : ('rolling', self._pop_std),
-                        'count' : ('rolling', 'count'),
-                    })
+            upper, trace, lower, maxV = self._plot_line(df = data, column = 'rolling', name = name, marker_col = col)
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
 
-            max_var.append(max(gb['mean']))
-
-            gb['SE'] = (1.96*gb['SD']) / np.sqrt(gb['count'])
-            gb['y_max'] = gb['mean'] + gb['SE']
-            gb['y_min'] = gb['mean'] - gb['SE']
-
-            y = gb['mean']
-            y_upper = gb['y_max']
-            y_lower = gb['y_min']
-            x = gb.index.values
-
-            upper_bound = go.Scatter(
-            showlegend = False,
-            x = x,
-            y = y_upper,
-            mode='lines',
-            marker=dict(color="#444"),
-            line=dict(width=0,
-                    shape = 'spline'
-                    ),
-            )
-            fig.add_trace(upper_bound)
-
-            trace = go.Scatter(
-            x = x,
-            y = y,
-            mode = 'lines',
-            name = name,
-            line = dict(
-                shape = 'spline',
-                color = col
-                ),
-            fill = 'tonexty'
-            )
-            fig.add_trace(trace)
-
-            lower_bound = go.Scatter(
-            showlegend = False,
-            x = x,
-            y = y_lower,
-            mode='lines',
-            marker=dict(color=col),
-            line=dict(width = 0,
-                    shape = 'spline'
-                    ),
-            fill = 'tonexty'
-            )  
-            fig.add_trace(lower_bound)
+            max_var.append(maxV)
 
         # Light-Dark annotaion bars
         bar_shapes = circadian_bars(t_min, t_max, max_y = max(max_var), circadian_night = circadian_night)
@@ -1264,7 +1275,7 @@ class behavpy(pd.DataFrame):
                     label_list.append(len(zscore_list) * [v])
             return median_list, q3_list, q1_list, con_list, label_list
 
-        for c, (arg,lab) in enumerate(zip(facet_arg, facet_labels)):
+        for c, lab in enumerate(facet_labels):
             
             median_list, q3_list, q1_list, con_list, label_list = analysis(self)
 
@@ -1525,5 +1536,5 @@ class behavpy(pd.DataFrame):
         else:
             fig.show()
 
-    def plot_fourier(self, varaible = 'moving'):
-        return None
+    # def plot_fourier(self, varaible = 'moving'):
+    #     return None

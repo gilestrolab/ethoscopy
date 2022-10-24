@@ -38,15 +38,17 @@ def circadian_bars(t_min, t_max, max_y = None, circadian_night = 12, split = Fal
     @t_max = int, the maximum time point as a multiple of 12
     @circadian_night = int, the hour the lights turn off, must be between 1 and 23
     """
-    if split == True:
+    if split != False:
         y_size1 = -0.05
         y_size2 = -0.02
-    elif max_y > 0:
+    elif max_y > 0.2:
         y_size1 = -max_y/50
         y_size2 = 0
-    elif max_y < 0.2:
+        split = 1
+    elif max_y <= 0.2:
         y_size1 = 0
         y_size2 = max_y/10   
+        split = 1
 
     if circadian_night < 1 or circadian_night > 23:
         warnings.warn("The arugment for circadian_night must be between 1 and 23")
@@ -61,17 +63,12 @@ def circadian_bars(t_min, t_max, max_y = None, circadian_night = 12, split = Fal
         used_range = fancy_range(t_min, t_max, (circadian_night, 24-circadian_night))
 
     for i, bars in enumerate(used_range):
-
-        for c in range(4):
+        for c in range(split):
             if bars % 24 == 0:
                 white_bar = make_bars(bar = bars, bar_col = 'white', size = circadian_night, split = c, y_size1 = y_size1, y_size2 = y_size2)
                 bar_shapes[f'shape_{i}{c}'] = white_bar
             else:
                 black_bar = make_bars(bar = bars, bar_col = 'black', size = 24 - circadian_night, split = c, y_size1 = y_size1, y_size2 = y_size2)
                 bar_shapes[f'shape_{i}{c}'] = black_bar
-            
-            if split is False:
-                if c == 0:
-                    break
 
     return bar_shapes
