@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np 
 import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 import copy
 
 from math import floor
@@ -53,9 +54,7 @@ def max_velocity_detector(data,
         dt['has_interacted'] = 0
 
     dt['interaction_id'] = dt['has_interacted'].cumsum()
-    dt['mask'] = dt.groupby('interaction_id')['t'].apply(lambda x: pd.Series(np.where(x < (x.min() + masking_duration), True, False), index=x.index))
-    dt.loc[(dt.mask == True) & (dt.interaction_id != 0), 'velocity'] = 0
-
+    dt['mask'] = dt.groupby('interaction_id', group_keys = False)['t'].apply(lambda x: pd.Series(np.where(x < (x.min() + masking_duration), True, False), index=x.index))
     dt['beam_cross'] = dt['beam_cross'] & ~dt['mask']
     dt = dt.drop(columns = ['interaction_id', 'mask'])
 
@@ -159,7 +158,6 @@ def sleep_annotation(data,
     @masking_duration, int, number of seconds during which any movement is ignored (velocity is set to 0) after a stimulus is delivered (a.k.a. interaction),
     @velocity_correction_coef = float, a coefficient to correct the velocity data (change for different length tubes), default is 3e-3
     for beam_cross column, default is 6
-
     returns a pandas dataframe containing columns 'moving' and 'asleep'
     """
 
@@ -244,46 +242,43 @@ def puff_mago(data, response_window = 10, velocity_correction_coef = 3e-3):
     starts = interaction_dt.start.values 
     ends = interaction_dt.end.values  
 
+    # search all time values and retrieve the indexes of values between start and end times
+    # creates two lists. first with indices for data dataframe and the second is the indices for interaction_dt
+    # create dataframe of two
     i, j = np.where((ints[:, None] >= starts) & (ints[:, None] <= ends))
     df = pd.DataFrame(
         np.column_stack([data.values[i], interaction_dt.values[j]]),
         columns= data.columns.append(interaction_dt.columns)
     )
+    # find relative time to interaction and check for movement
+
     df['t_rel'] = df.t - df.int_t
     df.rename(columns = {'int_t' : 'interaction_t'}, inplace = True)
     df['has_responded'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 1), True, False)
     df['has_walked'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 2.5), True, False)
     df.drop(columns = ['xy_dist_log10x1000', 'start', 'end'], inplace = True)
-    
-    # filter by response_window ahead of interaction time and find any postive response, return new df with only interaction time == 0 rows with response
-    df['t'] = np.floor(df['t'])
-    start_list = np.floor(interaction_dt['int_t'].to_numpy()).astype(int)
-    end_list = start_list + response_window
+    df['interaction_id'] = df['has_interacted'].cumsum()
 
-    response_df = pd.DataFrame()
+    response_rows = []
 
-    for i,q in zip(start_list, end_list):
-
-        ls = list(range(i, q+1))
-        boolean_series = df.t.isin(ls)
-        filtered_df = df[boolean_series]
-
-        if any(filtered_df['has_responded']):
-            # response_row = filtered_df[filtered_df['has_responded'] == True].iloc[0]
-            # interaction_id = filtered_df[filtered_df['t_rel'] == 0]['has_interacted'].tolist()
-            # response_row['has_interacted'] = interaction_id[0]
-            # for when you want the data from when the movement occured
-            response_row = filtered_df[filtered_df['t_rel'] == 0]
-            response_row['has_responded'] = True
-            trel_row = filtered_df[filtered_df['has_responded'] == True].iloc[0]
-            response_row['t_rel'] = trel_row['t_rel']
-            response_df = pd.concat([response_df, response_row])
+    # is any response take the interaction row and change response to True and t_rel to time till movement
+    def find_interactions(response_data):
+        if any(response_data['has_responded']):
+            response_dict = response_data[response_data['t_rel'] == 0].to_dict('records')[0]
+            response_dict['has_responded'] = True
+            response_dict['t_rel'] = response_data['t_rel'][response_data['has_responded'] == True].iloc[0]
+            response_dict.pop('interaction_id')
+            response_rows.append(response_dict)
         else:
-            response_df = pd.concat([response_df, filtered_df[filtered_df['t_rel'] == 0]])
+            response_dict = response_data[response_data['t_rel'] == 0].to_dict('records')[0]
+            response_dict.pop('interaction_id')
+            response_rows.append(response_dict)
 
-    return response_df
+    df.groupby('interaction_id').apply(find_interactions)
 
-def find_motifs(data, window = 300, velocity_correction_coef = 3e-3):
+    return pd.DataFrame(response_rows)
+
+def find_motifs(data, window = 300, response_window = 10, velocity_correction_coef = 3e-3):
     """
     Find_motifs is a modification of puff_mago. It only takes data with a populated has_interacted column.
     The function will take a response window (in seconds) to find the variables recorded by the ethoscope in this window prior to an 
@@ -300,6 +295,7 @@ def find_motifs(data, window = 300, velocity_correction_coef = 3e-3):
 
     # check for has_interaction column, will be moved in prior download if all interactions are false
     if any('has_interacted' in ele for ele in data.columns.tolist()) is False:
+        print('ROI was unable to load due to no interactions in the database')
         return None
 
     data['deltaT'] = data.t.diff()
@@ -316,7 +312,7 @@ def find_motifs(data, window = 300, velocity_correction_coef = 3e-3):
         return None
 
     interaction_dt['start'] = interaction_dt.int_t - window
-    interaction_dt['end'] = interaction_dt.int_t + 10
+    interaction_dt['end'] = interaction_dt.int_t + response_window
 
     ints = data.t.values
     starts = interaction_dt.start.values 
@@ -333,7 +329,7 @@ def find_motifs(data, window = 300, velocity_correction_coef = 3e-3):
     df['has_responded'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 1), True, False)
     df['has_walked'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 2.5), True, False)
     df.drop(columns = ['start', 'end'], inplace = True)
-    
+
     # filter by window ahead of interaction time and find any postive response, return new df with only interaction time == 0 rows with response
     df['t'] = np.floor(df['t'])
     start_list = np.floor(interaction_dt['start'].to_numpy()).astype(int)
@@ -359,8 +355,7 @@ def find_motifs(data, window = 300, velocity_correction_coef = 3e-3):
                         'h' : ('h', 'mean'),
                         'phi' : ('phi', 'mean'),
                         'xy_dist_log10x1000' : ('xy_dist_log10x1000', 'mean'),
-                        'velocity' : ('velocity', 'mean'),
-                        'has_responded' : ('has_responded', 'mean')
+                        'velocity' : ('velocity', 'mean')
                 })
         t_range = list(range(0, len(d_small['t'] + 1)))
         t_range.reverse()
@@ -368,7 +363,6 @@ def find_motifs(data, window = 300, velocity_correction_coef = 3e-3):
         if len(d_small) != window + 1:
             return None
         else:
-            d_small.drop(columns = ['has_responded'],  inplace=True)
             d_small['response'] = [response] * len(d_small)
             id = f'{c}_{r}'
             d_small['run_id'] = [id] * len(d_small)

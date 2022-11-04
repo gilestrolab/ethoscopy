@@ -252,7 +252,8 @@ class behavpy(pd.DataFrame):
             jitter = 0.75, 
             pointpos = 0, 
             width = 0.9,
-            name = name
+            name = name,
+            legendgroup = name
         )
         return trace_box
     
@@ -276,7 +277,8 @@ class behavpy(pd.DataFrame):
             jitter = 0.75, 
             pointpos = 0, 
             width = 0.9,
-            name = name
+            name = name,
+            legendgroup = name,
         )
         return trace_box
 
@@ -581,7 +583,7 @@ class behavpy(pd.DataFrame):
                 return bout_times
 
         self.reset_index(inplace = True)
-        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_bout_analysis), self.meta)
+        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_bout_analysis), self.meta, check = True)
 
     def curate_dead_animals(self, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
         
@@ -630,7 +632,7 @@ class behavpy(pd.DataFrame):
 
         tdf = self.copy(deep=True)
         tdf.reset_index(inplace = True)
-        return behavpy(tdf.groupby('id', group_keys = False).apply(wrapped_curate_dead_animals), tdf.meta)
+        return behavpy(tdf.groupby('id', group_keys = False).apply(wrapped_curate_dead_animals), tdf.meta, check = True)
 
     def bin_time(self, column, bin_secs, t_column = 't', function = 'mean'):
         """
@@ -897,7 +899,7 @@ class behavpy(pd.DataFrame):
 
             return new
 
-    def heatmap(self, variable = 'moving'):
+    def heatmap(self, variable = 'moving', title = ''):
         """
         Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
         
@@ -945,6 +947,7 @@ class behavpy(pd.DataFrame):
                         colorscale = 'Viridis'))
 
         fig.update_layout(
+            title = title,
             xaxis = dict(
                 zeroline = False,
                 color = 'black',
@@ -1063,14 +1066,9 @@ class behavpy(pd.DataFrame):
             exit()
 
         max_var = []
-
-        if self._check_boolean(list(self[variable].dropna())):
-            y_range = [-0.02, 1.01]
-            dtick = 0.2
+        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        if y_range is False:
             max_var.append(1)
-        else:
-            y_range = False
-            dtick = False
         
         fig = go.Figure() 
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
@@ -1091,7 +1089,7 @@ class behavpy(pd.DataFrame):
             if wrapped is True:
                 data['t'] = data['t'].map(lambda t: t % 86400)
             data['t'] = data['t'].map(lambda t: t / (60*60))
-
+            
             t_min = int(circadian_night * floor(data.t.min() / circadian_night))
             min_t.append(t_min)
             t_max = int(12 * ceil(data.t.max() / 12)) 
@@ -1149,8 +1147,9 @@ class behavpy(pd.DataFrame):
             
             zscore_list = gdf[f'{variable}_mean'].to_numpy()[np.abs(zscore(gdf[f'{variable}_mean'].to_numpy())) < 3]
             median_list = [np.mean(zscore_list)]
-            q3_list = [bootstrap(zscore_list)[1]]
-            q1_list = [bootstrap(zscore_list)[0]]
+            q1, q3 = bootstrap(zscore_list)
+            q3_list = [q3]
+            q1_list = [q1]
 
             fig.add_trace(self._plot_meanbox(median = median_list, q3 = q3_list, q1 = q1_list, 
             x = [name], colour =  col, showlegend = False, name = name, xaxis = 'x'))
@@ -1191,7 +1190,6 @@ class behavpy(pd.DataFrame):
             con_list = []
             label_list = []
             for d, l in zip(data_list, facet_labels):
-                d = d.copy(deep = True)
                 d.add_day_phase()
                 d = d[d['phase'] == phase]
                 d.drop(['phase', 'day'], axis = 1, inplace = True)
@@ -1199,13 +1197,14 @@ class behavpy(pd.DataFrame):
                 x = t_gb[f'{variable}_mean'].to_numpy()[~np.isnan(t_gb[f'{variable}_mean'].to_numpy())]
                 zscore_list = x[np.abs(zscore(x)) < 3]
                 median_list.append(np.mean(zscore_list))
-                q3_list.append(bootstrap(zscore_list)[1])
-                q1_list.append(bootstrap(zscore_list)[0])
+                q1, q3 = bootstrap(zscore_list)
+                q3_list.append(q3)
+                q1_list.append(q1)
                 con_list.append(zscore_list)
                 label_list.append(len(zscore_list) * [l])
             return median_list, q3_list, q1_list, con_list, label_list
 
-        for c, phase in enumerate(['Light', 'Dark']):
+        for c, phase in enumerate(['light', 'dark']):
             
             median_list, q3_list, q1_list, con_list, label_list = analysis(d_list, phase = phase)
 
@@ -1268,15 +1267,15 @@ class behavpy(pd.DataFrame):
                     t_gb = d.pivot(column = v, function = 'mean')
                     x = t_gb[f'{v}_mean'].to_numpy()[~np.isnan(t_gb[f'{v}_mean'].to_numpy())]
                     zscore_list = x[np.abs(zscore(x)) < 3]
-                    median_list.append(np.mean(zscore_list))
-                    q3_list.append(bootstrap(zscore_list)[1])
-                    q1_list.append(bootstrap(zscore_list)[0])
+                    q1, q3 = bootstrap(zscore_list)
+                    q3_list.append(q3)
+                    q1_list.append(q1)
                     con_list.append(zscore_list)
                     label_list.append(len(zscore_list) * [v])
             return median_list, q3_list, q1_list, con_list, label_list
 
-        for c, lab in enumerate(facet_labels):
-            
+        for c, lab in enumerate(facet_labels):   
+
             median_list, q3_list, q1_list, con_list, label_list = analysis(self)
 
             bool_list = len(variables) * [False]
@@ -1370,8 +1369,9 @@ class behavpy(pd.DataFrame):
                 d['score'] = d[['moving_sum', 'moving_small']].apply(lambda x: ap_score(*x), axis = 1)   
                 zscore_list = d['score'].to_numpy()[np.abs(zscore(d['score'].to_numpy())) < 3]
                 median_list.append(np.mean(zscore_list))
-                q3_list.append(bootstrap(zscore_list)[1])
-                q1_list.append(bootstrap(zscore_list)[0])
+                q1, q3 = bootstrap(zscore_list)
+                q3_list.append(q3)
+                q1_list.append(q1)
                 con_list.append(zscore_list)
                 label_list.append(len(zscore_list) * [l])
 
@@ -1408,7 +1408,7 @@ class behavpy(pd.DataFrame):
         else:
             fig.show()
 
-    def plot_actogram(self, mov_variable = 'moving', t_column = 't', individual = False, individual_label = None, facet_col = None, facet_arg = None, facet_labels = None, title = '', save = False, location = ''):
+    def plot_actogram(self, mov_variable = 'moving', bin_window = 30, t_column = 't', individual = False, individual_label = None, facet_col = None, facet_arg = None, facet_labels = None, title = '', save = False, location = ''):
         
         if individual == True and facet_col != None:
             warnings.warn('You cannot facet when looking at each individual in the dataframe')
@@ -1430,7 +1430,7 @@ class behavpy(pd.DataFrame):
                 for i in range(max_days):
                     x_list_2 = d['t_bin'][d['day'] == i+1].to_numpy() + 24
                     x_list = np.append(d['t_bin'][d['day'] == i].to_numpy(), x_list_2)
-                    y_list = np.append(d['moving_mean'][d['day'] == i].tolist(), d['moving_mean'][d['day'] == i+1].tolist())
+                    y_list = np.append(d[f'{mov_variable}_mean'][d['day'] == i].tolist(), d[f'{mov_variable}_mean'][d['day'] == i+1].tolist())
                     y_mod = np.array([i+1] * len(y_list)) - (y_list)
                     fig.append_trace(go.Box(
                         showlegend = False,
@@ -1473,7 +1473,7 @@ class behavpy(pd.DataFrame):
         row_list = list([i] * root for i in range(1, root+1))
         row_list = [item for sublist in row_list for item in sublist]
 
-        self = self.bin_time(mov_variable, 1800, t_column = t_column)
+        self = self.bin_time(mov_variable, bin_window*60, t_column = t_column)
         self.add_day_phase(time_column = 't_bin')
 
         for arg, col, row in zip(facet_arg, col_list, row_list): 

@@ -1,5 +1,7 @@
 import ftplib
 import os
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 import pandas as pd 
 import numpy as np
 import errno
@@ -9,7 +11,6 @@ from sys import exit
 from pathlib import Path, PurePosixPath
 from functools import partial
 from urllib.parse import urlparse
-import warnings
 
 from ethoscopy.misc.validate_datetime import validate_datetime
 from ethoscopy.misc.format_warning import format_warning
@@ -42,12 +43,12 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
         except Exception as e:
             print("An error occurred: ", e)
     else:
-        warnings.warn("The metadata is not readable")
-        exit()
+        raise FileNotFoundError("The metadata is not readable")
+
     # check and tidy df, removing un-needed columns and duplicated machine names
     if 'machine_name' not in meta_df.columns or 'date' not in meta_df.columns:
-        warnings.warn("Column(s) 'machine_name' and/or 'date' missing from metadata file")
-        exit()
+        raise KeyError("Column(s) 'machine_name' and/or 'date' missing from metadata file")
+
     meta_df.dropna(how = 'all', inplace = True)
 
     if 'time' in meta_df.columns.tolist():
@@ -234,12 +235,12 @@ def link_meta_index(metadata, remote_dir, local_dir):
         except Exception as e:
             print("An error occurred: ", e)
     else:
-        warnings.warn('The metadata is not readable')
-        exit()
+        raise FileNotFoundError("The metadata is not readable")
+
     # check and tidy df, removing un-needed columns and duplicated machine names
     if 'machine_name' not in meta_df.columns or 'date' not in meta_df.columns:
-        warnings.warn("Column(s) 'machine_name' and/or 'date' missing from metadata file")
-        exit()
+        raise KeyError("Column(s) 'machine_name' and/or 'date' missing from metadata file")
+
     meta_df.dropna(axis = 0, how = 'all', inplace = True)
     
     # check the date format is YYYY-MM-DD, without this format the df merge will return empty
@@ -394,6 +395,7 @@ def load_ethoscope(metadata, min_time = 0 , max_time = float('inf'), reference_h
     min_time = min_time * 60 * 60
 
     data = pd.DataFrame()
+
     # iterate over the ROI of each ethoscope in the metadata df
     for i in range(len(metadata.index)):
         try:
@@ -460,11 +462,11 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
             return None
 
         var_df = pd.read_sql_query('SELECT * FROM VAR_MAP', conn)
-        exp_meta = pd.read_sql_query('SELECT * FROM METADATA', conn)
+        date = pd.read_sql_query('SELECT value FROM METADATA WHERE field = "date_time"', conn)
 
         # isolate date_time string and parse to GMT with format YYYY-MM-DD HH-MM-SS
-        exp_meta['value'].loc[exp_meta['field'] == 'date_time'] = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(float(exp_meta['value'].loc[exp_meta['field'] == 'date_time'])))
-        
+        date = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(float(date.iloc[0])))      
+
         if max_time == float('inf'):
             max_time_condtion =  ''
         else:
@@ -479,8 +481,8 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
             data = data.drop(columns = ['id'])
 
         if reference_hour != None:
-            t = exp_meta['value'].loc[exp_meta['field'] == 'date_time']
-            t = t.iloc[0].split(' ')
+            t = date
+            t = t.split(' ')
             hh, mm , ss = map(int, t[1].split(':'))
             hour_start = hh + mm/60 + ss/3600
             t_after_ref = ((hour_start - reference_hour) % 24) * 3600 * 1e3
@@ -492,11 +494,7 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
         roi_width = max(roi_row['w'].iloc[0], roi_row['h'].iloc[0])
         for var_n in var_df['var_name']:
             if var_df['functional_type'][var_df['var_name'] == var_n].iloc[0] == 'distance':
-                data[var_n] = data[var_n].map(lambda x: x / roi_width)
-                continue
-
-            if var_df['sql_type'][var_df['var_name'] == var_n].iloc[0] == 'BOOLEAN': 
-                data[var_n] = data[var_n].map(lambda x: bool(x)) 
+                data[var_n] = data[var_n] / roi_width
 
         if 'is_inferred' and 'has_interacted' in data.columns:
             data = data[(data['is_inferred'] == False) | (data['has_interacted'] == True)]
@@ -515,5 +513,5 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
 
         return data
 
-    finally: 
+    finally:
         conn.close()
