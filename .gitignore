@@ -7,6 +7,5 @@ __pycache__/
 ethoscopy.egg-info/
 *.toml
 load_test.py
-load_test copy.py
 *.ipynb
 *.pkl

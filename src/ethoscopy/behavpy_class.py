@@ -1250,33 +1250,33 @@ class behavpy(pd.DataFrame):
 
         fig = make_subplots(specs=[[{ "secondary_y" : True}]])
 
-        def analysis(data):
+        def analysis(data, arg):
             median_list = []
             q3_list = []
             q1_list = []
             con_list = []
             label_list = []
 
-            for arg in facet_arg:
-                if arg != '':
-                    d = data.xmv(facet_col, arg)
-                else:
-                    d = data.copy(deep=True)
-
-                for v in variables:
-                    t_gb = d.pivot(column = v, function = 'mean')
-                    x = t_gb[f'{v}_mean'].to_numpy()[~np.isnan(t_gb[f'{v}_mean'].to_numpy())]
-                    zscore_list = x[np.abs(zscore(x)) < 3]
-                    q1, q3 = bootstrap(zscore_list)
-                    q3_list.append(q3)
-                    q1_list.append(q1)
-                    con_list.append(zscore_list)
-                    label_list.append(len(zscore_list) * [v])
+            if arg != '':
+                d = data.xmv(facet_col, arg)
+            else:
+                d = data.copy(deep=True)
+            for v in variables:
+                t_gb = d.pivot(column = v, function = 'mean')
+                x = t_gb[f'{v}_mean'].to_numpy()[~np.isnan(t_gb[f'{v}_mean'].to_numpy())]
+                zscore_list = x[np.abs(zscore(x)) < 3]
+                median_list.append(np.mean(zscore_list))
+                q1, q3 = bootstrap(zscore_list)
+                q3_list.append(q3)
+                q1_list.append(q1)
+                con_list.append(zscore_list)
+                label_list.append(len(zscore_list) * [v])
+                
             return median_list, q3_list, q1_list, con_list, label_list
 
-        for c, lab in enumerate(facet_labels):   
+        for c, (arg, lab) in enumerate(zip(facet_arg, facet_labels)):   
 
-            median_list, q3_list, q1_list, con_list, label_list = analysis(self)
+            median_list, q3_list, q1_list, con_list, label_list = analysis(self, arg)
 
             bool_list = len(variables) * [False]
             bool_list[-1] = True
