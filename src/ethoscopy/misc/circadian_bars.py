@@ -31,7 +31,7 @@ def make_bars(bar, bar_col, size, split, y_size1, y_size2):
 
     return shaped_bar
 
-def circadian_bars(t_min, t_max, max_y = None, circadian_night = 12, split = False):
+def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split = False):
     """ 
     create boxes within plotly to represent the light, dark phases in light sensitive experiments
     @t_min = int, the minimum time point as a multiple of 12 
@@ -50,25 +50,25 @@ def circadian_bars(t_min, t_max, max_y = None, circadian_night = 12, split = Fal
         y_size2 = max_y/10   
         split = 1
 
-    if circadian_night < 1 or circadian_night > 23:
-        warnings.warn("The arugment for circadian_night must be between 1 and 23")
+    if lights_off < 1 or lights_off > day_length:
+        warnings.warn(f"The arugment for lights_off must be between 1 and {day_length}")
         exit()
 
     # Light-Dark annotaion bars
     bar_shapes = {}
 
-    if (t_min - circadian_night) % 12 == 0:
-        used_range = fancy_range(t_min, t_max, (24-circadian_night, circadian_night))
+    if (t_min - lights_off) % (day_length/2) == 0:
+        used_range = fancy_range(t_min, t_max, (day_length-lights_off, lights_off))
     else:
-        used_range = fancy_range(t_min, t_max, (circadian_night, 24-circadian_night))
+        used_range = fancy_range(t_min, t_max, (lights_off, day_length-lights_off))
 
     for i, bars in enumerate(used_range):
         for c in range(split):
-            if bars % 24 == 0:
-                white_bar = make_bars(bar = bars, bar_col = 'white', size = circadian_night, split = c, y_size1 = y_size1, y_size2 = y_size2)
+            if bars % day_length == 0:
+                white_bar = make_bars(bar = bars, bar_col = 'white', size = lights_off, split = c, y_size1 = y_size1, y_size2 = y_size2)
                 bar_shapes[f'shape_{i}{c}'] = white_bar
             else:
-                black_bar = make_bars(bar = bars, bar_col = 'black', size = 24 - circadian_night, split = c, y_size1 = y_size1, y_size2 = y_size2)
+                black_bar = make_bars(bar = bars, bar_col = 'black', size = day_length - lights_off, split = c, y_size1 = y_size1, y_size2 = y_size2)
                 bar_shapes[f'shape_{i}{c}'] = black_bar
 
     return bar_shapes

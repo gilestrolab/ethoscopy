@@ -365,7 +365,7 @@ class behavpy_HMM(behavpy):
         """
         self._hmm_table(start_prob = hmm.startprob_, trans_prob = hmm.transmat_, emission_prob = hmm.emissionprob_, state_names = states, observable_names = observables)
 
-    def plot_hmm_overtime(self, hmm, variable = 'moving', labels = None, colours = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, circadian_night = 12, title = '', grids = False, save = False, location = ''):
+    def plot_hmm_overtime(self, hmm, variable = 'moving', labels = None, colours = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
         """
         Creates a plot of all states overlayed with y-axis shows the liklihood of being in a sleep state and the x-axis showing time in hours.
         The plot is generated through the plotly package
@@ -401,7 +401,7 @@ class behavpy_HMM(behavpy):
             df = pd.concat([df, tdf], ignore_index = True)
 
         if wrapped is True:
-            df['t'] = df['t'].map(lambda t: t % 86400)
+            df['t'] = df['t'].map(lambda t: t % (60*60*day_length))
 
         df['t'] = df['t'] / (60*60)
         t_min = int(12 * floor(df.t.min() / 12))
@@ -410,7 +410,7 @@ class behavpy_HMM(behavpy):
 
         fig = go.Figure()
         self._plot_ylayout(fig, yrange = [-0.025, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Probability of being in state', title = title, grid = grids)
-        self._plot_xlayout(fig, xrange = t_range, t0 = 0, dtick = 6, xlabel = 'ZT (Hours)')
+        self._plot_xlayout(fig, xrange = t_range, t0 = 0, dtick = day_length/4, xlabel = 'ZT (Hours)')
 
         for c, (col, n) in enumerate(zip(colours, labels)):
 
@@ -420,20 +420,20 @@ class behavpy_HMM(behavpy):
             fig.add_trace(lower)
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, max_y = 1, circadian_night = circadian_night)
+        bar_shapes = circadian_bars(t_min, t_max, max_y = 1, day_length = day_length, lights_off = lights_off)
         fig.update_layout(shapes=list(bar_shapes.values()))
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
 
-    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, circadian_night = 12, title = '', grids = False, save = False, location = ''):
+    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
         """ works for any number of states """
 
         assert isinstance(wrapped, bool)
@@ -479,7 +479,7 @@ class behavpy_HMM(behavpy):
                 analysed_df = pd.concat([analysed_df, temp_df], ignore_index = False)
 
             if wrapped is True:
-                analysed_df['t'] = analysed_df['t'].map(lambda t: t % 86400)
+                analysed_df['t'] = analysed_df['t'].map(lambda t: t % 60*60*day_length)
             analysed_df['t'] = analysed_df['t'] / (60*60)
 
             if 'control' in n.lower() or 'baseline' in n.lower() or 'ctrl' in n.lower():
@@ -577,20 +577,20 @@ class behavpy_HMM(behavpy):
         )
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, circadian_night = circadian_night, split = len(labels))
+        bar_shapes = circadian_bars(t_min, t_max, day_length = day_length, lights_off = lights_off, split = len(labels))
         fig.update_layout(shapes=list(bar_shapes.values()))
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
 
-    def plot_hmm_quantify(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False, location = ''):
+    def plot_hmm_quantify(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False):
         """
         
         """
@@ -651,17 +651,17 @@ class behavpy_HMM(behavpy):
             axis = f'xaxis{state+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
     
-    def plot_hmm_quantify_length(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False, location = ''):
+    def plot_hmm_quantify_length(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False):
         
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
@@ -716,17 +716,17 @@ class behavpy_HMM(behavpy):
             axis = f'xaxis{state+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
 
-    def plot_hmm_quantify_length_min_max(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False, location = ''):
+    def plot_hmm_quantify_length_min_max(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False):
             
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
@@ -776,17 +776,17 @@ class behavpy_HMM(behavpy):
             axis = f'xaxis{state+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
             
-    def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False, location = ''):
+    def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False):
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
@@ -840,17 +840,17 @@ class behavpy_HMM(behavpy):
             axis = f'xaxis{state+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
 
-    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, bin = 60, mago_df = None, func = 'max', title = '', save = False, location = ''):
+    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, bin = 60, mago_df = None, func = 'max', title = '', save = False):
         """ plots the raw dedoded hmm model per fly (total = num_plots) 
             If hmm is a list of hmm objects, the number of plots will equal the length of that list. Use this to compare hmm models.
             If hmm_compare is True the same specimens data will be used for each plot with a different hmm """
@@ -999,12 +999,12 @@ class behavpy_HMM(behavpy):
             col = 1
         )
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()

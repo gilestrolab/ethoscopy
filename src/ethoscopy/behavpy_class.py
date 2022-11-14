@@ -721,7 +721,7 @@ class behavpy(pd.DataFrame):
 
             print(group)
 
-    def add_day_phase(self, time_column = 't', circadian_night = 12, inplace = True):
+    def add_day_phase(self, time_column = 't', day_length = 24, lights_off = 12, inplace = True):
         """ 
         Adds a column called 'phase' with either light or dark as catergories according to its time compared to the reference hour
         Adds a column with the day the row in, starting with 1 as day zero and increasing sequentially.
@@ -731,22 +731,18 @@ class behavpy(pd.DataFrame):
             
         returns a new df is inplace is False, else nothing
         """
+        day_in_secs = 60*60*day_length
+        night_in_secs = lights_off * 60 * 60
 
         if inplace == True:
-            self['day'] = self[time_column].map(lambda t: floor(t / 86400))
-            
-            night_in_secs = circadian_night * 60 * 60
-
-            self['phase'] = np.where(((self[time_column] % 86400) > night_in_secs), 'dark', 'light')
+            self['day'] = self[time_column].map(lambda t: floor(t / day_in_secs))
+            self['phase'] = np.where(((self[time_column] % day_in_secs) > night_in_secs), 'dark', 'light')
             self['phase'] = self['phase'].astype('category')
 
         elif inplace == False:
             new_df = self.copy(deep = True)
-            new_df['day'] = new_df[time_column].map(lambda t: floor(t / 86400))
-            
-            night_in_secs = circadian_night * 60 * 60
-
-            new_df['phase'] = np.where(((new_df[time_column] % 86400) > night_in_secs), 'dark', 'light')
+            new_df['day'] = new_df[time_column].map(lambda t: floor(t / day_in_secs)) 
+            new_df['phase'] = np.where(((new_df[time_column] % day_in_secs) > night_in_secs), 'dark', 'light')
             new_df['phase'] = new_df['phase'].astype('category')
 
             return new_df
@@ -867,7 +863,7 @@ class behavpy(pd.DataFrame):
         else:
             self[time_column] = self[time_column].map(lambda t: t % hours_in_seconds)
 
-    def baseline(self, column, t_column = 't', inplace = False):
+    def baseline(self, column, t_column = 't', day_length = 24, inplace = False):
         """
         A function to add days to the time series data per animal so align interaction times per user discretion
 
@@ -887,7 +883,7 @@ class behavpy(pd.DataFrame):
 
         def d2s(x):
             id = x.name
-            seconds = dict.get(id) * 86400
+            seconds = dict.get(id) * (60*60*day_length)
             return x[t_column] + seconds
 
         if inplace is True:
@@ -1045,7 +1041,7 @@ class behavpy(pd.DataFrame):
         
         return self.remove('id', id_list)
 
-    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, circadian_night = 12, title = '', grids = False, save = False, location = ''):
+    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1072,7 +1068,7 @@ class behavpy(pd.DataFrame):
         
         fig = go.Figure() 
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
-        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = 6, xlabel = 'ZT (Hours)')
+        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = day_length/4, xlabel = 'ZT (Hours)')
 
         min_t = []
         max_t = []
@@ -1087,10 +1083,10 @@ class behavpy(pd.DataFrame):
             data = data.dropna(subset = ['rolling'])
 
             if wrapped is True:
-                data['t'] = data['t'].map(lambda t: t % 86400)
+                data['t'] = data['t'].map(lambda t: t % (60*60*day_length))
             data['t'] = data['t'].map(lambda t: t / (60*60))
-            
-            t_min = int(circadian_night * floor(data.t.min() / circadian_night))
+
+            t_min = int(lights_off * floor(data.t.min() / lights_off))
             min_t.append(t_min)
             t_max = int(12 * ceil(data.t.max() / 12)) 
             max_t.append(t_max)
@@ -1103,22 +1099,22 @@ class behavpy(pd.DataFrame):
             max_var.append(maxV)
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, max_y = max(max_var), circadian_night = circadian_night)
+        bar_shapes = circadian_bars(t_min, t_max, max_y = max(max_var), day_length = day_length, lights_off = lights_off)
         fig.update_layout(shapes=list(bar_shapes.values()))
     
         fig['layout']['xaxis']['range'] = [t_min, t_max]
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
 
-    def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False, location = ''):
+    def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1157,17 +1153,17 @@ class behavpy(pd.DataFrame):
             fig.add_trace(self._plot_boxpoints(y = zscore_list, x = len(zscore_list) * [name], colour = col, 
             showlegend = False, name = name, xaxis = 'x'))
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
 
-    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False, location = ''):
+    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1190,7 +1186,7 @@ class behavpy(pd.DataFrame):
             con_list = []
             label_list = []
             for d, l in zip(data_list, facet_labels):
-                d.add_day_phase()
+                d.add_day_phase(day_length = day_length, lights_off = lights_off)
                 d = d[d['phase'] == phase]
                 d.drop(['phase', 'day'], axis = 1, inplace = True)
                 t_gb = d.pivot(column = variable, function = 'mean')
@@ -1225,17 +1221,17 @@ class behavpy(pd.DataFrame):
             axis = f'xaxis{c+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = phase, domains = domains[c:c+2], axis = axis)
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
     
-    def plot_compare_variables(self, variables, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False, location = ''):
+    def plot_compare_variables(self, variables, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False):
         """the first variable in the list is the left hand axis, the last is the right hand axis"""
 
         assert(isinstance(variables, list))
@@ -1308,17 +1304,17 @@ class behavpy(pd.DataFrame):
         y_range, dtick = self._check_boolean(list(self[variables[-1]].dropna()))
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variables[-1], title = title, secondary = True, xdomain = f'x{axis_counter}', grid = grids)
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
 
-    def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False, location = ''):
+    def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1349,11 +1345,11 @@ class behavpy(pd.DataFrame):
             label_list = []
 
             if phase == 'Lights Off':
-                start = [6, 9]
-                end = 11.8
+                start = [lights_off - 6, lights_off - 3]
+                end = lights_off - 0.2
             elif phase == 'Lights On':
-                start = [18, 21]
-                end = 23.8
+                start = [day_length - 6, day_length - 3]
+                end = day_length - 0.2
 
             for d, l in zip(data_list, facet_labels):
                 d = d.dropna(subset = [mov_variable])
@@ -1398,17 +1394,17 @@ class behavpy(pd.DataFrame):
             axis = f'xaxis{c+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = phase, domains = domains[c:c+2], axis = axis)
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
 
-    def plot_actogram(self, mov_variable = 'moving', bin_window = 30, t_column = 't', individual = False, individual_label = None, facet_col = None, facet_arg = None, facet_labels = None, title = '', save = False, location = ''):
+    def plot_actogram(self, mov_variable = 'moving', bin_window = 30, t_column = 't', individual = False, individual_label = None, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = '', save = False):
         
         if individual == True and facet_col != None:
             warnings.warn('You cannot facet when looking at each individual in the dataframe')
@@ -1489,7 +1485,7 @@ class behavpy(pd.DataFrame):
                     'day' : ('day', 'max')
                 })
                 d.reset_index(inplace = True)
-                d['t_bin'] = d['t_bin'].map(lambda t: (t % 86400) / (60*60))
+                d['t_bin'] = d['t_bin'].map(lambda t: (t % (day_length*60*60)) / (60*60))
 
             make_plots(d, col, row)
 
@@ -1526,12 +1522,12 @@ class behavpy(pd.DataFrame):
         fig['layout']['title'] = title
         fig['layout']['plot_bgcolor'] = 'white'
 
-        if save is True:
-            if location.endswith('.html'):
-                fig.write_html(location)
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                fig.write_image(location, width=1500, height=650)
-            print(f'Saved to {location}')
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
             fig.show()
         else:
             fig.show()
