@@ -8,6 +8,7 @@ from plotly.express.colors import qualitative
 from math import floor, ceil, sqrt
 from sys import exit
 from scipy.stats import zscore
+from functools import partial
 
 from ethoscopy.misc.format_warning import format_warning
 from ethoscopy.misc.circadian_bars import circadian_bars
@@ -508,7 +509,57 @@ class behavpy(pd.DataFrame):
 
         return pivot
 
-    def sleep_bout_analysis(self, sleep_column = 'asleep', as_hist = False, max_bins = 30, asleep = True):
+    @staticmethod
+    def _wrapped_bout_analysis(data, var_name, as_hist, bin_size, max_bins, time_immobile, asleep):
+        """ Finds runs of bouts of immobility or moving and sorts into a historgram per unqiue specimen in a behavpy dataframe"""
+
+        index_name = data['id'].iloc[0]
+        bin_width = bin_size*60
+        
+        dt = data[['t',var_name]].copy(deep = True)
+        dt['deltaT'] = dt.t.diff()
+        bout_rle = rle(dt[var_name])
+        vals = bout_rle[0]
+        bout_range = list(range(1,len(vals)+1))
+
+        bout_id = []
+        for c, i in enumerate(bout_range):
+            bout_id += ([i] * bout_rle[2][c])
+
+        bout_df = pd.DataFrame({'bout_id' : bout_id, 'deltaT' : dt['deltaT']})
+        bout_times = bout_df.groupby('bout_id').agg(
+        duration = pd.NamedAgg(column='deltaT', aggfunc='sum')
+        )
+        bout_times[var_name] = vals
+        time = np.array([dt.t.iloc[0]])
+        time = np.concatenate((time, bout_times['duration'].iloc[:-1]), axis = None)
+        time = np.cumsum(time)
+        bout_times['t'] = time
+        bout_times.reset_index(level=0, inplace=True)
+        bout_times.drop(columns = ['bout_id'], inplace = True)
+        old_index = pd.Index([index_name] * len(bout_times.index), name = 'id')
+        bout_times.set_index(old_index, inplace =True)
+
+        if as_hist is True:
+
+            filtered = bout_times[bout_times[var_name] == asleep]
+            filtered['duration_bin'] = filtered['duration'].map(lambda d: bin_width * floor(d / bin_width))
+            bout_gb = filtered.groupby('duration_bin').agg(**{
+                        'count' : ('duration_bin', 'count')
+            })
+            bout_gb['prob'] = bout_gb['count'] / bout_gb['count'].sum()
+            bout_gb.rename_axis('bins', inplace = True)
+            bout_gb.reset_index(level=0, inplace=True)
+            old_index = pd.Index([index_name] * len(bout_gb.index), name = 'id')
+            bout_gb.set_index(old_index, inplace =True)
+            bout_gb = bout_gb[(bout_gb['bins'] >= time_immobile * 60) & (bout_gb['bins'] <= max_bins*bin_width)]
+
+            return bout_gb
+
+        else:
+            return bout_times
+
+    def sleep_bout_analysis(self, sleep_column = 'asleep', as_hist = False, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True):
         """ 
         Augments a behavpy objects sleep column to have duration and start of the sleep bouts, must contain a column with boolean values for sleep
 
@@ -516,7 +567,6 @@ class behavpy(pd.DataFrame):
         @sleep_column = string, default 'asleep'. Name of column in the data containing sleep data as a boolean
         @as_hist = bool, default False. If true the data will be augmented further into data appropriate for a histogram 
         Subsequent params only apply if as_hist is True
-        @relative = bool, default True. Changes frequency from absolute to proportional with 1 equalling 100%
         @max_bins = integer, default 30. The number of bins for the data to be sorted into for the histogram, each bin is 1 minute
         @asleep = bool, default True. If True the histogram represents sleep bouts, if false bouts of awake
 
@@ -530,60 +580,87 @@ class behavpy(pd.DataFrame):
             warnings.warn(f'Column heading "{sleep_column}", is not in the data table')
             exit()
 
-        def wrapped_bout_analysis(data, var_name = sleep_column, as_hist = as_hist, max_bins = max_bins, asleep = asleep):
+        self = self.reset_index().copy(deep = True)
+        return behavpy(self.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
+            var_name = sleep_column, 
+            as_hist = as_hist, 
+            bin_size = bin_size, 
+            max_bins = max_bins, 
+            time_immobile = time_immobile, 
+            asleep = asleep)), 
+            self.meta, check = True)
 
-            index_name = data['id'].iloc[0]
-            
-            dt = data[['t',var_name]].copy(deep = True)
-            dt['deltaT'] = dt.t.diff()
-            bout_rle = rle(dt[var_name])
-            vals = bout_rle[0]
-            bout_range = list(range(1,len(vals)+1))
+    def plot_sleep_bouts(self, sleep_column = 'asleep', facet_col = None, facet_arg = None, facet_labels = None, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True, title = '', save = False, grids = False):
+        """ Plot with faceting the sleep bouts analysis function"""
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-            bout_id = []
-            for c, i in enumerate(bout_range):
-                bout_id += ([i] * bout_rle[2][c])
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+        
+        col_list = self._get_colours(d_list)
 
-            bout_df = pd.DataFrame({'bout_id' : bout_id, 'deltaT' : dt['deltaT']})
-            bout_times = bout_df.groupby('bout_id').agg(
-            duration = pd.NamedAgg(column='deltaT', aggfunc='sum')
-            )
-            bout_times[var_name] = vals
-            time = np.array([dt.t.iloc[0]])
-            time = np.concatenate((time, bout_times['duration'].iloc[:-1]), axis = None)
-            time = np.cumsum(time)
-            bout_times['t'] = time
-            bout_times.reset_index(level=0, inplace=True)
-            bout_times.drop(columns = ['bout_id'], inplace = True)
-            old_index = pd.Index([index_name] * len(bout_times.index), name = 'id')
-            bout_times.set_index(old_index, inplace =True)
+        fig = go.Figure()
+        max_y = []
+        for data, name, col in zip(d_list, facet_labels, col_list):
 
-            if as_hist is True:
+            data = data.reset_index()
+            bouts = data.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
+            var_name = sleep_column, 
+            as_hist = True, 
+            bin_size = bin_size, 
+            max_bins = max_bins, 
+            time_immobile = time_immobile, 
+            asleep = asleep))
 
-                filtered = bout_times[bout_times[var_name] == asleep]
+            plot_gb = bouts.groupby('bins').agg(**{
+                    'mean' : ('prob', 'mean'),
+                    'SD' : ('prob', self._pop_std),
+                    'count' : ('prob', 'count')
+            })
+            plot_gb['SE'] = (1.96*plot_gb['SD']) / np.sqrt(plot_gb['count'])
 
-                breaks = list(range(0, max_bins*60, 60))
-                bout_cut = pd.DataFrame(pd.cut(filtered.duration, breaks, right = False, labels = breaks[1:]))
-                bout_gb = bout_cut.groupby('duration').agg(
-                count = pd.NamedAgg(column = 'duration', aggfunc = 'count')
+            x = plot_gb.index.to_numpy()
+            x = x / 60
+            y = plot_gb['mean'].to_numpy()
+            max_y.append(round(np.max(y) + 0.1, 1))
+
+            trace = go.Bar(
+                showlegend = True,
+                name = name,
+                x = x, 
+                y = y,
+                opacity = 0.5,
+                marker = dict(
+                    color = col,
+                    line = dict(
+                        color = col
+                    )
+                ),
+                error_y = dict(
+                    array = plot_gb['SE'].tolist(),
+                    symmetric = True,
+                    )
                 )
-                bout_gb['prob'] = bout_gb['count'] / bout_gb['count'].sum()
-                bout_gb.rename_axis('bins', inplace = True)
-                bout_gb.reset_index(level=0, inplace=True)
-                old_index = pd.Index([index_name] * len(bout_gb.index), name = 'id')
-                bout_gb.set_index(old_index, inplace =True)
+            fig.add_trace(trace)
+            
+        fig.update_layout(barmode = 'overlay', bargap=0)
+        self._plot_ylayout(fig, yrange = [0, max(max_y)], t0 = 0, dtick = max(max_y) / 5, ylabel = 'Proportion of total Bouts', title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = [time_immobile, np.max(x)+0.5], t0 = time_immobile, dtick = bin_size, xlabel = 'Bouts (minutes)')
 
-                # bout_times = bout_times[(bout_times['moving'] == True) & (bout_times['duration'] < (max_bins*60))]
-                # fig = px.histogram(bout_times, x="duration", histnorm='percent')
-                # fig.show()
-
-                return bout_gb
-
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
             else:
-                return bout_times
-
-        self.reset_index(inplace = True)
-        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_bout_analysis), self.meta, check = True)
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
+            fig.show()
+        else:
+            fig.show()
 
     def curate_dead_animals(self, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
         
@@ -592,7 +669,7 @@ class behavpy(pd.DataFrame):
 
         Params:
         @t_column = string, column heading for the data frames time stamp column (default is 't')
-        @mov_column string, logical variable in `data` used to define the moving (alive) state (default is `moving`)
+        @mov_column = string, logical variable in `data` used to define the moving (alive) state (default is `moving`)
         @time_window = int, window during which to define death 
         @prop_immobile = float, proportion of immobility that counts as "dead" during time_window 
         @resolution = int, how much scanning windows overlap. Expressed as a factor. 
@@ -858,10 +935,10 @@ class behavpy(pd.DataFrame):
         hours_in_seconds = wrap_time * 60 * 60
         if inplace == False:
             new = self.copy(deep = True)
-            new[time_column] = new[time_column].map(lambda t: t % hours_in_seconds)
+            new[time_column] = new.time_column % hours_in_seconds
             return new
         else:
-            self[time_column] = self[time_column].map(lambda t: t % hours_in_seconds)
+            self[time_column] = self.time_column % hours_in_seconds
 
     def baseline(self, column, t_column = 't', day_length = 24, inplace = False):
         """
