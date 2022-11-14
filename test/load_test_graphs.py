@@ -34,6 +34,8 @@ df = df.t_filter(start_time = 24, end_time = 144)
 # facet_col = 'species',
 # facet_arg = arg_list,
 # facet_labels = labels,
+# day_length = 35,
+# lights_off = 28,
 # save = False, 
 # location = '')
 
@@ -97,14 +99,14 @@ df = df.t_filter(start_time = 24, end_time = 144)
 # save = False, 
 # location = '')
 
-df.plot_compare_variables(
-variables = ['micro', 'walk', 'mean_velocity'],
-facet_col = 'species',
-facet_arg = arg_list,
-facet_labels = labels,
-grids = True,
-save = False, 
-location = '')
+# df.plot_compare_variables(
+# variables = ['micro', 'walk', 'mean_velocity'],
+# facet_col = 'species',
+# facet_arg = arg_list,
+# facet_labels = labels,
+# grids = True,
+# save = False, 
+# location = '')
 
 # df = df.xmv('species','D.vir')
 # df.plot_hmm_overtime(
