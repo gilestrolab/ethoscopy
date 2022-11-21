@@ -236,7 +236,30 @@ class behavpy(pd.DataFrame):
             fig['layout'][axis]['title'].update(text = xlabel)
         if domains is not False:
             fig['layout'][axis].update(domain = domains)
-    
+
+    @staticmethod
+    def _zscore_bootstrap(array, min_max = False):
+        try:
+            if len(array) == 1 or all(array == array[0]):
+                median, q3, q1 = array[0]
+                zlist = array
+            else:
+                zlist = array[np.abs(zscore(array)) < 3]
+                median = zlist.mean()
+                boot_array = bootstrap(zlist)
+                q3 = boot_array[1]
+                q1 = boot_array[0]
+
+        except ZeroDivisionError:
+            median, q3, q1 = 0
+            zlist = array
+
+        if min_max == True:
+            q3 = np.max(array)
+            q1 = np.min(array)
+            
+        return median, q3, q1, zlist
+
     @staticmethod
     def _plot_meanbox(median, q3, q1, x, colour, showlegend, name, xaxis):
         trace_box = go.Box(
@@ -472,7 +495,7 @@ class behavpy(pd.DataFrame):
 
         for df in args:
 
-            if isinstance(df, behavpy) is not True:
+            if isinstance(df, type(self)) is not True or isinstance(df, behavpy) is not True:
                 warnings.warn('Object(s) to concat is(are) not a Behavpy object')
                 exit()
 
@@ -580,15 +603,15 @@ class behavpy(pd.DataFrame):
             warnings.warn(f'Column heading "{sleep_column}", is not in the data table')
             exit()
 
-        self = self.reset_index().copy(deep = True)
-        return behavpy(self.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
-            var_name = sleep_column, 
-            as_hist = as_hist, 
-            bin_size = bin_size, 
-            max_bins = max_bins, 
-            time_immobile = time_immobile, 
-            asleep = asleep)), 
-            self.meta, check = True)
+        tdf = self.reset_index().copy(deep = True)
+        return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
+                                                                                                var_name = sleep_column, 
+                                                                                                as_hist = as_hist, 
+                                                                                                bin_size = bin_size, 
+                                                                                                max_bins = max_bins, 
+                                                                                                time_immobile = time_immobile, 
+                                                                                                asleep = asleep
+            )), tdf.meta, check = True)
 
     def plot_sleep_bouts(self, sleep_column = 'asleep', facet_col = None, facet_arg = None, facet_labels = None, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True, title = '', save = False, grids = False):
         """ Plot with faceting the sleep bouts analysis function"""
@@ -662,6 +685,24 @@ class behavpy(pd.DataFrame):
         else:
             fig.show()
 
+    @staticmethod
+    def _wrapped_curate_dead_animals(data, time_var, moving_var, time_window, prop_immobile, resolution): 
+        
+        time_window = (60 * 60 * time_window)
+        d = data[[time_var, moving_var]].copy(deep = True)
+        target_t = np.array(list(range(d.t.min().astype(int), d.t.max().astype(int), floor(time_window / resolution))))
+        local_means = np.array([d[d[time_var].between(i, i + time_window)][moving_var].mean() for i in target_t])
+
+        first_death_point = np.where(local_means <= prop_immobile, True, False)
+
+        if any(first_death_point) is False:
+            return data
+
+        last_valid_point = target_t[first_death_point]
+
+        curated_data = data[data[time_var].between(data.t.min(), last_valid_point[0])]
+        return curated_data
+
     def curate_dead_animals(self, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
         
         """ 
@@ -685,31 +726,35 @@ class behavpy(pd.DataFrame):
             warnings.warn('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
             exit()
 
-        def wrapped_curate_dead_animals(data, 
-                                        time_var = t_column,
-                                        moving_var = mov_column,
-                                        time_window = time_window, 
-                                        prop_immobile = prop_immobile,
-                                        resolution = resolution): 
-            time_window = (60 * 60 * time_window)
+        tdf = self.reset_index().copy(deep=True)
+        return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_curate_dead_animals,
+                                                                                                            time_var = t_column,
+                                                                                                            moving_var = mov_column,
+                                                                                                            time_window = time_window, 
+                                                                                                            prop_immobile = prop_immobile,
+                                                                                                            resolution = resolution
+        )), tdf.meta, check = True)
 
-            d = data[[time_var, moving_var]].copy(deep = True)
-            target_t = np.array(list(range(d.t.min().astype(int), d.t.max().astype(int), floor(time_window / resolution))))
-            local_means = np.array([d[d[time_var].between(i, i + time_window)][moving_var].mean() for i in target_t])
+    @staticmethod
+    def _wrapped_bin_data(data, column, bin_column, function, bin_secs):
 
-            first_death_point = np.where(local_means <= prop_immobile, True, False)
+        index_name = data['id'].iloc[0]
 
-            if any(first_death_point) is False:
-                return data
+        data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
+        
+        output_parse_name = f'{column}_{function}' # create new column name
+    
+        bout_gb = data.groupby(bin_column).agg(**{
+            output_parse_name : (column, function)    
+        })
 
-            last_valid_point = target_t[first_death_point]
+        bin_parse_name = f'{bin_column}_bin'
+        bout_gb.rename_axis(bin_parse_name, inplace = True)
+        bout_gb.reset_index(level=0, inplace=True)
+        old_index = pd.Index([index_name] * len(bout_gb.index), name = 'id')
+        bout_gb.set_index(old_index, inplace =True)
 
-            curated_data = data[data[time_var].between(data.t.min(), last_valid_point[0])]
-            return curated_data
-
-        tdf = self.copy(deep=True)
-        tdf.reset_index(inplace = True)
-        return behavpy(tdf.groupby('id', group_keys = False).apply(wrapped_curate_dead_animals), tdf.meta, check = True)
+        return bout_gb
 
     def bin_time(self, column, bin_secs, t_column = 't', function = 'mean'):
         """
@@ -728,29 +773,13 @@ class behavpy(pd.DataFrame):
             warnings.warn('Column heading "{}", is not in the data table'.format(column))
             exit()
 
-        def wrapped_bin_data(data, column = column, bin_column = t_column, function = function, bin_secs = bin_secs):
-
-            index_name = data['id'].iloc[0]
-
-            data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
-            
-            output_parse_name = f'{column}_{function}' # create new column name
-        
-            bout_gb = data.groupby(bin_column).agg(**{
-                output_parse_name : (column, function)    
-            })
-
-            bin_parse_name = f'{bin_column}_bin'
-            bout_gb.rename_axis(bin_parse_name, inplace = True)
-            bout_gb.reset_index(level=0, inplace=True)
-            old_index = pd.Index([index_name] * len(bout_gb.index), name = 'id')
-            bout_gb.set_index(old_index, inplace =True)
-
-            return bout_gb
-
-        tdf = self.copy(deep=True)
-        tdf.reset_index(inplace = True)
-        return behavpy(tdf.groupby('id', group_keys = False).apply(wrapped_bin_data), tdf.meta)
+        tdf = self.reset_index().copy(deep=True)
+        return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bin_data,
+                                                                                                column = column, 
+                                                                                                bin_column = t_column,
+                                                                                                function = function, 
+                                                                                                bin_secs = bin_secs
+        )), tdf.meta, check = True)
 
     def summary(self, detailed = False):
         """ 
@@ -824,6 +853,21 @@ class behavpy(pd.DataFrame):
 
             return new_df
 
+    @staticmethod
+    def _wrapped_motion_detector(data, time_window_length, velocity_correction_coef, masking_duration, optional_columns):
+        
+        index_name = data['id'].iloc[0]
+        
+        df = max_velocity_detector(data,                                   
+                                time_window_length = time_window_length, 
+                                velocity_correction_coef = velocity_correction_coef, 
+                                masking_duration = masking_duration, 
+                                optional_columns = optional_columns)
+
+        old_index = pd.Index([index_name] * len(df.index), name = 'id')
+        df.set_index(old_index, inplace =True)  
+
+        return df    
 
     def motion_detector(self, time_window_length = 10, velocity_correction_coef = 3e-3, masking_duration = 0, optional_columns = None):
         """
@@ -840,43 +884,16 @@ class behavpy(pd.DataFrame):
                 warnings.warn('Column heading "{}", is not in the data table'.format(optional_columns))
                 exit()
 
-        def wrapped_motion_detector(data, 
-                                    time_window_length = time_window_length, 
-                                    velocity_correction_coef = velocity_correction_coef, 
-                                    masking_duration = masking_duration, 
-                                    optional_columns = optional_columns):
-            
-            index_name = data['id'].iloc[0]
-            
-            df = max_velocity_detector(data,                                   
-                                    time_window_length = time_window_length, 
-                                    velocity_correction_coef = velocity_correction_coef, 
-                                    masking_duration = masking_duration, 
-                                    optional_columns = optional_columns)
+        tdf = self.reset_index().copy(deep=True)
+        return  behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_motion_detector,
+                                                                                                        time_window_length = time_window_length,
+                                                                                                        velocity_correction_coef = velocity_correction_coef,
+                                                                                                        masking_duration = masking_duration,
+                                                                                                        optional_columns = optional_columns
+        )), tdf.meta, check = True)
 
-            old_index = pd.Index([index_name] * len(df.index), name = 'id')
-            df.set_index(old_index, inplace =True)  
-
-            return df    
-
-        self.reset_index(inplace = True)
-        return  behavpy(self.groupby('id', group_keys = False).apply(wrapped_motion_detector), self.meta)
-
-    def sleep_contiguous(self, mov_column = 'moving', t_column = 't', time_window_length = 10, min_time_immobile = 300):
-        """
-        Method version of the sleep annotation function.
-        This function first uses a motion classifier to decide whether an animal is moving during a given time window.
-        Then, it defines sleep as contiguous immobility for a minimum duration.
-        See function for paramater details
-
-        returns a behavpy object with added columns like 'moving' and 'asleep'
-        """
-        if mov_column not in self.columns.tolist():
-            warnings.warn(f'The movement column {mov_column} is not in the dataset')
-            exit()
-        if t_column not in self.columns.tolist():
-            warnings.warn(f'The time column {t_column} is not in the dataset')
-            exit()
+    @staticmethod
+    def _wrapped_sleep_contiguous(d_small, mov_column, t_column, time_window_length, min_time_immobile):
 
         def sleep_contiguous(moving, fs, min_valid_time = 300):
             """ 
@@ -899,28 +916,48 @@ class behavpy(pd.DataFrame):
 
             return r_small
 
-        def wrapped_sleep(d_small):
-            index_name = d_small['id'].iloc[0]
+        index_name = d_small['id'].iloc[0]
 
-            time_map = pd.Series(range(d_small.t.iloc[0], 
-                                d_small.t.iloc[-1] + time_window_length, 
-                                time_window_length
-                                ), name = 't')
+        time_map = pd.Series(range(d_small.t.iloc[0], 
+                            d_small.t.iloc[-1] + time_window_length, 
+                            time_window_length
+                            ), name = 't')
 
-            missing_values = time_map[~time_map.isin(d_small['t'].tolist())]
-            d_small = d_small.merge(time_map, how = 'right', on = 't', copy = False).sort_values(by=['t'])
-            d_small['is_interpolated'] = np.where(d_small['t'].isin(missing_values), True, False)
-            d_small[mov_column] = np.where(d_small['is_interpolated'] == True, False, d_small[mov_column])
+        missing_values = time_map[~time_map.isin(d_small['t'].tolist())]
+        d_small = d_small.merge(time_map, how = 'right', on = 't', copy = False).sort_values(by=['t'])
+        d_small['is_interpolated'] = np.where(d_small['t'].isin(missing_values), True, False)
+        d_small[mov_column] = np.where(d_small['is_interpolated'] == True, False, d_small[mov_column])
 
-            d_small['asleep'] = sleep_contiguous(d_small[mov_column], 1/time_window_length, min_valid_time = min_time_immobile)
+        d_small['asleep'] = sleep_contiguous(d_small[mov_column], 1/time_window_length, min_valid_time = min_time_immobile)
 
-            old_index = pd.Index([index_name] * len(d_small.index), name = 'id')
-            d_small.set_index(old_index, inplace =True)  
+        old_index = pd.Index([index_name] * len(d_small.index), name = 'id')
+        d_small.set_index(old_index, inplace =True)  
 
-            return d_small    
+        return d_small  
 
-        self.reset_index(inplace = True)
-        return behavpy(self.groupby('id', group_keys = False).apply(wrapped_sleep), self.meta)
+    def sleep_contiguous(self, mov_column = 'moving', t_column = 't', time_window_length = 10, min_time_immobile = 300):
+        """
+        Method version of the sleep annotation function.
+        This function first uses a motion classifier to decide whether an animal is moving during a given time window.
+        Then, it defines sleep as contiguous immobility for a minimum duration.
+        See function for paramater details
+
+        returns a behavpy object with added columns like 'moving' and 'asleep'
+        """
+        if mov_column not in self.columns.tolist():
+            warnings.warn(f'The movement column {mov_column} is not in the dataset')
+            exit()
+        if t_column not in self.columns.tolist():
+            warnings.warn(f'The time column {t_column} is not in the dataset')
+            exit()  
+
+        tdf = self.reset_index().copy(deep = True)
+        return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_sleep_contiguous,
+                                                                                                        mov_column = mov_column,
+                                                                                                        t_column = t_column,
+                                                                                                        time_window_length = time_window_length,
+                                                                                                        min_time_immobile = min_time_immobile
+        )), tdf.meta, check = True)
 
     def wrap_time(self, wrap_time = 24, time_column = 't', inplace = False):
         """
@@ -1210,6 +1247,8 @@ class behavpy(pd.DataFrame):
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
         self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = '')
 
+        stats_dict = {}
+
         for data, name, col in zip(d_list, facet_labels, col_list):
 
             if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
@@ -1217,18 +1256,17 @@ class behavpy(pd.DataFrame):
 
             data = data.dropna(subset = [variable])
             gdf = data.pivot(column = variable, function = 'mean')
-            
-            zscore_list = gdf[f'{variable}_mean'].to_numpy()[np.abs(zscore(gdf[f'{variable}_mean'].to_numpy())) < 3]
-            median_list = [np.mean(zscore_list)]
-            q1, q3 = bootstrap(zscore_list)
-            q3_list = [q3]
-            q1_list = [q1]
 
-            fig.add_trace(self._plot_meanbox(median = median_list, q3 = q3_list, q1 = q1_list, 
+            median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{variable}_mean'].to_numpy())
+            stats_dict[name] = zlist
+
+            fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
             x = [name], colour =  col, showlegend = False, name = name, xaxis = 'x'))
 
-            fig.add_trace(self._plot_boxpoints(y = zscore_list, x = len(zscore_list) * [name], colour = col, 
+            fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [name], colour = col, 
             showlegend = False, name = name, xaxis = 'x'))
+
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
         if isinstance(save, str):
             if save.endswith('.html'):
@@ -1239,6 +1277,8 @@ class behavpy(pd.DataFrame):
             fig.show()
         else:
             fig.show()
+
+        return stats_df
 
     def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
 
@@ -1256,47 +1296,35 @@ class behavpy(pd.DataFrame):
         y_range, dtick = self._check_boolean(list(self[variable].dropna()))
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
 
-        def analysis(data_list, phase):
-            median_list = []
-            q3_list = []
-            q1_list = []
-            con_list = []
-            label_list = []
-            for d, l in zip(data_list, facet_labels):
-                d.add_day_phase(day_length = day_length, lights_off = lights_off)
-                d = d[d['phase'] == phase]
-                d.drop(['phase', 'day'], axis = 1, inplace = True)
+        stats_dict = {}
+
+        for data, name in zip(d_list, facet_labels):
+
+            data.add_day_phase(day_length = day_length, lights_off = lights_off)
+
+            for c, phase in enumerate(['light', 'dark']):
+                
+                d = data[data['phase'] == phase]
                 t_gb = d.pivot(column = variable, function = 'mean')
-                x = t_gb[f'{variable}_mean'].to_numpy()[~np.isnan(t_gb[f'{variable}_mean'].to_numpy())]
-                zscore_list = x[np.abs(zscore(x)) < 3]
-                median_list.append(np.mean(zscore_list))
-                q1, q3 = bootstrap(zscore_list)
-                q3_list.append(q3)
-                q1_list.append(q1)
-                con_list.append(zscore_list)
-                label_list.append(len(zscore_list) * [l])
-            return median_list, q3_list, q1_list, con_list, label_list
+                median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{variable}_mean'].to_numpy())
+                stats_dict[f'{name}_{phase}'] = zlist
 
-        for c, phase in enumerate(['light', 'dark']):
-            
-            median_list, q3_list, q1_list, con_list, label_list = analysis(d_list, phase = phase)
+                if phase == 'light':
+                    col = 'goldenrod'
+                else:
+                    col = 'black'
 
-            if phase == 'light':
-                col = 'goldenrod'
-            else:
-                col = 'black'
+                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                x = [name], colour =  col, showlegend = False, name = name, xaxis = f'x{c+1}'))
 
-            for c2, label in enumerate(facet_labels):
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [name], colour = col, 
+                showlegend = False, name = name, xaxis = f'x{c+1}'))
 
-                fig.add_trace(self._plot_meanbox(median = [median_list[c2]], q3 = [q3_list[c2]], q1 = [q1_list[c2]], 
-                x = [label], colour =  col, showlegend = False, name = label, xaxis = f'x{c+1}'))
+                domains = np.arange(0, 2, 1/2)
+                axis = f'xaxis{c+1}'
+                self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = phase, domains = domains[c:c+2], axis = axis)
 
-                fig.add_trace(self._plot_boxpoints(y = con_list[c2], x = label_list[c2], colour = col, 
-                showlegend = False, name = label, xaxis = f'x{c+1}'))
-
-            domains = np.arange(0, 2, 1/2)
-            axis = f'xaxis{c+1}'
-            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = phase, domains = domains[c:c+2], axis = axis)
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
         if isinstance(save, str):
             if save.endswith('.html'):
@@ -1307,6 +1335,8 @@ class behavpy(pd.DataFrame):
             fig.show()
         else:
             fig.show()
+
+        return stats_df
     
     def plot_compare_variables(self, variables, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False):
         """the first variable in the list is the left hand axis, the last is the right hand axis"""
@@ -1315,59 +1345,45 @@ class behavpy(pd.DataFrame):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
         
-        if facet_col is None:
-            facet_arg = ['']
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
             facet_labels = ['']
 
         col_list = self._get_colours(facet_arg)
 
         fig = make_subplots(specs=[[{ "secondary_y" : True}]])
 
-        def analysis(data, arg):
-            median_list = []
-            q3_list = []
-            q1_list = []
-            con_list = []
-            label_list = []
+        stats_dict = {}
 
-            if arg != '':
-                d = data.xmv(facet_col, arg)
-            else:
-                d = data.copy(deep=True)
-            for v in variables:
-                t_gb = d.pivot(column = v, function = 'mean')
-                x = t_gb[f'{v}_mean'].to_numpy()[~np.isnan(t_gb[f'{v}_mean'].to_numpy())]
-                zscore_list = x[np.abs(zscore(x)) < 3]
-                median_list.append(np.mean(zscore_list))
-                q1, q3 = bootstrap(zscore_list)
-                q3_list.append(q3)
-                q1_list.append(q1)
-                con_list.append(zscore_list)
-                label_list.append(len(zscore_list) * [v])
-                
-            return median_list, q3_list, q1_list, con_list, label_list
-
-        for c, (arg, lab) in enumerate(zip(facet_arg, facet_labels)):   
-
-            median_list, q3_list, q1_list, con_list, label_list = analysis(self, arg)
+        for c, (data, name) in enumerate(zip(d_list, facet_labels)):   
 
             bool_list = len(variables) * [False]
             bool_list[-1] = True
 
-            for c2, (label, secondary) in enumerate(zip(variables, bool_list)):
+            for c2, (var, secondary) in enumerate(zip(variables, bool_list)):
+
+                t_gb = data.pivot(column = var, function = 'mean')
+                median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{var}_mean'].to_numpy())
+                stats_dict[f'{name}_{var}'] = zlist
+
                 if len(facet_arg) == 1:
                     col_index = c2
                 else:
                     col_index = c
-                fig.add_trace(self._plot_meanbox(median = [median_list[c2]], q3 = [q3_list[c2]], q1 = [q1_list[c2]], 
-                x = [label], colour =  col_list[col_index], showlegend = False, name = label, xaxis = f'x{c+1}'), secondary_y = secondary)
 
-                fig.add_trace(self._plot_boxpoints(y = con_list[c2], x = label_list[c2], colour = col_list[col_index], 
-                showlegend = False, name = label, xaxis = f'x{c+1}'), secondary_y = secondary)
+                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                x = [var], colour =  col_list[col_index], showlegend = False, name = var, xaxis = f'x{c+1}'), secondary_y = secondary)
+
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [var], colour = col_list[col_index], 
+                showlegend = False, name = var, xaxis = f'x{c+1}'), secondary_y = secondary)
 
             domains = np.arange(0, 1+(1/len(facet_arg)), 1/len(facet_arg))
             axis = f'xaxis{c+1}'
-            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[c:c+2], axis = axis)
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = name, domains = domains[c:c+2], axis = axis)
 
         axis_counter = 1
         for i in range(len(facet_arg) * (len(variables) * 2)):
@@ -1381,6 +1397,8 @@ class behavpy(pd.DataFrame):
         y_range, dtick = self._check_boolean(list(self[variables[-1]].dropna()))
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variables[-1], title = title, secondary = True, xdomain = f'x{axis_counter}', grid = grids)
 
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+
         if isinstance(save, str):
             if save.endswith('.html'):
                 fig.write_html(save)
@@ -1390,6 +1408,8 @@ class behavpy(pd.DataFrame):
             fig.show()
         else:
             fig.show()
+
+        return stats_df
 
     def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
 

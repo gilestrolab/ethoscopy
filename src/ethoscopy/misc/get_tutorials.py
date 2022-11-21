@@ -9,4 +9,4 @@ def get_tutorial(type):
     data_path = this_dir / f'tutorial_data/{type}_data.pkl'
     meta_path = this_dir / f'tutorial_data/{type}_meta.pkl'
 
-    return pd.read_pickle(meta_path), pd.read_pickle(data_path)
+    return pd.read_pickle(data_path), pd.read_pickle(meta_path)

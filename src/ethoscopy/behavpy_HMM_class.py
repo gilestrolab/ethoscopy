@@ -11,6 +11,7 @@ from math import floor, ceil
 from sys import exit
 from colour import Color
 from scipy.stats import zscore
+from functools import partial
 
 from ethoscopy.behavpy_class import behavpy
 from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
@@ -58,7 +59,6 @@ class behavpy_HMM(behavpy):
         for i in gb:
             seq = np.array(i)
             seq = seq.reshape(-1, 1)
-            
             logprob, states = h.decode(seq)
 
             #logprob_list.append(logprob)
@@ -154,29 +154,6 @@ class behavpy_HMM(behavpy):
         return f_arg, f_lab, h_list, b_list
 
     @staticmethod
-    def _zscore_bootstap(array, min_max = False):
-        try:
-            if len(array) == 1 or all(array == array[0]):
-                median, q3, q1 = array[0]
-                zlist = array
-            else:
-                zlist = array[np.abs(zscore(array)) < 3]
-                median = zlist.mean()
-                boot_array = bootstrap(zlist)
-                q3 = boot_array[1]
-                q1 = boot_array[0]
-
-        except ZeroDivisionError:
-            median, q3, q1 = 0
-            zlist = array
-
-        if min_max == True:
-            q3 = np.max(array)
-            q1 = np.min(array)
-            
-        return median, q3, q1, zlist
-
-    @staticmethod
     def _adjust_colours(colour_list):
 
         def adjust_color_lighten(r,g,b, factor):
@@ -257,7 +234,7 @@ class behavpy_HMM(behavpy):
             Bins the time to the given integer and creates a nested list of the movement column by id
             """
             stat = 'max'
-
+            data = data.reset_index()
             t_delta = data[t_column].iloc[1] - data[t_column].iloc[0]
             if t_delta != bin:
                 data[t_var] = data[t_var].map(lambda t: bin * floor(t / bin))
@@ -265,11 +242,9 @@ class behavpy_HMM(behavpy):
                     mov_var : (var_column, stat)
                 })
                 bin_gb.reset_index(level = 1, inplace = True)
-                gb = np.array(bin_gb.groupby('id')[mov_var].apply(list).tolist(), dtype = 'object')
-
+                gb = np.array(bin_gb.groupby('id')[mov_var].apply(list).tolist(), dtype = np.integer)
             else:
-                gb = np.array(data.groupby('id')[mov_var].apply(list).tolist(), dtype = 'object')
-
+                gb = np.array(data.groupby('id')[mov_var].apply(list).tolist(), dtype = np.integer)
             return gb
 
         if var_column == 'beam_crosses':
@@ -289,11 +264,8 @@ class behavpy_HMM(behavpy):
         train = rand_runs[test_train_split:]
         test = rand_runs[:test_train_split]
 
-        len_seq_train = []
-        len_seq_test = []
-        for i, q in zip(train, test):
-            len_seq_train.append(len(i))
-            len_seq_test.append(len(q))
+        len_seq_train = [len(ar) for ar in train]
+        len_seq_test = [len(ar) for ar in test]
 
         seq_train = np.concatenate(train, 0)
         seq_train = seq_train.reshape(-1, 1)
@@ -331,8 +303,8 @@ class behavpy_HMM(behavpy):
                 h.emissionprob_ = em_prob
 
             h.init_params = init_params
-
             h.n_features = n_obs # number of emission states
+
             # call the fit function on the dataset input
             h.fit(seq_train, len_seq_train)
 
@@ -359,6 +331,106 @@ class behavpy_HMM(behavpy):
                 self._hmm_table(start_prob = h.startprob_, trans_prob = h.transmat_, emission_prob = h.emissionprob_, state_names = states, observable_names = observables)
                 return h
 
+    def sleep_bout_analysis(self, sleep_column = 'asleep', as_hist = False, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True):
+        """ 
+        Behavpy_HMM version wrapped from behavpy, see behavpy_class for doc string
+        """
+
+        if sleep_column not in self.columns:
+            warnings.warn(f'Column heading "{sleep_column}", is not in the data table')
+            exit()
+
+        tdf = self.reset_index().copy(deep = True)
+        return behavpy_HMM(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
+                                                                                                            var_name = sleep_column, 
+                                                                                                            as_hist = as_hist, 
+                                                                                                            bin_size = bin_size, 
+                                                                                                            max_bins = max_bins, 
+                                                                                                            time_immobile = time_immobile, 
+                                                                                                            asleep = asleep
+            )), tdf.meta, check = True)
+
+    def curate_dead_animals(self, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
+        """ 
+        Behavpy_HMM version wrapped from behavpy, see behavpy_class for doc string
+        """
+
+        if t_column not in self.columns.tolist():
+            warnings.warn('Variable name entered, {}, for t_column is not a column heading!'.format(t_column))
+            exit()
+        
+        if mov_column not in self.columns.tolist():
+            warnings.warn('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
+            exit()
+
+        tdf = self.reset_index().copy(deep=True)
+        return behavpy_HMM(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_curate_dead_animals,
+                                                                                                            time_var = t_column,
+                                                                                                            moving_var = mov_column,
+                                                                                                            time_window = time_window, 
+                                                                                                            prop_immobile = prop_immobile,
+                                                                                                            resolution = resolution
+        )), tdf.meta, check = True)
+
+    def bin_time(self, column, bin_secs, t_column = 't', function = 'mean'):
+        """
+        Behavpy_HMM version wrapped from behavpy, see behavpy_class for doc string
+        """
+
+        if column not in self.columns:
+            warnings.warn('Column heading "{}", is not in the data table'.format(column))
+            exit()
+
+        tdf = self.reset_index().copy(deep=True)
+        return behavpy_HMM(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bin_data,
+                                                                                                column = column, 
+                                                                                                bin_column = t_column,
+                                                                                                function = function, 
+                                                                                                bin_secs = bin_secs
+        )), tdf.meta, check = True)
+
+    def motion_detector(self, time_window_length = 10, velocity_correction_coef = 3e-3, masking_duration = 0, optional_columns = None):
+        """
+        Behavpy_HMM version wrapped from behavpy, see behavpy_class for doc string
+        """
+
+        if optional_columns is not None:
+            if optional_columns not in self.columns:
+                warnings.warn('Column heading "{}", is not in the data table'.format(optional_columns))
+                exit()
+
+        tdf = self.reset_index().copy(deep=True)
+        return  behavpy_HMM(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_motion_detector,
+                                                                                                        time_window_length = time_window_length,
+                                                                                                        velocity_correction_coef = velocity_correction_coef,
+                                                                                                        masking_duration = masking_duration,
+                                                                                                        optional_columns = optional_columns
+        )), tdf.meta, check = True)
+
+    def sleep_contiguous(self, mov_column = 'moving', t_column = 't', time_window_length = 10, min_time_immobile = 300):
+        """
+        Method version of the sleep annotation function.
+        This function first uses a motion classifier to decide whether an animal is moving during a given time window.
+        Then, it defines sleep as contiguous immobility for a minimum duration.
+        See function for paramater details
+
+        returns a behavpy object with added columns like 'moving' and 'asleep'
+        """
+        if mov_column not in self.columns.tolist():
+            warnings.warn(f'The movement column {mov_column} is not in the dataset')
+            exit()
+        if t_column not in self.columns.tolist():
+            warnings.warn(f'The time column {t_column} is not in the dataset')
+            exit()  
+
+        tdf = self.reset_index().copy(deep = True)
+        return behavpy_HMM(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_sleep_contiguous,
+                                                                                                        mov_column = mov_column,
+                                                                                                        t_column = t_column,
+                                                                                                        time_window_length = time_window_length,
+                                                                                                        min_time_immobile = min_time_immobile
+        )), tdf.meta, check = True)
+
     def hmm_display(self, hmm, states, observables):
         """
         Prints to screen the transion probabilities for the hidden state and observables for a given hmmlearn hmm object
@@ -382,9 +454,8 @@ class behavpy_HMM(behavpy):
         @func = string, when binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
         @avg_window, int, the window in minutes you want the moving average to be applied to. Default is 30 mins
         @circadian_night, int, the hour when lights are off during the experiment. Default is ZT 12
-        @save = bool, if true the plot will be saved to local
-        @location = string, only needed if save is True, provide the location and file type of the plot
-        
+        @save = bool/string, if not False then save as the location and file name of the save file
+
         returns None
         """
         assert isinstance(wrapped, bool)
@@ -479,7 +550,7 @@ class behavpy_HMM(behavpy):
                 analysed_df = pd.concat([analysed_df, temp_df], ignore_index = False)
 
             if wrapped is True:
-                analysed_df['t'] = analysed_df['t'].map(lambda t: t % 60*60*day_length)
+                analysed_df['t'] = analysed_df['t'].map(lambda t: t % (60*60*day_length))
             analysed_df['t'] = analysed_df['t'] / (60*60)
 
             if 'control' in n.lower() or 'baseline' in n.lower() or 'ctrl' in n.lower():
@@ -494,7 +565,9 @@ class behavpy_HMM(behavpy):
             t_range = [t_min, t_max]  
 
             for i, (lab, row, col) in enumerate(zip(labels, row_list, col_list)):
+                # print(analysed_df)
                 upper, trace, lower, _ = self._plot_line(df = analysed_df, column = f'state_{i}', name = n, marker_col = marker_col.get(i)[c])
+                # print(upper, trace, lower)
                 fig.add_trace(upper,row=row, col=col)
                 fig.add_trace(trace, row=row, col=col) 
                 fig.add_trace(lower, row=row, col=col)
@@ -577,7 +650,7 @@ class behavpy_HMM(behavpy):
         )
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, day_length = day_length, lights_off = lights_off, split = len(labels))
+        bar_shapes = circadian_bars(t_min, t_max, max_y = 1, day_length = day_length, lights_off = lights_off, split = len(labels))
         fig.update_layout(shapes=list(bar_shapes.values()))
 
         if isinstance(save, str):
@@ -623,12 +696,16 @@ class behavpy_HMM(behavpy):
         fig = go.Figure()
         self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Fraction of time in each state', title = title, grid = grids)
 
+        stats_dict = {}
+
         for state, col, lab in zip(list_states, colours, labels):
 
             for arg, i in zip(facet_arg, facet_labels):
 
-                median, q3, q1, zlist = self._zscore_bootstap(analysed_dict[f'df{arg}'][state].to_numpy())
+                median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy())
                 
+                stats_dict[f'{arg}_{lab}'] = zlist
+
                 if 'baseline' in i.lower() or 'control' in i.lower() or 'ctrl' in i.lower():
                     if 'rebound' in i.lower():
                         marker_col = 'black'
@@ -651,6 +728,8 @@ class behavpy_HMM(behavpy):
             axis = f'xaxis{state+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+
         if isinstance(save, str):
             if save.endswith('.html'):
                 fig.write_html(save)
@@ -660,6 +739,8 @@ class behavpy_HMM(behavpy):
             fig.show()
         else:
             fig.show()
+        
+        return stats_df
     
     def plot_hmm_quantify_length(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False):
         
@@ -688,11 +769,14 @@ class behavpy_HMM(behavpy):
 
         gb_dict = {f'gb{n}' : analysed_dict[f'df{n}'].groupby('state') for n in facet_arg}
 
+        stats_dict = {}
+
         for state, col, lab in zip(list_states, colours, labels):
 
             for arg, i in zip(facet_arg, facet_labels):
 
-                median, q3, q1, zlist = self._zscore_bootstap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy())
+                median, q3, q1, zlist = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy())
+                stats_dict[f'{arg}_{lab}'] = zlist
 
                 if 'baseline' in i or 'control' in i:
                     if 'rebound' in i:
@@ -715,6 +799,8 @@ class behavpy_HMM(behavpy):
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
             axis = f'xaxis{state+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+        
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
         if isinstance(save, str):
             if save.endswith('.html'):
@@ -725,6 +811,8 @@ class behavpy_HMM(behavpy):
             fig.show()
         else:
             fig.show()
+
+        return stats_df
 
     def plot_hmm_quantify_length_min_max(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False, save = False):
             
@@ -757,7 +845,7 @@ class behavpy_HMM(behavpy):
 
             for arg, i in zip(facet_arg, facet_labels):
 
-                median, q3, q1, _ = self._zscore_bootstap(gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy(), min_max = True)
+                median, q3, q1, _ = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy(), min_max = True)
 
                 if 'baseline' in i or 'control' in i:
                     if 'rebound' in i:
@@ -775,6 +863,7 @@ class behavpy_HMM(behavpy):
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
             axis = f'xaxis{state+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+        
 
         if isinstance(save, str):
             if save.endswith('.html'):
@@ -811,11 +900,14 @@ class behavpy_HMM(behavpy):
         fig = go.Figure()
         self._plot_ylayout(fig, yrange = [0, 1.05], t0 = 0, dtick = 0.2, ylabel = 'Fraction of runs of each state', title = title, grid = grids)
 
+        stats_dict = {}
+
         for state, col, lab in zip(list_states, colours, labels):
 
             for arg, i in zip(facet_arg, facet_labels):
 
-                median, q3, q1, zlist = self._zscore_bootstap(analysed_dict[f'df{arg}'][str(state)].to_numpy())  
+                median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][str(state)].to_numpy())  
+                stats_dict[f'{arg}_{lab}'] = zlist
 
                 if 'baseline' in i.lower() or 'control' in i.lower():
                     if 'rebound' in i.lower():
@@ -840,6 +932,8 @@ class behavpy_HMM(behavpy):
             axis = f'xaxis{state+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
 
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+
         if isinstance(save, str):
             if save.endswith('.html'):
                 fig.write_html(save)
@@ -849,6 +943,8 @@ class behavpy_HMM(behavpy):
             fig.show()
         else:
             fig.show()
+
+        return stats_df
 
     def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, bin = 60, mago_df = None, func = 'max', title = '', save = False):
         """ plots the raw dedoded hmm model per fly (total = num_plots) 

@@ -6,7 +6,5 @@ dist/
 __pycache__/
 ethoscopy.egg-info/
 *.toml
-load_test.py
-test_graphs.py
 periodogram_test.pkl
-*.ipynb
+test/
