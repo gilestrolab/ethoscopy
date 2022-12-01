@@ -3,7 +3,7 @@ import numpy as np
 import warnings
 import plotly.graph_objs as go 
 from plotly.subplots import make_subplots
-from plotly.express.colors import qualitative
+
 
 from math import floor, ceil, sqrt
 from sys import exit
@@ -16,7 +16,9 @@ from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
 from ethoscopy.misc.bootstrap_CI import bootstrap
 
-class behavpy(pd.DataFrame):
+CANVAS = 'plotly'
+
+class behavpy_base(pd.DataFrame):
     """
     The behavpy class is a store of information for data from the ethoscope system with corresponding methods to augment and manipulate
     the data as necessary for standard analysis.
@@ -42,17 +44,20 @@ class behavpy(pd.DataFrame):
         def _from_axes(self, *args, **kwargs):
             return self.cls._from_axes(*args, **kwargs)
 
-    def __init__(self, data, meta, check = False, index= None, columns=None, dtype=None, copy=True):
-        super(behavpy, self).__init__(data=data,
-                                        index=index,
-                                        columns=columns,
-                                        dtype=dtype,
-                                        copy=copy)
+    def __init__(self, data, meta, check = False, index= None, columns=None, dtype=None, copy=True, **kwargs):
+
+
+        super(behavpy_base, self).__init__(data=data,
+                                           index=index,
+                                           columns=columns,
+                                           dtype=dtype,
+                                           copy=copy)
 
         self.meta = meta   
 
         if check is True:
             self._check_conform(self)
+
 
     @staticmethod
     def _pop_std(array):
@@ -147,97 +152,6 @@ class behavpy(pd.DataFrame):
         return y_range, dtick
 
     @staticmethod
-    def _plot_ylayout(fig, yrange, t0, dtick, ylabel, title, secondary = False, xdomain = False, ytype = "-", grid = False):
-        if secondary is not False:
-            fig['layout']['yaxis2'] = {}
-            axis = 'yaxis2'
-        else:
-            axis = 'yaxis'
-            fig['layout'].update(title = title,
-                            plot_bgcolor = 'white',
-                            legend = dict(
-                            bgcolor = 'rgba(201, 201, 201, 1)',
-                            bordercolor = 'grey',
-                            font = dict(
-                                size = 12
-                                ),
-                                x = 0.85,
-                                y = 0.99
-                            )
-                        )
-        fig['layout'][axis].update(
-                        linecolor = 'black',
-                        type = ytype,
-                        tick0 = t0,
-                        title = dict(
-                            text = ylabel,
-                            font = dict(
-                                size = 18,
-                                color = 'black'
-                            )
-                        ),
-                        rangemode = 'tozero',
-                        zeroline = False,
-                                ticks = 'outside',
-                        tickwidth = 2,
-                        tickfont = dict(
-                            size = 18,
-                            color = 'black'
-                        ),
-                        linewidth = 4
-                    )
-        if yrange is not False:
-            fig['layout'][axis]['range'] = yrange
-        if dtick is not False:
-            fig['layout'][axis]['dtick'] = dtick
-        if secondary is not False:
-            fig['layout'][axis]['side'] = 'right'
-            fig['layout'][axis]['overlaying'] = 'y'
-            fig['layout'][axis]['anchor'] = xdomain
-        if grid is False:
-            fig['layout'][axis]['showgrid'] = False
-        else:
-            fig['layout'][axis]['showgrid'] = True
-            fig['layout'][axis]['gridcolor'] = 'black'
-
-    @staticmethod
-    def _plot_xlayout(fig, xrange, t0, dtick, xlabel, domains = False, axis = None, type = "-"):
-        if domains is not False:
-            fig['layout'][axis] = {}
-        else:
-            axis = 'xaxis'
-        fig['layout'][axis].update(
-                        showgrid = False,
-                        linecolor = 'black',
-                        type = type,
-                        title = dict(
-                            font = dict(
-                                size = 18,
-                                color = 'black'
-                            )
-                        ),
-                        zeroline = False,
-                                ticks = 'outside',
-                        tickwidth = 2,
-                        tickfont = dict(
-                            size = 18,
-                            color = 'black'
-                        ),
-                        linewidth = 4
-                    )
-
-        if xrange is not False:
-            fig['layout'][axis].update(range = xrange)
-        if t0 is not False:
-            fig['layout'][axis].update(tick0 = t0)
-        if dtick is not False:
-            fig['layout'][axis].update(dtick = dtick)
-        if xlabel is not False:
-            fig['layout'][axis]['title'].update(text = xlabel)
-        if domains is not False:
-            fig['layout'][axis].update(domain = domains)
-
-    @staticmethod
     def _zscore_bootstrap(array, min_max = False):
         try:
             if len(array) == 1 or all(array == array[0]):
@@ -260,125 +174,6 @@ class behavpy(pd.DataFrame):
             
         return median, q3, q1, zlist
 
-    @staticmethod
-    def _plot_meanbox(median, q3, q1, x, colour, showlegend, name, xaxis):
-        trace_box = go.Box(
-            showlegend = showlegend,
-            median = median,
-            q3 = q3,
-            q1 = q1,
-            x = x,
-            xaxis = xaxis,
-            marker = dict(
-                color = colour,
-            ),
-            boxpoints = False,
-            jitter = 0.75, 
-            pointpos = 0, 
-            width = 0.9,
-            name = name,
-            legendgroup = name
-        )
-        return trace_box
-    
-    @staticmethod
-    def _plot_boxpoints(y, x, colour, showlegend, name, xaxis):
-        trace_box = go.Box(
-            showlegend = showlegend,
-            y = y, 
-            x = x,
-            xaxis = xaxis,
-            line = dict(
-                color = 'rgba(0,0,0,0)'
-            ),
-            fillcolor = 'rgba(0,0,0,0)',
-            marker = dict(
-                color = colour,
-                opacity = 0.5,
-                size = 4
-            ),
-            boxpoints = 'all',
-            jitter = 0.75, 
-            pointpos = 0, 
-            width = 0.9,
-            name = name,
-            legendgroup = name,
-        )
-        return trace_box
-
-    @staticmethod  
-    def _plot_line(df, column, name, marker_col, t_col = 't'):
-
-        def pop_std(array):
-            return np.std(array, ddof = 0)
-
-        gb_df = df.groupby(t_col).agg(**{
-                    'mean' : (column, 'mean'), 
-                    'SD' : (column, pop_std),
-                    'count' : (column, 'count')
-                })
-
-        max_var = max(gb_df['mean'])
-
-        gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
-        gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
-        gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
-
-        upper_bound = go.Scatter(
-        showlegend = False,
-        legendgroup = name,
-        x = gb_df.index.values,
-        y = gb_df['y_max'],
-        mode='lines',
-        marker=dict(color="#444"),
-        line=dict(width=0,
-                shape = 'spline'
-                ),
-        )
-        trace = go.Scatter(
-            legendgroup = name,
-            x = gb_df.index.values,
-            y = gb_df['mean'],
-            mode = 'lines',
-            name = name,
-            line = dict(
-                shape = 'spline',
-                color = marker_col
-                ),
-            fill = 'tonexty'
-        )
-
-        lower_bound = go.Scatter(
-            showlegend = False,
-            legendgroup = name,
-            x = gb_df.index.values,
-            y = gb_df['y_min'],
-            mode='lines',
-            marker=dict(
-                color = marker_col
-                ),
-            line=dict(width = 0,
-                    shape = 'spline'
-                    ),
-            fill = 'tonexty'
-        )  
-        return upper_bound, trace, lower_bound, max_var
-
-    @staticmethod
-    def _get_colours(plot_list):
-        if len(plot_list) <= 11:
-            return qualitative.Safe
-        elif len(plot_list) < 24:
-            return qualitative.Dark24
-        else:
-            warnings.warn('Too many sub groups to plot with the current colour palette')
-            exit()
-            
-    # set meta as permenant attribute
-    _metadata = ['meta']
-        
-    _colours_small = qualitative.Safe
-    _colours_large = qualitative.Dark24
 
     def display(self):
         """
@@ -613,77 +408,6 @@ class behavpy(pd.DataFrame):
                                                                                                 asleep = asleep
             )), tdf.meta, check = True)
 
-    def plot_sleep_bouts(self, sleep_column = 'asleep', facet_col = None, facet_arg = None, facet_labels = None, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True, title = '', save = False, grids = False):
-        """ Plot with faceting the sleep bouts analysis function"""
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
-        d_list = []
-        if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
-        else:
-            d_list = [self.copy(deep = True)]
-            facet_labels = ['']
-        
-        col_list = self._get_colours(d_list)
-
-        fig = go.Figure()
-        max_y = []
-        for data, name, col in zip(d_list, facet_labels, col_list):
-
-            data = data.reset_index()
-            bouts = data.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
-            var_name = sleep_column, 
-            as_hist = True, 
-            bin_size = bin_size, 
-            max_bins = max_bins, 
-            time_immobile = time_immobile, 
-            asleep = asleep))
-
-            plot_gb = bouts.groupby('bins').agg(**{
-                    'mean' : ('prob', 'mean'),
-                    'SD' : ('prob', self._pop_std),
-                    'count' : ('prob', 'count')
-            })
-            plot_gb['SE'] = (1.96*plot_gb['SD']) / np.sqrt(plot_gb['count'])
-
-            x = plot_gb.index.to_numpy()
-            x = x / 60
-            y = plot_gb['mean'].to_numpy()
-            max_y.append(round(np.max(y) + 0.1, 1))
-
-            trace = go.Bar(
-                showlegend = True,
-                name = name,
-                x = x, 
-                y = y,
-                opacity = 0.5,
-                marker = dict(
-                    color = col,
-                    line = dict(
-                        color = col
-                    )
-                ),
-                error_y = dict(
-                    array = plot_gb['SE'].tolist(),
-                    symmetric = True,
-                    )
-                )
-            fig.add_trace(trace)
-            
-        fig.update_layout(barmode = 'overlay', bargap=0)
-        self._plot_ylayout(fig, yrange = [0, max(max_y)], t0 = 0, dtick = max(max_y) / 5, ylabel = 'Proportion of total Bouts', title = title, grid = grids)
-        self._plot_xlayout(fig, xrange = [time_immobile, np.max(x)+0.5], t0 = time_immobile, dtick = bin_size, xlabel = 'Bouts (minutes)')
-
-        if isinstance(save, str):
-            if save.endswith('.html'):
-                fig.write_html(save)
-            else:
-                fig.write_image(save, width=1500, height=650)
-            print(f'Saved to {save}')
-            fig.show()
-        else:
-            fig.show()
 
     @staticmethod
     def _wrapped_curate_dead_animals(data, time_var, moving_var, time_window, prop_immobile, resolution): 
@@ -1009,78 +733,6 @@ class behavpy(pd.DataFrame):
 
             return new
 
-    def heatmap(self, variable = 'moving', title = ''):
-        """
-        Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
-        
-        Params:
-        @variable = string, name for the column containing the variable of interest, the default is moving
-        
-        returns None
-        """
-        heatmap_df = self.copy(deep = True)
-        # change movement values from boolean to intergers and bin to 30 mins finding the mean
-        if variable == 'moving':
-            heatmap_df[variable] = np.where(heatmap_df[variable] == True, 1, 0)
-
-        heatmap_df = heatmap_df.bin_time(column = variable, bin_secs = 1800)
-        heatmap_df['t_bin'] = heatmap_df['t_bin'] / (60*60)
-        # create an array starting with the earliest half hour bin and the last with 0.5 intervals
-        start = heatmap_df['t_bin'].min().astype(int)
-        end = heatmap_df['t_bin'].max().astype(int)
-        time_list = np.array([x / 10 for x in range(start*10, end*10+5, 5)])
-        time_map = pd.Series(time_list, 
-                    name = 't_bin')
-
-        def align_data(data):
-            """merge the individual fly groups time with the time map, filling in missing points with NaN values"""
-
-            index_name = data.index[0]
-
-            df = data.merge(time_map, how = 'right', on = 't_bin', copy = False).sort_values(by=['t_bin'])
-
-            # read the old id index lost in the merge
-            old_index = pd.Index([index_name] * len(df.index), name = 'id')
-            df.set_index(old_index, inplace =True)  
-
-            return df                    
-
-        heatmap_df = heatmap_df.groupby('id', group_keys = False).apply(align_data)
-
-        gbm = heatmap_df.groupby(heatmap_df.index)[f'{variable}_mean'].apply(list)
-        id = heatmap_df.groupby(heatmap_df.index)['t_bin'].mean().index.tolist()
-
-        fig = go.Figure(data=go.Heatmap(
-                        z = gbm,
-                        x = time_list,
-                        y = id,
-                        colorscale = 'Viridis'))
-
-        fig.update_layout(
-            title = title,
-            xaxis = dict(
-                zeroline = False,
-                color = 'black',
-                linecolor = 'black',
-                gridcolor = 'black',
-                title = dict(
-                    text = 'ZT Time (Hours)',
-                    font = dict(
-                        size = 18,
-                        color = 'black'
-                    )
-                ),
-                tick0 = 0,
-                dtick = 12,
-                ticks = 'outside',
-                tickwidth = 2,
-                tickfont = dict(
-                    size = 16
-                ),
-                linewidth = 2)
-                )
-
-        fig.show()
 
     def remove(self, column, *args):
         """ 
@@ -1155,8 +807,19 @@ class behavpy(pd.DataFrame):
         
         return self.remove('id', id_list)
 
-    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
+class behavpy_plotly(behavpy_base):
+    """
+    A wrapper around the behavpy object
+    Handles plotting of figures using the preferred canvas
+    Current choice is between plotly and seaborn
+    """
 
+    def __init__(self, *args, **kwargs):
+        super(behavpy_plotly, self).__init__(*args, **kwargs)
+
+
+    def plot_sleep_bouts(self, sleep_column = 'asleep', facet_col = None, facet_arg = None, facet_labels = None, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True, title = '', save = False, grids = False):
+        """ Plot with faceting the sleep bouts analysis function"""
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
         d_list = []
@@ -1166,57 +829,56 @@ class behavpy(pd.DataFrame):
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
-
-        if len(d_list) < 11:
-            col_list = self._colours_small
-        elif len(d_list) < 24:
-            col_list = self._colours_large
-        else:
-            warnings.warn('Too many sub groups to plot with the current colour palette')
-            exit()
-
-        max_var = []
-        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
-        if y_range is False:
-            max_var.append(1)
         
-        fig = go.Figure() 
-        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
-        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = day_length/4, xlabel = 'ZT (Hours)')
+        col_list = self._get_colours(d_list)
 
-        min_t = []
-        max_t = []
-
+        fig = go.Figure()
+        max_y = []
         for data, name, col in zip(d_list, facet_labels, col_list):
 
-            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
-                col = 'grey'
+            data = data.reset_index()
+            bouts = data.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
+            var_name = sleep_column, 
+            as_hist = True, 
+            bin_size = bin_size, 
+            max_bins = max_bins, 
+            time_immobile = time_immobile, 
+            asleep = asleep))
 
-            rolling_col = data.groupby(data.index, sort = False)[variable].rolling(avg_window).mean().reset_index(level = 0, drop = True)
-            data['rolling'] = rolling_col.to_numpy()
-            data = data.dropna(subset = ['rolling'])
+            plot_gb = bouts.groupby('bins').agg(**{
+                    'mean' : ('prob', 'mean'),
+                    'SD' : ('prob', self._pop_std),
+                    'count' : ('prob', 'count')
+            })
+            plot_gb['SE'] = (1.96*plot_gb['SD']) / np.sqrt(plot_gb['count'])
 
-            if wrapped is True:
-                data['t'] = data['t'].map(lambda t: t % (60*60*day_length))
-            data['t'] = data['t'].map(lambda t: t / (60*60))
+            x = plot_gb.index.to_numpy()
+            x = x / 60
+            y = plot_gb['mean'].to_numpy()
+            max_y.append(round(np.max(y) + 0.1, 1))
 
-            t_min = int(lights_off * floor(data.t.min() / lights_off))
-            min_t.append(t_min)
-            t_max = int(12 * ceil(data.t.max() / 12)) 
-            max_t.append(t_max)
-
-            upper, trace, lower, maxV = self._plot_line(df = data, column = 'rolling', name = name, marker_col = col)
-            fig.add_trace(upper)
-            fig.add_trace(trace) 
-            fig.add_trace(lower)
-
-            max_var.append(maxV)
-
-        # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, max_y = max(max_var), day_length = day_length, lights_off = lights_off)
-        fig.update_layout(shapes=list(bar_shapes.values()))
-    
-        fig['layout']['xaxis']['range'] = [t_min, t_max]
+            trace = go.Bar(
+                showlegend = True,
+                name = name,
+                x = x, 
+                y = y,
+                opacity = 0.5,
+                marker = dict(
+                    color = col,
+                    line = dict(
+                        color = col
+                    )
+                ),
+                error_y = dict(
+                    array = plot_gb['SE'].tolist(),
+                    symmetric = True,
+                    )
+                )
+            fig.add_trace(trace)
+            
+        fig.update_layout(barmode = 'overlay', bargap=0)
+        self._plot_ylayout(fig, yrange = [0, max(max_y)], t0 = 0, dtick = max(max_y) / 5, ylabel = 'Proportion of total Bouts', title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = [time_immobile, np.max(x)+0.5], t0 = time_immobile, dtick = bin_size, xlabel = 'Bouts (minutes)')
 
         if isinstance(save, str):
             if save.endswith('.html'):
@@ -1631,3 +1293,14 @@ class behavpy(pd.DataFrame):
 
     # def plot_fourier(self, varaible = 'moving'):
     #     return None
+
+if CANVAS == 'plotly':
+    class behavpy (behavpy_plotly):
+        def __init__(self, *args, **kwargs):
+            super(behavpy, self).__init__(*args, **kwargs)
+    
+elif CANVAS == 'seaborn':
+    class behavpy (behavpy_seaborn):
+        def __init__(self, *args, **kwargs):
+            super(behavpy, self).__init__(*args, **kwargs)
+        
