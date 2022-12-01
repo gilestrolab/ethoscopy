@@ -251,11 +251,15 @@ class metadata_handler():
         info.update(self.info)    
         return info
 
-    def list_dbs(self):
+    def list_dbs(self, notfound = False):
         '''
         Return a list of all the db files associated with this metadata
         '''
         
+        if notfound:
+            return self.db_files.loc[self.db_files.db_filename.isna()]
+        else:
+            return self.db_files.loc[self.db_files.db_filename.notna()]
         
 
     def save( self, project='unnamed', filename=None ):
