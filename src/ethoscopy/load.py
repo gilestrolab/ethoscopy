@@ -237,6 +237,10 @@ def link_meta_index(metadata, remote_dir, local_dir):
     else:
         raise FileNotFoundError("The metadata is not readable")
 
+    if len(meta_df[meta_df.isna().any(axis=1)]) >= 1:
+        warnings.warn("When the metadata is read it contains NaN values (empty cells in the csv file can cause this!), please replace with an alterative")
+        exit()
+
     # check and tidy df, removing un-needed columns and duplicated machine names
     if 'machine_name' not in meta_df.columns or 'date' not in meta_df.columns:
         raise KeyError("Column(s) 'machine_name' and/or 'date' missing from metadata file")
@@ -346,7 +350,12 @@ def link_meta_index(metadata, remote_dir, local_dir):
         merge_df.dropna(inplace = True)
     
     else:
-        merge_df = meta_df_original.merge(split_df, how = 'outer', on = ['machine_name', 'date'])
+        drop_df = split_df.sort_values(['file_size'], ascending = False)
+        drop_df = drop_df.drop_duplicates(['machine_name', 'date'])
+        droplog = split_df[split_df.duplicated(subset=['machine_name', 'date'])]
+        drop_list = droplog['machine_name'].tolist()
+        warnings.warn(f'Ethoscopes {*drop_list,} have multiple files for their day, the largest file has been kept. If you want all files for that day please add a time column')
+        merge_df = meta_df_original.merge(drop_df, how = 'outer', on = ['machine_name', 'date'])
         merge_df.dropna(inplace = True)
 
     # convert df to list and cross-reference to 'index' csv/txt to find stored paths
