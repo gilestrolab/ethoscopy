@@ -244,7 +244,7 @@ class behavpy(pd.DataFrame):
     def _zscore_bootstrap(array, min_max = False):
         try:
             if len(array) == 1 or all(array == array[0]):
-                median, q3, q1 = array[0]
+                median = q3 = q1 = array[0]
                 zlist = array
             else:
                 zlist = array[np.abs(zscore(array)) < 3]
@@ -254,7 +254,7 @@ class behavpy(pd.DataFrame):
                 q1 = boot_array[0]
 
         except ZeroDivisionError:
-            median, q3, q1 = 0
+            median = q3 = q1 = 0
             zlist = array
 
         if min_max == True:
@@ -1012,7 +1012,7 @@ class behavpy(pd.DataFrame):
 
             return new
 
-    def heatmap(self, variable = 'moving', title = ''):
+    def heatmap(self, variable = 'moving', title = '', save = False):
         """
         Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
         
@@ -1082,8 +1082,15 @@ class behavpy(pd.DataFrame):
                 ),
                 linewidth = 2)
                 )
-
-        fig.show()
+        if isinstance(save, str):
+            if save.endswith('.html'):
+                fig.write_html(save)
+            else:
+                fig.write_image(save, width=1500, height=650)
+            print(f'Saved to {save}')
+            fig.show()
+        else:
+            fig.show()
 
     def remove(self, column, *args):
         """ 
