@@ -24,6 +24,9 @@ class behavpy(pd.DataFrame):
     Behavpy sets a metadata dataframe as an attribute which is called upon frequently in the methods, can be accessed through behavpy.meta
     Both metadata and data should share unique ids in their 'id' column that are essential for manipulaiton
     print(df) will only print the data df, to see both use the .display() method
+
+    Initialisation Parameters:
+
     """
     warnings.formatwarning = format_warning
 
@@ -1181,6 +1184,7 @@ class behavpy(pd.DataFrame):
             max_var.append(1)
         
         fig = go.Figure() 
+
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
         self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = day_length/4, xlabel = 'ZT (Hours)')
 
@@ -1501,6 +1505,12 @@ class behavpy(pd.DataFrame):
         else:
             fig.show()
 
+    @staticmethod
+    def _get_subplots(length):
+        """Get the nearest higher square number"""
+        square = sqrt(length) 
+        closest = [floor(square)**2, ceil(square)**2]
+        return int(sqrt(closest[1]))
     def plot_actogram(self, mov_variable = 'moving', bin_window = 30, t_column = 't', individual = False, individual_label = None, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = '', save = False):
         
         if individual == True and facet_col != None:
@@ -1510,12 +1520,6 @@ class behavpy(pd.DataFrame):
             assert(isinstance(individual_label, str))
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
-        def get_subplots(length):
-            """Get the nearest higher square number"""
-            square = sqrt(length) 
-            closest = [floor(square)**2, ceil(square)**2]
-            return int(sqrt(closest[1]))
 
         def make_plots(d, col, row):
             try:
@@ -1550,11 +1554,11 @@ class behavpy(pd.DataFrame):
                 ), row = row, col = col)
 
         if individual == False:
-            root = get_subplots(len(facet_arg))
+            root = self._get_subplots(len(facet_arg))
             title_list = facet_labels
         elif individual == True:
             facet_arg = self.meta.index.tolist()
-            root =  get_subplots(len(facet_arg))
+            root =  self._get_subplots(len(facet_arg))
             if individual_label is not None:
                 title_list = self.meta[individual_label].tolist()
             else:
@@ -1629,5 +1633,5 @@ class behavpy(pd.DataFrame):
         else:
             fig.show()
 
-    # def plot_fourier(self, varaible = 'moving'):
-    #     return None
+    def plot_wavelet(self, varaible = 'moving', t_column = 't', wavelet = 'morl', bin = 600, scale = 156, individual = False, individual_label = None, facet_col = None, facet_arg = None, facet_labels = None, title = '', save = False):
+        return None
