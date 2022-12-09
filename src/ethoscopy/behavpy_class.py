@@ -9,6 +9,7 @@ from math import floor, ceil, sqrt
 from sys import exit
 from scipy.stats import zscore
 from functools import partial
+from scipy.interpolate import interp1d
 
 from ethoscopy.misc.format_warning import format_warning
 from ethoscopy.misc.circadian_bars import circadian_bars
@@ -26,6 +27,9 @@ class behavpy(pd.DataFrame):
     print(df) will only print the data df, to see both use the .display() method
 
     Initialisation Parameters:
+    @data :
+    @meta :
+    @check
 
     """
     warnings.formatwarning = format_warning
@@ -63,43 +67,43 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _check_conform(dataframe):
-            """ 
-            Checks the data augument is a pandas dataframe
-            If metadata is provided and skip is False it will check as above and check the ID's in
-            metadata match those in the data
-            params: 
-            @skip = boolean indicating whether to skip a check that unique id's are in both meta and data match 
-            """
-            
-            # formats warming method to not double print and allow string formatting
-            warnings.formatwarning = format_warning
+        """ 
+        Checks the data augument is a pandas dataframe
+        If metadata is provided and skip is False it will check as above and check the ID's in
+        metadata match those in the data
+        params: 
+        @skip = boolean indicating whether to skip a check that unique id's are in both meta and data match 
+        """
+        
+        # formats warming method to not double print and allow string formatting
+        warnings.formatwarning = format_warning
 
-            if isinstance(dataframe.meta, pd.DataFrame) is not True:
-                warnings.warn('Metadata input is not a pandas dataframe')
+        if isinstance(dataframe.meta, pd.DataFrame) is not True:
+            warnings.warn('Metadata input is not a pandas dataframe')
+            exit()
+
+        drop_col_names = ['path', 'file_name', 'file_size', 'machine_id']
+        dataframe.meta = dataframe.meta.drop(columns=[col for col in dataframe.meta if col in drop_col_names])
+
+        if dataframe.index.name != 'id':
+            try:
+                dataframe.set_index('id', inplace = True)
+            except:
+                warnings.warn("There is no 'id' as a column or index in the data'")
                 exit()
 
-            drop_col_names = ['path', 'file_name', 'file_size', 'machine_id']
-            dataframe.meta = dataframe.meta.drop(columns=[col for col in dataframe.meta if col in drop_col_names])
-
-            if dataframe.index.name != 'id':
-                try:
-                    dataframe.set_index('id', inplace = True)
-                except:
-                    warnings.warn("There is no 'id' as a column or index in the data'")
-                    exit()
-
-            if dataframe.meta.index.name != 'id':
-                try:
-                    dataframe.meta.set_index('id', inplace = True)
-                except:
-                    warnings.warn("There is no 'id' as a column or index in the metadata'")
-                    exit()
-
-            # checks if all id's of data are in the metadata dataframe
-            check_data = all(elem in set(dataframe.meta.index.tolist()) for elem in set(dataframe.index.tolist()))
-            if check_data is not True:
-                warnings.warn("There are ID's in the data that are not in the metadata, please check. You can skip this process by changing the parameter skip to False")
+        if dataframe.meta.index.name != 'id':
+            try:
+                dataframe.meta.set_index('id', inplace = True)
+            except:
+                warnings.warn("There is no 'id' as a column or index in the metadata'")
                 exit()
+
+        # checks if all id's of data are in the metadata dataframe
+        check_data = all(elem in set(dataframe.meta.index.tolist()) for elem in set(dataframe.index.tolist()))
+        if check_data is not True:
+            warnings.warn("There are ID's in the data that are not in the metadata, please check. You can skip this process by changing the parameter skip to False")
+            exit()
 
     def _check_lists(self, f_col, f_arg, f_lab):
         """
@@ -151,6 +155,7 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _plot_ylayout(fig, yrange, t0, dtick, ylabel, title, secondary = False, xdomain = False, ytype = "-", grid = False):
+        """ create a plotly y-axis layout """
         if secondary is not False:
             fig['layout']['yaxis2'] = {}
             axis = 'yaxis2'
@@ -205,6 +210,7 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _plot_xlayout(fig, xrange, t0, dtick, xlabel, domains = False, axis = None, type = "-"):
+        """ create a plotly x-axis layout """
         if domains is not False:
             fig['layout'][axis] = {}
         else:
@@ -242,6 +248,7 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _zscore_bootstrap(array, min_max = False):
+        """ calculate the z score of a given array, remove any values +- 3 SD"""
         try:
             if len(array) == 1 or all(array == array[0]):
                 median = q3 = q1 = array[0]
@@ -311,6 +318,7 @@ class behavpy(pd.DataFrame):
 
     @staticmethod  
     def _plot_line(df, column, name, marker_col, t_col = 't'):
+        """ creates traces to plot a mean line with 95% confidence intervals for a plotly figure """
 
         def pop_std(array):
             return np.std(array, ddof = 0)
@@ -369,6 +377,7 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _get_colours(plot_list):
+        """ returns a colour palette from plotly for plotly"""
         if len(plot_list) <= 11:
             return qualitative.Safe
         elif len(plot_list) < 24:
@@ -379,9 +388,6 @@ class behavpy(pd.DataFrame):
             
     # set meta as permenant attribute
     _metadata = ['meta']
-        
-    _colours_small = qualitative.Safe
-    _colours_large = qualitative.Dark24
 
     def display(self):
         """
@@ -402,7 +408,7 @@ class behavpy(pd.DataFrame):
         returns a behavpy object with filtered data and metadata
         """
 
-        if type(args[0]) == list:
+        if type(args[0]) == list or type(args[0]) == np.array:
             args = args[0]
 
         if column == 'id':
@@ -759,6 +765,32 @@ class behavpy(pd.DataFrame):
 
         return bout_gb
 
+    @staticmethod
+    def _wrapped_interpolate(data, var, step, t_col = 't'):
+        """ Take the min and max time, create a time series at a given time step and interpolate missing values from the data """
+
+        id = data['id'].iloc[0]
+        sample_seq = np.arange(min(data[t_col]), max(data[t_col]), step)
+        if len(sample_seq) < 3:
+            return None
+        f  = interp1d(data[t_col].to_numpy(), data[var].to_numpy())
+        return  pd.DataFrame(data = {'id' : id, t_col : sample_seq, var : f(sample_seq)})
+
+    def interpolate(self, variable, step_size, t_column = 't'):
+        """ A wrapped for wrapped_interpolate so work on multiple specimens
+        params:
+        @varibale = string, the column name of the variable of interest
+        @step_size = int, the amount of time in seconds the new time series should progress by. I.e. 60 = [0, 60, 120, 180...]
+        @t_column = string, string, column name for the time series data in your dataframe
+        
+        returns a behavpy object with a single data column with interpolated data per specimen"""
+
+        data = self.copy(deep = True)
+        data = data.bin_time(column = variable, t_column = t_column, bin_secs = step_size)
+        data = data.rename(columns = {f'{t_column}_bin' : 't', f'{variable}_mean' : variable})
+        data = data.reset_index()
+        return  behavpy(data.groupby('id', group_keys = False).apply(partial(self._wrapped_interpolate, var = variable, step = step_size)), data.meta, check = True)
+
     def bin_time(self, column, bin_secs, t_column = 't', function = 'mean'):
         """
         Bin the time series data into entered groups, pivot by the time series column and apply a function to the selected columns.
@@ -766,7 +798,7 @@ class behavpy(pd.DataFrame):
         Params:
         @column = string, column in the data that you want to the function to be applied to post pivot
         @bin_secs = float, the amount of time you want in each bin in seconds, e.g. 60 would be bins for every minutes
-        @t_column = string, column same for the time series data that you want to group and pivot by
+        @t_column = string, column name for the time series data that you want to group and pivot by
         @function = string or user defined function. The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
         
         returns a behavpy object with a single data column
@@ -975,10 +1007,10 @@ class behavpy(pd.DataFrame):
         hours_in_seconds = wrap_time * 60 * 60
         if inplace == False:
             new = self.copy(deep = True)
-            new[time_column] = new.time_column % hours_in_seconds
+            new[time_column] = new[time_column] % hours_in_seconds
             return new
         else:
-            self[time_column] = self.time_column % hours_in_seconds
+            self[time_column] = self[time_column] % hours_in_seconds
 
     def baseline(self, column, t_column = 't', day_length = 24, inplace = False):
         """
@@ -1177,13 +1209,7 @@ class behavpy(pd.DataFrame):
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
 
-        if len(d_list) < 11:
-            col_list = self._colours_small
-        elif len(d_list) < 24:
-            col_list = self._colours_large
-        else:
-            warnings.warn('Too many sub groups to plot with the current colour palette')
-            exit()
+        col_list = self._get_colours(d_list)
 
         max_var = []
         y_range, dtick = self._check_boolean(list(self[variable].dropna()))
@@ -1518,13 +1544,16 @@ class behavpy(pd.DataFrame):
         square = sqrt(length) 
         closest = [floor(square)**2, ceil(square)**2]
         return int(sqrt(closest[1]))
-    def plot_actogram(self, mov_variable = 'moving', bin_window = 30, t_column = 't', individual = False, individual_label = None, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = '', save = False):
+
+    def plot_actogram(self, mov_variable = 'moving', bin_window = 30, t_column = 't', individual_labels = None, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = '', save = False):
         
-        if individual == True and facet_col != None:
-            warnings.warn('You cannot facet when looking at each individual in the dataframe')
+        if individual_labels != None and facet_col != None:
+            warnings.warn('If faceting by a column please use facet_labels for labels and not individual_labels')
             exit()
-        elif individual == True:
-            assert(isinstance(individual_label, str))
+
+        if individual_labels is not None:
+            if individual_labels not in self.meta.columns.tolist():
+                raise AttributeError(f'{individual_labels} is not a column in the metadata')
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1532,7 +1561,7 @@ class behavpy(pd.DataFrame):
             try:
                 max_days = int(d['day'].max())
                 for i in range(max_days):
-                    x_list_2 = d['t_bin'][d['day'] == i+1].to_numpy() + 24
+                    x_list_2 = d['t_bin'][d['day'] == i+1].to_numpy() + day_length
                     x_list = np.append(d['t_bin'][d['day'] == i].to_numpy(), x_list_2)
                     y_list = np.append(d[f'{mov_variable}_mean'][d['day'] == i].tolist(), d[f'{mov_variable}_mean'][d['day'] == i+1].tolist())
                     y_mod = np.array([i+1] * len(y_list)) - (y_list)
@@ -1560,14 +1589,14 @@ class behavpy(pd.DataFrame):
                     boxpoints = False
                 ), row = row, col = col)
 
-        if individual == False:
+        if facet_col != None:
             root = self._get_subplots(len(facet_arg))
             title_list = facet_labels
-        elif individual == True:
+        else:
             facet_arg = self.meta.index.tolist()
             root =  self._get_subplots(len(facet_arg))
-            if individual_label is not None:
-                title_list = self.meta[individual_label].tolist()
+            if individual_labels is not None:
+                title_list = self.meta[individual_labels].tolist()
             else:
                 title_list = facet_arg
 
@@ -1581,12 +1610,8 @@ class behavpy(pd.DataFrame):
         self.add_day_phase(time_column = 't_bin')
 
         for arg, col, row in zip(facet_arg, col_list, row_list): 
-            if individual == True:
-                d = self.xmv('id', arg)
-                d.wrap_time(24, time_column = 't_bin', inplace = True)
-                d['t_bin'] = d['t_bin'] / (60*60)
 
-            else:
+            if facet_col is not None:
                 d = self.xmv(facet_col, arg)
                 d = d.groupby('t_bin').agg(**{
                     'moving_mean' : ('moving_mean', 'mean'),
@@ -1594,6 +1619,10 @@ class behavpy(pd.DataFrame):
                 })
                 d.reset_index(inplace = True)
                 d['t_bin'] = d['t_bin'].map(lambda t: (t % (day_length*60*60)) / (60*60))
+            else:
+                d = self.xmv('id', arg)
+                d = d.wrap_time(24, time_column = 't_bin')
+                d['t_bin'] = d['t_bin'] / (60*60)
 
             make_plots(d, col, row)
 
@@ -1625,7 +1654,7 @@ class behavpy(pd.DataFrame):
             autorange =  'reversed'
         )
         
-        if individual == True:
+        if facet_col == None:
             fig.update_annotations(font_size=8)
         fig['layout']['title'] = title
         fig['layout']['plot_bgcolor'] = 'white'
@@ -1639,6 +1668,4 @@ class behavpy(pd.DataFrame):
             fig.show()
         else:
             fig.show()
-
-    def plot_wavelet(self, varaible = 'moving', t_column = 't', wavelet = 'morl', bin = 600, scale = 156, individual = False, individual_label = None, facet_col = None, facet_arg = None, facet_labels = None, title = '', save = False):
-        return None
+    

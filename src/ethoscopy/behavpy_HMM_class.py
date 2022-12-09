@@ -638,7 +638,7 @@ class behavpy_HMM(behavpy):
         fig.add_annotation(
                     font = {'size': 18, 'color' : 'black'},
                     showarrow = False,
-                    text = 'Likelihood to be in sleep state)',
+                    text = 'Likelihood to be in sleep state',
                     x = 0,
                     xanchor = 'left',
                     xref = 'paper',
