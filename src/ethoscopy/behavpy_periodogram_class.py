@@ -159,7 +159,9 @@ class behavpy_periodogram(behavpy):
             return  behavpy_periodogram(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, check = True)
 
     def plot_periodogram_tile(self, labels = None, find_peaks = False, title = '', grids = False, save = False):
-
+        """ Create a tile plot of all the periodograms in a periodogram dataframe"""
+        
+        self._validate()
 
         if labels is not None:
             if labels not in self.meta.columns.tolist():
