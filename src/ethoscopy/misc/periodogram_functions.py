@@ -57,10 +57,10 @@ def lomb_scargle(data, t_col, var, period_range = [10, 36], alpha = 0.01, **kwar
     start = 60*60*period_range[0]
     end = 60*60*period_range[1]
     t, y =  data[t_col].to_numpy(), data[var].to_numpy()
-    
     ls = LombScargle(t, y)
     period, power = ls.autopower(minimum_frequency= 1/end, maximum_frequency = 1/start, samples_per_peak = 20)
-    period = 1 / (period / (60*60))
+    period = 1 / period
+    period = period / (60*60)
     out = pd.DataFrame(data = {'id' : id, 'period' : period, 'power' : power, 'sig_threshold' : ls.false_alarm_level(alpha)})
 
     out.set_index('id', inplace = True)
@@ -81,12 +81,12 @@ def fourier(data, t_col, var, period_range = [10, 36], alpha = 0.01, **kwargs):
     power = fft(y)
     power = 2.0/N * np.abs(power[0:N//2])
     long_period = 1 / period  
-    long_period / (60*60)
-    short_period = long_period[(long_period > start) & (long_period < end)]
+    period = long_period[(long_period > start) & (long_period < end)]
+    period = period / (60*60)
     short_power = power[(long_period > start) & (long_period < end)]
 
     sig_thresh = -np.mean(power) * np.log((1 - ((1 - alpha) ** (1 / len(power)))))
-    out = pd.DataFrame(data = {'id' : id, 'period' : short_period, 'power' : short_power, 'sig_threshold' : sig_thresh})    
+    out = pd.DataFrame(data = {'id' : id, 'period' : period, 'power' : short_power, 'sig_threshold' : sig_thresh})    
     
     out.set_index('id', inplace = True)
     out = out.sort_values('period', ascending = True)
@@ -103,25 +103,25 @@ def welch(data, t_col, var, period_range = [10, 36], alpha = 0.01, **kwargs):
     dt = t[1] - t[0]
     period, power = welch(y, fs = 1/dt)
     long_period = 1 / period  
-    long_period = long_period / (60*60)
-    short_period = long_period[(long_period > start) & (long_period < end)]
+    period = long_period[(long_period > start) & (long_period < end)]
+    period = period / (60*60)
     short_power = power[(long_period > start) & (long_period < end)]
 
     sig_thresh = -np.mean(power) * np.log((1 - ((1 - alpha) ** (1 / len(power)))))
-    out = pd.DataFrame(data = {'id' : id, 'period' : short_period, 'power' : short_power, 'sig_threshold' : sig_thresh})    
+    out = pd.DataFrame(data = {'id' : id, 'period' : period, 'power' : short_power, 'sig_threshold' : sig_thresh})    
     
     out.set_index('id', inplace = True)
     out = out.sort_values('period', ascending = True)
 
     return out
 
-def wavelet(data, t_col, var, scale = 156, wavelet = 'morl', **kwargs):
+def wavelet(data, t_col, var, scale = 156, wavelet_type = 'morl', **kwargs):
 
     scales = np.arange(1, scale)
-    id = data.name
     t, y =  data[t_col].to_numpy(), data[var].to_numpy()
     dt = t[1] - t[0]
-    [coefficients, frequencies] = cwt(y, scales, wavelet, dt)
+    dt = dt / (60*60)
+    [coefficients, frequencies] = cwt(y, scales, wavelet_type, dt)
     power = (abs(coefficients)) ** 2
     period = 1/frequencies
-    return t, np.log2(period), np.log2(power)
+    return t/(60*60), np.log2(period), np.log2(power)

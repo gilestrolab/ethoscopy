@@ -154,7 +154,7 @@ class behavpy(pd.DataFrame):
         return y_range, dtick
 
     @staticmethod
-    def _plot_ylayout(fig, yrange, t0, dtick, ylabel, title, secondary = False, xdomain = False, ytype = "-", grid = False):
+    def _plot_ylayout(fig, yrange, ylabel, title, t0 = False, dtick = False, secondary = False, xdomain = False, tickvals = False, ticktext = False, ytype = "-", grid = False):
         """ create a plotly y-axis layout """
         if secondary is not False:
             fig['layout']['yaxis2'] = {}
@@ -176,7 +176,6 @@ class behavpy(pd.DataFrame):
         fig['layout'][axis].update(
                         linecolor = 'black',
                         type = ytype,
-                        tick0 = t0,
                         title = dict(
                             text = ylabel,
                             font = dict(
@@ -196,12 +195,18 @@ class behavpy(pd.DataFrame):
                     )
         if yrange is not False:
             fig['layout'][axis]['range'] = yrange
+        if t0 is not False:
+            fig['layout'][axis]['tick0'] = t0
         if dtick is not False:
             fig['layout'][axis]['dtick'] = dtick
         if secondary is not False:
             fig['layout'][axis]['side'] = 'right'
             fig['layout'][axis]['overlaying'] = 'y'
             fig['layout'][axis]['anchor'] = xdomain
+        if tickvals is not False:
+            fig['layout'][axis].update(tickvals = tickvals)
+        if ticktext is not False:
+            fig['layout'][axis].update(ticktext = ticktext)
         if grid is False:
             fig['layout'][axis]['showgrid'] = False
         else:
@@ -209,7 +214,7 @@ class behavpy(pd.DataFrame):
             fig['layout'][axis]['gridcolor'] = 'black'
 
     @staticmethod
-    def _plot_xlayout(fig, xrange, t0, dtick, xlabel, domains = False, axis = None, type = "-"):
+    def _plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = False, domains = False, axis = False, tickvals = False, ticktext = False, type = "-"):
         """ create a plotly x-axis layout """
         if domains is not False:
             fig['layout'][axis] = {}
@@ -245,9 +250,13 @@ class behavpy(pd.DataFrame):
             fig['layout'][axis]['title'].update(text = xlabel)
         if domains is not False:
             fig['layout'][axis].update(domain = domains)
+        if tickvals is not False:
+            fig['layout'][axis].update(tickvals = tickvals)
+        if ticktext is not False:
+            fig['layout'][axis].update(ticktext = ticktext)
 
     @staticmethod
-    def _zscore_bootstrap(array, min_max = False):
+    def _zscore_bootstrap(array, second_array = None, min_max = False):
         """ calculate the z score of a given array, remove any values +- 3 SD"""
         try:
             if len(array) == 1 or all(array == array[0]):
@@ -255,6 +264,8 @@ class behavpy(pd.DataFrame):
                 zlist = array
             else:
                 zlist = array[np.abs(zscore(array)) < 3]
+                if second_array is not None:
+                    second_array = second_array[np.abs(zscore(array)) < 3] 
                 median = zlist.mean()
                 boot_array = bootstrap(zlist)
                 q3 = boot_array[1]
@@ -267,8 +278,11 @@ class behavpy(pd.DataFrame):
         if min_max == True:
             q3 = np.max(array)
             q1 = np.min(array)
-            
-        return median, q3, q1, zlist
+        
+        if second_array is not None:
+            return median, q3, q1, zlist, second_array
+        else:
+            return median, q3, q1, zlist
 
     @staticmethod
     def _plot_meanbox(median, q3, q1, x, colour, showlegend, name, xaxis):
@@ -292,7 +306,7 @@ class behavpy(pd.DataFrame):
         return trace_box
     
     @staticmethod
-    def _plot_boxpoints(y, x, colour, showlegend, name, xaxis):
+    def _plot_boxpoints(y, x, colour, showlegend, name, xaxis, marker_size = None):
         trace_box = go.Box(
             showlegend = showlegend,
             y = y, 
@@ -314,6 +328,8 @@ class behavpy(pd.DataFrame):
             name = name,
             legendgroup = name,
         )
+        # if marker_size is not None:
+        #     trace_box['marker_size'] = marker_size
         return trace_box
 
     @staticmethod  
@@ -622,7 +638,7 @@ class behavpy(pd.DataFrame):
                                                                                                 asleep = asleep
             )), tdf.meta, check = True)
 
-    def plot_sleep_bouts(self, sleep_column = 'asleep', facet_col = None, facet_arg = None, facet_labels = None, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True, title = '', save = False, grids = False):
+    def plot_sleep_bouts(self, sleep_column = 'asleep', facet_col = None, facet_arg = None, facet_labels = None, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True, title = '', grids = False):
         """ Plot with faceting the sleep bouts analysis function"""
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -684,15 +700,7 @@ class behavpy(pd.DataFrame):
         self._plot_ylayout(fig, yrange = [0, max(max_y)], t0 = 0, dtick = max(max_y) / 5, ylabel = 'Proportion of total Bouts', title = title, grid = grids)
         self._plot_xlayout(fig, xrange = [time_immobile, np.max(x)+0.5], t0 = time_immobile, dtick = bin_size, xlabel = 'Bouts (minutes)')
 
-        if isinstance(save, str):
-            if save.endswith('.html'):
-                fig.write_html(save)
-            else:
-                fig.write_image(save, width=1500, height=650)
-            print(f'Saved to {save}')
-            fig.show()
-        else:
-            fig.show()
+        return fig
 
     @staticmethod
     def _wrapped_curate_dead_animals(data, time_var, moving_var, time_window, prop_immobile, resolution): 
@@ -1044,7 +1052,7 @@ class behavpy(pd.DataFrame):
 
             return new
 
-    def heatmap(self, variable = 'moving', title = '', save = False):
+    def heatmap(self, variable = 'moving', title = ''):
         """
         Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
         
@@ -1114,15 +1122,8 @@ class behavpy(pd.DataFrame):
                 ),
                 linewidth = 2)
                 )
-        if isinstance(save, str):
-            if save.endswith('.html'):
-                fig.write_html(save)
-            else:
-                fig.write_image(save, width=1500, height=650)
-            print(f'Saved to {save}')
-            fig.show()
-        else:
-            fig.show()
+
+        return fig
 
     def remove(self, column, *args):
         """ 
@@ -1197,7 +1198,7 @@ class behavpy(pd.DataFrame):
         
         return self.remove('id', id_list)
 
-    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
+    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1226,6 +1227,10 @@ class behavpy(pd.DataFrame):
 
         for data, name, col in zip(d_list, facet_labels, col_list):
 
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
+
             if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
                 col = 'grey'
 
@@ -1250,22 +1255,14 @@ class behavpy(pd.DataFrame):
             max_var.append(maxV)
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, max_y = max(max_var), day_length = day_length, lights_off = lights_off)
+        bar_shapes = circadian_bars(min(min_t), max(max_t), max_y = max(max_var), day_length = day_length, lights_off = lights_off)
         fig.update_layout(shapes=list(bar_shapes.values()))
     
-        fig['layout']['xaxis']['range'] = [t_min, t_max]
+        fig['layout']['xaxis']['range'] = [min(min_t), max(max_t)]
 
-        if isinstance(save, str):
-            if save.endswith('.html'):
-                fig.write_html(save)
-            else:
-                fig.write_image(save, width=1500, height=650)
-            print(f'Saved to {save}')
-            fig.show()
-        else:
-            fig.show()
+        return fig
 
-    def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False):
+    def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1287,13 +1284,16 @@ class behavpy(pd.DataFrame):
         stats_dict = {}
 
         for data, name, col in zip(d_list, facet_labels, col_list):
+            
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
 
             if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
                 col = 'grey'
 
             data = data.dropna(subset = [variable])
             gdf = data.pivot(column = variable, function = 'mean')
-
             median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{variable}_mean'].to_numpy())
             stats_dict[name] = zlist
 
@@ -1305,19 +1305,9 @@ class behavpy(pd.DataFrame):
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
-        if isinstance(save, str):
-            if save.endswith('.html'):
-                fig.write_html(save)
-            else:
-                fig.write_image(save, width=1500, height=650)
-            print(f'Saved to {save}')
-            fig.show()
-        else:
-            fig.show()
+        return fig, stats_df
 
-        return stats_df
-
-    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
+    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1336,6 +1326,10 @@ class behavpy(pd.DataFrame):
         stats_dict = {}
 
         for data, name in zip(d_list, facet_labels):
+
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
 
             data.add_day_phase(day_length = day_length, lights_off = lights_off)
 
@@ -1363,19 +1357,9 @@ class behavpy(pd.DataFrame):
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
-        if isinstance(save, str):
-            if save.endswith('.html'):
-                fig.write_html(save)
-            else:
-                fig.write_image(save, width=1500, height=650)
-            print(f'Saved to {save}')
-            fig.show()
-        else:
-            fig.show()
-
-        return stats_df
+        return fig, stats_df
     
-    def plot_compare_variables(self, variables, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, save = False):
+    def plot_compare_variables(self, variables, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
         """the first variable in the list is the left hand axis, the last is the right hand axis"""
 
         assert(isinstance(variables, list))
@@ -1397,6 +1381,10 @@ class behavpy(pd.DataFrame):
         stats_dict = {}
 
         for c, (data, name) in enumerate(zip(d_list, facet_labels)):   
+
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
 
             bool_list = len(variables) * [False]
             bool_list[-1] = True
@@ -1436,19 +1424,9 @@ class behavpy(pd.DataFrame):
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
-        if isinstance(save, str):
-            if save.endswith('.html'):
-                fig.write_html(save)
-            else:
-                fig.write_image(save, width=1500, height=650)
-            print(f'Saved to {save}')
-            fig.show()
-        else:
-            fig.show()
+        return fig, stats_df
 
-        return stats_df
-
-    def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, save = False):
+    def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1480,10 +1458,10 @@ class behavpy(pd.DataFrame):
 
             if phase == 'Lights Off':
                 start = [lights_off - 6, lights_off - 3]
-                end = lights_off - 0.2
+                end = lights_off
             elif phase == 'Lights On':
                 start = [day_length - 6, day_length - 3]
-                end = day_length - 0.2
+                end = day_length
 
             for d, l in zip(data_list, facet_labels):
                 d = d.dropna(subset = [mov_variable])
@@ -1506,7 +1484,9 @@ class behavpy(pd.DataFrame):
                 label_list.append(len(zscore_list) * [l])
 
             return median_list, q3_list, q1_list, con_list, label_list
-            
+        
+        stats_dict = {}
+
         for c, phase in enumerate(['Lights Off', 'Lights On']):
 
             median_list, q3_list, q1_list, con_list, label_list = analysis(d_list, phase = phase)
@@ -1518,6 +1498,8 @@ class behavpy(pd.DataFrame):
                 else:
                     col_index = c2
 
+                stats_dict[f'{label}_{phase}'] = con_list[c2]
+
                 fig.add_trace(self._plot_meanbox(median = [median_list[c2]], q3 = [q3_list[c2]], q1 = [q1_list[c2]], 
                 x = [label], colour =  col_list[col_index], showlegend = False, name = label, xaxis = f'x{c+1}'))
 
@@ -1527,16 +1509,10 @@ class behavpy(pd.DataFrame):
             domains = np.arange(0, 2, 1/2)
             axis = f'xaxis{c+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = phase, domains = domains[c:c+2], axis = axis)
+        
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
-        if isinstance(save, str):
-            if save.endswith('.html'):
-                fig.write_html(save)
-            else:
-                fig.write_image(save, width=1500, height=650)
-            print(f'Saved to {save}')
-            fig.show()
-        else:
-            fig.show()
+        return fig, stats_df
 
     @staticmethod
     def _get_subplots(length):
@@ -1545,27 +1521,16 @@ class behavpy(pd.DataFrame):
         closest = [floor(square)**2, ceil(square)**2]
         return int(sqrt(closest[1]))
 
-    def plot_actogram(self, mov_variable = 'moving', bin_window = 30, t_column = 't', individual_labels = None, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = '', save = False):
-        
-        if individual_labels != None and facet_col != None:
-            warnings.warn('If faceting by a column please use facet_labels for labels and not individual_labels')
-            exit()
-
-        if individual_labels is not None:
-            if individual_labels not in self.meta.columns.tolist():
-                raise AttributeError(f'{individual_labels} is not a column in the metadata')
-
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
-        def make_plots(d, col, row):
-            try:
-                max_days = int(d['day'].max())
-                for i in range(max_days):
-                    x_list_2 = d['t_bin'][d['day'] == i+1].to_numpy() + day_length
-                    x_list = np.append(d['t_bin'][d['day'] == i].to_numpy(), x_list_2)
-                    y_list = np.append(d[f'{mov_variable}_mean'][d['day'] == i].tolist(), d[f'{mov_variable}_mean'][d['day'] == i+1].tolist())
-                    y_mod = np.array([i+1] * len(y_list)) - (y_list)
-                    fig.append_trace(go.Box(
+    @staticmethod
+    def _actogram_plot(fig, data, mov, day, row, col):
+        try:
+            max_days = int(data['day'].max())
+            for i in range(max_days):
+                x_list_2 = data['t_bin'][data['day'] == i+1].to_numpy() + day
+                x_list = np.append(data['t_bin'][data['day'] == i].to_numpy(), x_list_2)
+                y_list = np.append(data[f'{mov}_mean'][data['day'] == i].tolist(), data[f'{mov}_mean'][data['day'] == i+1].tolist())
+                y_mod = np.array([i+1] * len(y_list)) - (y_list)
+                fig.append_trace(go.Box(
                         showlegend = False,
                         median = (([i+1]*len(x_list) + y_mod) / 2),
                         q1 = y_mod,
@@ -1576,10 +1541,10 @@ class behavpy(pd.DataFrame):
                         ),
                         fillcolor = 'black',
                         boxpoints = False
-                    ), row = row, col = col)
-            except ValueError:
-                x_list = list(range(0,24,2))
-                fig.append_trace(go.Box(
+                ), row = row, col = col)
+        except ValueError:
+            x_list = list(range(0,24,2))
+            fig.append_trace(go.Box(
                     showlegend = False,
                     x = x_list,
                     marker = dict(
@@ -1587,18 +1552,19 @@ class behavpy(pd.DataFrame):
                     ),
                     fillcolor = 'black',
                     boxpoints = False
-                ), row = row, col = col)
+            ), row = row, col = col)
+
+    def plot_actogram(self, mov_variable = 'moving', bin_window = 5, t_column = 't', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = ''):
+        
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
         if facet_col != None:
             root = self._get_subplots(len(facet_arg))
             title_list = facet_labels
         else:
-            facet_arg = self.meta.index.tolist()
-            root =  self._get_subplots(len(facet_arg))
-            if individual_labels is not None:
-                title_list = self.meta[individual_labels].tolist()
-            else:
-                title_list = facet_arg
+            facet_arg = [None]
+            root =  self._get_subplots(1)
+            title_list = ['']
 
         # make a square subplot domain
         fig = make_subplots(rows=root, cols=root, shared_xaxes = False, subplot_titles = title_list)
@@ -1606,13 +1572,19 @@ class behavpy(pd.DataFrame):
         row_list = list([i] * root for i in range(1, root+1))
         row_list = [item for sublist in row_list for item in sublist]
 
-        self = self.bin_time(mov_variable, bin_window*60, t_column = t_column)
-        self.add_day_phase(time_column = 't_bin')
+        data = self.copy(deep=True)
+        data = data.bin_time(mov_variable, bin_window*60, t_column = t_column)
+        data.add_day_phase(time_column = 't_bin')
 
         for arg, col, row in zip(facet_arg, col_list, row_list): 
 
             if facet_col is not None:
-                d = self.xmv(facet_col, arg)
+                d = data.xmv(facet_col, arg)
+
+                if len(d) == 0:
+                    print(f'Group {arg} has no values and cannot be plotted')
+                    continue
+
                 d = d.groupby('t_bin').agg(**{
                     'moving_mean' : ('moving_mean', 'mean'),
                     'day' : ('day', 'max')
@@ -1620,11 +1592,10 @@ class behavpy(pd.DataFrame):
                 d.reset_index(inplace = True)
                 d['t_bin'] = d['t_bin'].map(lambda t: (t % (day_length*60*60)) / (60*60))
             else:
-                d = self.xmv('id', arg)
-                d = d.wrap_time(24, time_column = 't_bin')
+                d = data.wrap_time(24, time_column = 't_bin')
                 d['t_bin'] = d['t_bin'] / (60*60)
 
-            make_plots(d, col, row)
+            self._actogram_plot(fig = fig, data = d, mov = mov_variable, day = day_length, row = row, col = col)
 
         fig.update_xaxes(
             zeroline = False,
@@ -1636,7 +1607,7 @@ class behavpy(pd.DataFrame):
             dtick = 6,
             ticks = 'outside',
             tickfont = dict(
-                size = 1
+                size = 12
             ),
             showgrid = False
         )
@@ -1646,7 +1617,7 @@ class behavpy(pd.DataFrame):
             color = 'black',
             linecolor = 'black',
             gridcolor = 'black',
-            range = [0,int(self['day'].max())],
+            range = [0,int(data['day'].max())],
             tick0 = 0,
             dtick = 1,
             ticks = 'outside',
@@ -1659,13 +1630,70 @@ class behavpy(pd.DataFrame):
         fig['layout']['title'] = title
         fig['layout']['plot_bgcolor'] = 'white'
 
-        if isinstance(save, str):
-            if save.endswith('.html'):
-                fig.write_html(save)
-            else:
-                fig.write_image(save, width=1500, height=650)
-            print(f'Saved to {save}')
-            fig.show()
+        return fig
+    
+    def plot_actogram_tile(self, mov_variable = 'moving', bin_window = 5, t_column = 't', labels = None, day_length = 24, title = ''):
+        
+        if labels is not None:
+            if labels not in self.meta.columns.tolist():
+                raise AttributeError(f'{labels} is not a column in the metadata')
+            title_list = self.meta[labels].tolist() 
         else:
-            fig.show()
+            title_list = self.meta.index.tolist()
+
+        facet_arg = self.meta.index.tolist()
+        root =  self._get_subplots(len(facet_arg))
+        
+        data = self.copy(deep=True)
+
+        # make a square subplot domain
+        fig = make_subplots(rows=root, cols=root, shared_xaxes = False, subplot_titles = title_list)
+        col_list = list(range(1, root+1)) * root
+        row_list = list([i] * root for i in range(1, root+1))
+        row_list = [item for sublist in row_list for item in sublist]
+
+        data = data.bin_time(mov_variable, bin_window*60, t_column = t_column)
+        data.add_day_phase(time_column = 't_bin')
+
+        for arg, col, row in zip(facet_arg, col_list, row_list): 
+
+            d = data.xmv('id', arg)
+            d = d.wrap_time(24, time_column = 't_bin')
+            d['t_bin'] = d['t_bin'] / (60*60)
+
+            self._actogram_plot(fig = fig, data = d, mov = mov_variable, day = day_length, row = row, col = col)
+
+        fig.update_xaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            range = [0,48],
+            tick0 = 0,
+            dtick = 6,
+            ticks = 'outside',
+            tickfont = dict(
+                size = 12
+            ),
+            showgrid = False
+        )
+
+        fig.update_yaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            range = [0,int(data['day'].max())],
+            tick0 = 0,
+            dtick = 1,
+            ticks = 'outside',
+            showgrid = True,
+            autorange =  'reversed'
+        )
+
+        fig.update_annotations(font_size=8)
+        fig['layout']['title'] = title
+        fig['layout']['plot_bgcolor'] = 'white'
+
+        return fig
     

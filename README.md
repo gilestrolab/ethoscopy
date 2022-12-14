@@ -1,6 +1,6 @@
 **ethoscopy**
 
-Head to: https://l-blackhurst.gitbook.io/ethoscopy/ for an indepth tutorial on how to use ethoscopy
+Head to: https://bookstack.lab.gilest.ro/books/ethoscopy for an indepth tutorial on how to use ethoscopy
 
 A data-analysis toolbox utilising the python language for use with data collected from 'Ethoscopes', a Drosophila video monitoring system.
 

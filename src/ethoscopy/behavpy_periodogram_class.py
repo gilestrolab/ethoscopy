@@ -48,15 +48,10 @@ class behavpy_periodogram(behavpy):
             raise AttributeError('This method is for the computed periodogram data only, please run the periodogram method on your data first')
         
 
-    def _check_periodogram_input(self, v, per, per_range, t_col, wavelet = False):
+    def _check_periodogram_input(self, v, per, per_range, t_col, wavelet_type = False):
         """ Method to check the input to periodogram methods"""
 
-        periodogram_list = ['chi_squared', 'lomb_scargle', 'fourier', 'welch', 'wavelet']
-
-        if per in periodogram_list:
-            fun = eval(per)
-        else:
-            raise AttributeError(f"Unknown periodogram type, please use one of {*periodogram_list,}")
+        periodogram_list = ['chi_squared', 'lomb_scargle', 'fourier', 'welch']
 
         if v not in self.columns.tolist():
             raise AttributeError(f"Variable column {v} is not a column title in your given dataset")
@@ -64,8 +59,14 @@ class behavpy_periodogram(behavpy):
         if t_col not in self.columns.tolist():
             raise AttributeError(f"Time column {t_col} is not a column title in your given dataset")
 
-        if wavelet is True:
+        if wavelet_type is not False:
+            fun = eval(per)
             return fun
+
+        if per in periodogram_list:
+            fun = eval(per)
+        else:
+            raise AttributeError(f"Unknown periodogram type, please use one of {*periodogram_list,}")
 
         if isinstance(per_range, list) is False and isinstance(per_range, np.array) is False:
             raise TypeError(f"per_range should be a list or nummpy array, please change")
@@ -81,52 +82,70 @@ class behavpy_periodogram(behavpy):
 
         return fun
 
-    def periodogram(self, variable, periodogram, period_range = [10, 36], sampling_rate = 15, alpha = 0.01, t_col = 't'):
+    def periodogram(self, mov_variable, periodogram, period_range = [10, 32], sampling_rate = 15, alpha = 0.01, t_col = 't'):
         """ A method to apply a periodogram function to given behavioural data. Call this method first to create an analysed dataset that can access 
         the other methods of this class 
         params:
         """
 
-        fun = self._check_periodogram_input(variable, periodogram, period_range, t_col)
+        fun = self._check_periodogram_input(mov_variable, periodogram, period_range, t_col)
 
         sampling_rate = 1 / (sampling_rate * 60)
 
         data = self.copy(deep = True)
-        sampled_data = data.interpolate(variable = variable, step_size = 1 / sampling_rate)
+        sampled_data = data.interpolate(variable = mov_variable, step_size = 1 / sampling_rate)
         sampled_data = sampled_data.reset_index()
-        return  behavpy_periodogram(sampled_data.groupby('id', group_keys = False)[[t_col, variable]].apply(partial(fun, var = variable, t_col = t_col, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, check = True)
+        return  behavpy_periodogram(sampled_data.groupby('id', group_keys = False)[[t_col, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_col, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, check = True)
 
-    def wavelet(self, variable, id, facet_col = None, facet_arg = None, facet_labels = None, sampling_rate = 15, scale = 156, wavelet = 'morl', t_col = 't', plotter = 'seaborn'):
+    @staticmethod
+    def wavelet_types():
+        wave_types = ['morl', 'cmor', 'mexh', 'shan', 'fbsp', 'gaus1', 'gaus2', 'gaus3', 'gaus4', 'gaus5', 'gaus6', 'gaus7', 'gaus8', 'cgau1', 'cgau2', 'cgau3', 'cgau4', 'cgau5', 'cgau6', 'cgau7', 'cgau8']
+        return wave_types
+
+    def wavelet(self, mov_variable, sampling_rate = 15, scale = 156, wavelet_type = 'morl', t_col = 't', title = '', grids = False):
         """ A method to apply a wavelet function using the python package pywt. Head to https://pywavelets.readthedocs.io/en/latest/ for information about the pacakage and the other wavelet types
-        The method will return a figure using either seaborn or plotly. Due to how many data points there are to plot its recommended to use seaborn instead of plotly.
+        This method will produce a single wavelet transformation plot, averging the the data from across all specimens. It is therefore recommended you filter your dataset accordingly before applying 
+        this method, i.e. by different experimental groups or a singl specimen.
         params:
         @variable:  """
-
-        if facet_col is None:
-            if id not in self.meta.index.tolist():
-                raise AttributeError(f'{id} is not an id in the metadata')
-
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
-        if facet_col != None:
-            root = self._get_subplots(len(facet_arg))
-            title_list = facet_labels
-        else:
-            facet_arg = self.meta.index.tolist()
-            root =  self._get_subplots(len(facet_arg))
-            if id is not None:
-                title_list = self.meta[id].tolist()
-            else:
-                title_list = facet_arg
-
-
-        fun = self._check_periodogram_input(v = variable, per = 'wavelet', per_range = None, t_col = t_col, wavelet = True)
+        
+        fun = self._check_periodogram_input(v = mov_variable, per = 'wavelet', per_range = None, t_col = t_col, wavelet_type = wavelet_type)
         sampling_rate = 1 / (sampling_rate * 60)
 
         data = self.copy(deep = True)
-        sampled_data = data.interpolate(variable = variable, step_size = 1 / sampling_rate)
-        sampled_data = sampled_data.reset_index()
-        t, period, power = sampled_data.groupby('id', group_keys = False)[[t_col, variable]].apply(partial(fun, t_co = t_col, var = variable, scale = scale, wavelet = wavelet))
+        sampled_data = data.interpolate(variable = mov_variable, step_size = 1 / sampling_rate)
+        avg_data = sampled_data.groupby(t_col).agg(**{
+                        mov_variable : (mov_variable, 'mean')
+        })
+        avg_data = avg_data.reset_index()
+
+        fig = go.Figure()
+        yticks = [1,2,4,6,12,24,36]
+        self._plot_ylayout(fig, yrange = np.log2([2,38]), tickvals = np.log2(yticks), ticktext = yticks, title = title, ylabel = 'Period Frequency (Hours)', grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = False, dtick = 12, xlabel = 'ZT (Hours)')
+
+        t, per, pow = fun(avg_data, t_col = t_col, var = mov_variable, scale = scale, wavelet_type = wavelet_type)
+
+        trace = go.Contour(
+                z=pow,
+                x=t, 
+                y=per,
+                contours=dict(
+                    start= -3,
+                    end= 3,
+                    size= 1,
+                    # type = 'constraint'
+                ),
+                colorscale='Jet',
+                colorbar=dict(nticks=7, ticks='outside',
+                        ticklen=5, tickwidth=1,
+                        showticklabels=True,
+                        tickangle=0, tickfont_size=12)
+            )
+        fig.add_trace(trace)
+        # config = {'staticPlot': True} 
+        
+        return fig
 
     @staticmethod
     def _wrapped_find_peaks(data, num, height = None):
@@ -149,7 +168,7 @@ class behavpy_periodogram(behavpy):
         return data
     
     def find_peaks(self, num_peaks):
-        """ Find the peaks in a computed periodogram"""
+        """ Find the peaks in a computed periodogram, a wrapper for the scipy find_peaks function"""
         self._validate()
         data = self.copy(deep=True)
         data = data.reset_index()
@@ -158,9 +177,9 @@ class behavpy_periodogram(behavpy):
         else:
             return  behavpy_periodogram(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, check = True)
 
-    def plot_periodogram_tile(self, labels = None, find_peaks = False, title = '', grids = False, save = False):
+    def plot_periodogram_tile(self, labels = None, find_peaks = False, title = '', grids = False):
         """ Create a tile plot of all the periodograms in a periodogram dataframe"""
-        
+
         self._validate()
 
         if labels is not None:
@@ -220,10 +239,10 @@ class behavpy_periodogram(behavpy):
                     mode = 'markers',
                     marker_symbol = 'x-dot',
                     marker_color = 'gold',
-                    marker_size = 15
+                    marker_size = 8
                 ), row = row, col = col)
 
-        tick_6 = np.arange(0,60,6)
+        tick_6 = np.arange(0,200*6,6)
 
         fig.update_xaxes(
             zeroline = False,
@@ -233,12 +252,8 @@ class behavpy_periodogram(behavpy):
             tickmode = 'array', 
             tickvals = tick_6,
             ticktext = tick_6,
-
             range = [int(min(data['period'])), int(max(data['period']))],
             ticks = 'outside',
-            tickfont = dict(
-                size = 14
-            ),
             showgrid = False
         )
 
@@ -247,7 +262,7 @@ class behavpy_periodogram(behavpy):
             color = 'black',
             linecolor = 'black',
             gridcolor = 'black',
-            range = [int(min(data['power'])), int(max(data['power'])) + 20],
+            range = [int(min(data['power'])), int(max(data['power']))],
             ticks = 'outside',
             showgrid = grids,
         )
@@ -259,7 +274,7 @@ class behavpy_periodogram(behavpy):
         fig.add_annotation(
                     font = {'size': 18, 'color' : 'black'},
                     showarrow = False,
-                    text = 'Period Time (Hours)',
+                    text = 'Period Frequency (Hours)',
                     x = 0.5,
                     xanchor = 'center',
                     xref = 'paper',
@@ -281,23 +296,101 @@ class behavpy_periodogram(behavpy):
                     xshift =  -85,
                     textangle =  -90
         )
-        if isinstance(save, str):
-            if save.endswith('.html'):
-                fig.write_html(save)
-            else:
-                fig.write_image(save, width=1500, height=650)
-            print(f'Saved to {save}')
-            fig.show()
-        else:
-            fig.show()
         
         return fig
 
-    
-    def quantify_periodogram(self):
-        return
+    def plot_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
+        """ Plots the averaged periodograms of different experimental groups """
+        self._validate()
 
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+
+        col_list = self._get_colours(d_list)
+
+        variable = 'power'
+        max_var = []
+        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        if y_range is False:
+            max_var.append(1)
+        
+        fig = go.Figure() 
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Power', title = title, grid = grids)
+        tick_6 = np.arange(0,200*6,6)
+        self._plot_xlayout(fig, xrange = [min(self['period']), max(self['period'])], tickvals = tick_6, ticktext = tick_6, xlabel = 'Period Frequency (Hours)')
+
+        for data, name, col in zip(d_list, facet_labels, col_list):
+
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
+
+            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+                col = 'grey'
+
+            upper, trace, lower, _ = self._plot_line(df = data, column = 'power', name = name, marker_col = col, t_col = 'period')
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
+
+        return fig
     
+    def quantify_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
+        """ Plots a box plot of means and 95% confidence intervals of the highest ranked peak in a series of periodograms"""
+
+        self._validate()
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+
+        col_list = self._get_colours(d_list)
+        variable = 'period'
+
+        fig = go.Figure() 
+        self._plot_ylayout(fig, yrange = [min(self['period']), max(self['period'])], t0 = False, dtick = False, ylabel = 'Period (Hours)', title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = '')
+
+        stats_dict = {}
+
+        for data, name, col in zip(d_list, facet_labels, col_list):
+            
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
+
+            if 'peak' not in data.columns.tolist():
+                data = data.find_peaks(num_peaks = 1)
+            data = data[data['peak'] == 1]
+
+            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+                col = 'grey'
+
+            median, q3, q1, zlist, z_second = self._zscore_bootstrap(data[f'{variable}'].to_numpy(), second_array = data['power'].to_numpy())
+            stats_dict[name] = zlist
+
+            fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+            x = [name], colour =  col, showlegend = False, name = name, xaxis = 'x'))
+
+            fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [name], colour = col, 
+            showlegend = False, name = name, xaxis = 'x'))
+
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+
+        return fig, stats_df
 
 if __name__ == '__main__':
     df_orig = pd.read_csv(r'C:\Users\lab\Documents\Projects\dummy_ethoscopy\periodogram_csv.csv')
@@ -306,14 +399,24 @@ if __name__ == '__main__':
 
     df = behavpy_periodogram(df_orig, df_meta, check = True)
 
-    rand_flies = np.random.permutation(list(set(df.meta.index)))[:9]
+    rand_flies = np.random.permutation(list(set(df.meta.index)))[:4]
     rand_flies = list(rand_flies)
 
     tdf = df.xmv('id', rand_flies)
     # tdf = df.xmv('id', '2016-04-04_17-38-06_019aee|04')
+    # tdf = df.xmv('id', '2016-04-04_17-39-05_009aee|19')
+    fig = tdf.plot_actogram_tile()
+    fig.show()
+    # print(tdf)
     print('start periodogram')
-    perio = tdf.periodogram(variable = 'moving', periodogram = 'chi_squared')
+    # perio = tdf.periodogram(mov_variable = 'moving', periodogram = 'fourier')
+    # perio = tdf.wavelet(mov_variable = 'moving')
+    # print(perio)
     print('finsihed periodogram')
-    perio = perio.find_peaks(num_peaks = 2)
+    # perio = perio.find_peaks(num_peaks = 2)
+    # print(perio)
     # print(perio[perio['peak'] != False])
-    f = perio.plot_periodogram_tile()
+    # f = perio.plot_periodogram_tile()
+    # f = perio.plot_periodogram(facet_col = 'exp_group')
+    # f, s = perio.quantify_periodogram(facet_col = 'exp_group')
+    # print(perio)

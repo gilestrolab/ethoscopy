@@ -238,6 +238,7 @@ def link_meta_index(metadata, remote_dir, local_dir):
         raise FileNotFoundError("The metadata is not readable")
 
     if len(meta_df[meta_df.isna().any(axis=1)]) >= 1:
+        print(meta_df[meta_df.isna().any(axis=1)])
         warnings.warn("When the metadata is read it contains NaN values (empty cells in the csv file can cause this!), please replace with an alterative")
         exit()
 
