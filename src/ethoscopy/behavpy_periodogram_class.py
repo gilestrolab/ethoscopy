@@ -393,30 +393,10 @@ class behavpy_periodogram(behavpy):
         return fig, stats_df
 
 if __name__ == '__main__':
-    df_orig = pd.read_csv(r'C:\Users\lab\Documents\Projects\dummy_ethoscopy\periodogram_csv.csv')
-    df_orig = df_orig.set_index('id')
-    df_meta = pd.read_pickle(r'C:\Users\lab\Documents\Projects\dummy_ethoscopy\sd_periodogram_meta.pkl')
+    data = pd.read_csv('./ethoscopy/src/ethoscopy/misc/tutorial_data/circadian_data.pkl')
+    meta = pd.read_pickle('./ethoscopy/src/ethoscopy/misc/tutorial_data/circadian_data.pkl')
 
-    df = behavpy_periodogram(df_orig, df_meta, check = True)
+    df = behavpy_periodogram(data, meta, check = True)
 
-    rand_flies = np.random.permutation(list(set(df.meta.index)))[:4]
-    rand_flies = list(rand_flies)
-
-    tdf = df.xmv('id', rand_flies)
-    # tdf = df.xmv('id', '2016-04-04_17-38-06_019aee|04')
-    # tdf = df.xmv('id', '2016-04-04_17-39-05_009aee|19')
-    fig = tdf.plot_actogram_tile()
-    fig.show()
-    # print(tdf)
-    print('start periodogram')
-    # perio = tdf.periodogram(mov_variable = 'moving', periodogram = 'fourier')
-    # perio = tdf.wavelet(mov_variable = 'moving')
-    # print(perio)
-    print('finsihed periodogram')
-    # perio = perio.find_peaks(num_peaks = 2)
-    # print(perio)
-    # print(perio[perio['peak'] != False])
-    # f = perio.plot_periodogram_tile()
-    # f = perio.plot_periodogram(facet_col = 'exp_group')
-    # f, s = perio.quantify_periodogram(facet_col = 'exp_group')
-    # print(perio)
+    per = df.periodogram(mov_variable = 'moving', periodogram = 'lomb_scargle')
+    print(per)
