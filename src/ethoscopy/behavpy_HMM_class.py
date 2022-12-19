@@ -242,9 +242,9 @@ class behavpy_HMM(behavpy):
                     mov_var : (var_column, stat)
                 })
                 bin_gb.reset_index(level = 1, inplace = True)
-                gb = np.array(bin_gb.groupby('id')[mov_var].apply(list).tolist(), dtype = np.integer)
+                gb = bin_gb.groupby('id')[mov_var].apply(np.array)
             else:
-                gb = np.array(data.groupby('id')[mov_var].apply(list).tolist(), dtype = np.integer)
+                gb = data.groupby('id')[mov_var].apply(np.array)
             return gb
 
         if var_column == 'beam_crosses':
@@ -259,7 +259,7 @@ class behavpy_HMM(behavpy):
             gb = bin_to_list(hmm_df, t_var = t_column, mov_var = var_column, bin = bin_time)
 
         # split runs into test and train lists
-        test_train_split = round(len(gb) / test_size)
+        test_train_split = round(len(gb) * (test_size/100))
         rand_runs = np.random.permutation(gb)
         train = rand_runs[test_train_split:]
         test = rand_runs[:test_train_split]
@@ -557,9 +557,7 @@ class behavpy_HMM(behavpy):
             t_range = [t_min, t_max]  
 
             for i, (lab, row, col) in enumerate(zip(labels, row_list, col_list)):
-                # print(analysed_df)
                 upper, trace, lower, _ = self._plot_line(df = analysed_df, column = f'state_{i}', name = n, marker_col = marker_col.get(i)[c])
-                # print(upper, trace, lower)
                 fig.add_trace(upper,row=row, col=col)
                 fig.add_trace(trace, row=row, col=col) 
                 fig.add_trace(lower, row=row, col=col)
