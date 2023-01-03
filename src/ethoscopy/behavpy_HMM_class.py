@@ -39,7 +39,7 @@ class behavpy_HMM(behavpy):
             self._check_conform(self)
 
     _colours_four = ['darkblue', 'dodgerblue', 'red', 'darkred']
-    _hmm_labels = ['Deep sleep', 'Light sleep', 'Light awake', 'Full awake']
+    _hmm_labels = ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake']
 
     @staticmethod
     def _hmm_decode(d, h, b, var, fun):
@@ -446,7 +446,7 @@ class behavpy_HMM(behavpy):
         @self = behavpy_HMM,
         @hmm = hmmlearn.hmm.MultinomialHMM, this should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
         @variable = string, the column heading of the variable of interest. Default is "moving"
-        @labels = list[string], the names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep_sleep', 'Light_sleep', 'Light_awake', 'Full_awake']
+        @labels = list[string], the names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake']
         @colours = list[string], the name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red)
         It accepts a specific colour or an array of numbers that are acceptable to plotly
         @wrapped = bool, if True the plot will be limited to a 24 hour day average
