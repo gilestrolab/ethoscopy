@@ -25,17 +25,31 @@ import pandas as pd
 import fnmatch
 import os
 from math import floor, log
-import re
+import re, fnmatch
 import json
 import datetime
+import hashlib
+
+DB_FOLDER = '/opt/ethoscope_metadata'
+
+
+def md5file(filename):
+    with open(filename, "rb") as f:
+        file_hash = hashlib.md5()
+        while chunk := f.read(8192):
+            file_hash.update(chunk)
+            
+    return file_hash.hexdigest()
+
 
 class db_organiser():
     
-    _csv_filename='ethoscope_db.csv'
+    _csv_filename = 'ethoscope_db.csv'
     db_list = []
     
-    def __init__(self, db_path, refresh=True, fullpath=False):
+    def __init__(self, db_path, refresh=True, fullpath=False, csv_path=DB_FOLDER):
         self.db_path = db_path
+        self._csv_path = csv_path
         
         if refresh:
             self.update_dataframe()
@@ -74,6 +88,9 @@ class db_organiser():
     def update_dataframe(self, fullpath=True):
         '''
         '''
+        db_list = self._update_db_list()
+        
+
         #this takes 17 seconds
         # df = pd.DataFrame(columns=['ethoscope_id', 'ethoscope_name', 'experiment_date', 'experiment_time', 'db_filename'])
         # for db in db_list:
@@ -82,9 +99,6 @@ class db_organiser():
             # df.loc[len(df)] = [e_id, e_name, exp_date, exp_time, db_name]
      
         #while this takes 0.2 seconds
-        
-        db_list = self._update_db_list()
-        
         l = []
         for db in db_list:
             #takes only the last four entries of the path, otherwise it will fail if fullpath=True 
@@ -103,13 +117,15 @@ class db_organiser():
         '''
         Save a db description
         '''
-        self.db.to_csv(self._csv_filename, index=True)
+        self.db.to_csv( os.path.join(self._csv_path, self._csv_filename),
+                        index=True )
         
     def loaddb(self):
         '''
         Load a previously saved db description
         '''
-        self.db = pd.read_csv(self._csv_filename, index_col=[0])
+        self.db = pd.read_csv( os.path.join(self._csv_path, self._csv_filename),
+                               index_col=[0] )
         
         
     def make_index_file(self, filename='index.txt'):
@@ -167,11 +183,13 @@ class db_organiser():
 
 
 class metadata_handler():
+      
     
-    _DBFOLDER = './db/'
+    def __init__(self, filename : str, project='unnamed', tags=[], authors = [], doi = '', description='', separator='auto'):
+        '''
+        '''
     
-    def __init__(self, filename, project='unnamed', tags=[], authors = [], doi = '', description='', separator='auto'):
-        
+        self.db_folder = os.path.join (DB_FOLDER, 'db')     
         self.filename = filename
         _ , extension = os.path.splitext(filename)
         
@@ -187,14 +205,24 @@ class metadata_handler():
             with open(info_file, 'r') as i:
                 self.info = json.load(i)
         except:
-            self.info = { 'tags' : tags,
-                          'project' : project,
+            self.info = { 'project' : self._sanitise(project),
+                          'tags' : tags,
                           'description': description,
                           'authors' : authors,
                           'paper_doi' : doi
                          }
         
         self._create_summary()
+
+
+    def _sanitise(self, project):
+        '''
+        Make sure the name is appropriate as a path
+        '''
+        
+        prj = str(project).strip().replace(' ', '_')
+        return re.sub(r'(?u)[^-\w.]', '', prj )
+        
 
     def associate_to_db(self, db):
         '''
@@ -227,12 +255,16 @@ class metadata_handler():
           mag = 0 if size <= 0 else floor(log(size, 1024))
           return f"{round(size / 1024 ** mag, 2)} {['B', 'KB', 'MB', 'GB', 'TB'][int(mag)]}"
         
+        metadata_hash = md5file(self.filename)
+        
         info = {
             'filename' : self.filename,
             'entries' : self.data.shape[0],
             'columns' : list(self.data.columns),
             'db_files' : self.db_files.shape[0],
-            'info_mtime' : f"{datetime.datetime.now():%Y-%m-%d %H:%M}"
+            'info_mtime' : f"{datetime.datetime.now():%Y-%m-%d %H:%M}",
+            'metadata_hash' : metadata_hash,
+            'identifier' : '%s-%s' % (self.info['project'] , metadata_hash )
             } 
 
         if self.has_db_info():
@@ -248,8 +280,8 @@ class metadata_handler():
             'db_files_size' : 'N/A'
             })
 
-        info.update(self.info)    
-        return info
+        self.info.update(info)
+        return self.info
 
     def list_dbs(self, notfound = False):
         '''
@@ -262,31 +294,31 @@ class metadata_handler():
             return self.db_files.loc[self.db_files.db_filename.notna()]
         
 
-    def save( self, project='unnamed', filename=None ):
+    def save( self, project = None):
         '''
         Save metadata file locally
         ''' 
 
-        def sanitise_path(s):
-            s = str(s).strip().replace(' ', '_')
-            return re.sub(r'(?u)[^-\w.]', '', s)
-        #try:
-        if not filename:
-            filename = self.filename
-        _, filename = os.path.split(filename)
+        if project is not None and project != self.info['project']:
+            # we are changing project name
+            old_project_name = self.info['project']
+            self.info['project'] = self._sanitise( project )
 
-        full_dir = os.path.join( self._DBFOLDER, sanitise_path(self.info['project'] ) )
+        # get filepath
+        _, filename = os.path.split(self.filename)
+        full_dir = os.path.join( self.db_folder, self.info['project'] )
         full_path = os.path.join( full_dir, filename)
 
+        # create project dir
         try:
             os.mkdir(full_dir)
         except:
             pass
             
-        #save metadata
+        # overwrite metadata
         self.data.to_csv(full_path, index=False)
 
-        #save json summary
+        # save new json summary
         self.filename = full_path
         self.info['filename'] = full_path
         
@@ -294,87 +326,161 @@ class metadata_handler():
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump(self.summary, f, ensure_ascii=False, indent=4)
 
+
         return True
-        #except:
-        #    return False
         
 
-class db_crawler():
-    
-    _DBFOLDER = './db'
+class metadata_crawler():
+
         
     def __init__(self):
-        self.all_info_files = self.crawl()
-        self._all_info = self.populate_info()
+        self.db_folder = os.path.join (DB_FOLDER, 'db')
+        self.upload_folder = os.path.join(self.db_folder, 'unnamed')
 
-    @property
-    def all_projects(self):
-        return self._all_info['projects']
-    
-    @property
-    def all_authors(self):    
-        return self._all_info['authors']
-
-    @property
-    def all_dois(self):    
-        return self._all_info['dois']
-
-    @property
-    def all_tags(self):    
-        return self._all_info['tags']
-
-    @property
-    def all_info(self):    
-        return self._all_info
+        self.refresh_all_info()
 
 
-    def populate_info(self):
+    def refresh_all_info(self):
         '''
-        Crawl the info files and collects the choice of authors, DOIs, and projects
+        Gather all the info from the info files and stores them in one unique dictionary
         '''
-        
-        def remove_empty(l):
-            return list(set([i for i in l if ((i != '') and (i != [])) ]))
-        
-        all_projects = []
-        all_authors = []
-        all_dois = []
-        all_tags = []
-        
+        #Refresh the list of info files
+        self.crawl()
+
+        self.all_info = {}
+        self.all_projects = {}
+
         for info_file in self.all_info_files:
             with open(info_file, 'r') as i:
                 j = json.load(i)
-            all_projects.append(j['project'])
-            all_dois.append (j['paper_doi'])
-            all_tags += j['tags']
-            all_authors += j['authors']
+                prj_name = j['project']
+                identifier = '%s-%s' % ( prj_name , j['metadata_hash'])
+                self.all_info.update ( {identifier : j })
+                
+                if prj_name not in self.all_projects:
+                    self.all_projects[ prj_name ] = {}
 
-        return {'projects' : remove_empty(all_projects), 
-                'authors' : remove_empty(all_authors), 
-                'dois' : remove_empty(all_dois), 
-                'tags' : remove_empty(all_tags)
-                 }
+                self.all_projects[ prj_name ].update ({ os.path.split (j['filename'])[1] : identifier})
+
+    @property
+    def available_options(self):
+        '''
+        Crawl the info and collects the choice of authors, DOIs, and projects
+        Useful for autocompletion choices
+        '''
+        
+        def remove_empty(l):
+            
+            #flatten the list
+            fl = lambda l:[element for item in l for element in fl(item)] if type(l) is list else [l]
+            #remove empty items
+            return list(set([i for i in fl(l) if ((i != '') and (i != [])) ]))
+        
+        available_options = { 'project' : [] , 
+                              'authors' : [] , 
+                              'paper_doi' : [],
+                              'tags' : [],
+                              'metadata_hash' : [] 
+                              }
+
+        for info in self.all_info:
+            for key in available_options:
+                try:
+                    available_options[key].append( self.all_info[info][key] )
+                except:
+                    # this file is missing this key
+                    pass
+        
+        for key in available_options:
+            try:
+                available_options[key] = remove_empty( available_options[key] )
+            except:
+                # this key is missing
+                pass
+
+        return available_options
+        
     
     def crawl(self):
         '''
         returns a list of all the CSV files found in the db folder
         '''
-        all_metadata_files = []
+        self.all_info_files = []
+        self.info_tree = {}
         
-        for root, dirnames, filenames in os.walk(self._DBFOLDER):
+        for root, dirnames, filenames in os.walk(self.db_folder):
             for filename in fnmatch.filter(filenames, '*.info'):
-                all_metadata_files.append( os.path.join(root, filename) )
-                    
-        return all_metadata_files 
+                self.all_info_files.append( os.path.join(root, filename) )
+
+                dirname = os.path.basename(root)
+                if dirname not in self.info_tree: self.info_tree.update ({dirname : {}})
+                
+                self.info_tree[ dirname ].update ({ filename: hash })
+    
+    def request(self, identifier):
+        '''
+        return the json content of a specific info file
+        '''
+
+        if identifier in self.all_info:
+            return self.all_info[identifier]
+
+        else:
+            self.refresh_all_info()
+            try:
+                return self.all_info[identifier]
+            except:
+                return {}
         
+    def find(self, criteria):
+        '''
+        example of criteria
+        { 'authors' : 'Gilestro',
+          'project' : '*2022*'
+        }
+        These will be treated as AND gate
+        '''
+        all_matches = {}
+        match = {}
+        
+        for key in criteria:
+            for info in self.all_info:
+                #try:
+                if type(self.all_info[info][key]) is list: 
+                    tobesearched = self.all_info[info][key]
+                else:
+                    tobesearched = [self.all_info[info][key]]
+                    
+                if fnmatch.filter( tobesearched, criteria[key]):
+                    try:
+                        all_matches[info] += 1
+                    except: 
+                        all_matches[info] = 1
+                
+                #except KeyError as e:
+                #    pass
+                    #raise e # key not found 
+                    
+        for identifier in all_matches:
+            if all_matches[identifier] == len(criteria):
+                match.update ({ identifier : self.all_info[identifier] })
+            
+        
+        return match
+                
+             
 
 if __name__ == '__main__':
 
-    datapath = "/mnt/data/results"
-    metadata_filename = '/home/gg/Downloads/METADATA.txt'
+    #datapath = "/mnt/data/results"
+    #metadata_filename = '/home/gg/Downloads/METADATA.txt'
 
-    db = db_organiser(datapath, refresh=False)
-    meta = metadata_handler(metadata_filename)
+    #db = db_organiser(datapath, refresh=False)
+    mdb = metadata_crawler()
+    for hash_id in mdb.all_info:
+        info = mdb.all_info[hash_id]
+        meta = metadata_handler(info['filename'])
+        print (meta.summary)
     
-    meta.associate_to_db(db)
-    print (meta.data)
+    #meta.associate_to_db(db)
+    #print (meta.data)
