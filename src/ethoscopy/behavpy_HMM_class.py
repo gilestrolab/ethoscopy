@@ -963,8 +963,8 @@ class behavpy_HMM(behavpy):
                 df2['t'] = df2['interaction_t'].map(lambda t:  b * floor(t / b))
                 df2.reset_index(inplace = True)
                 df = pd.merge(df, df2, how = 'outer', on = ['id', 't'])
-                df['colour'] = np.where(df['has_responded'] == True, 'purple', df['col'])
-                df['colour'] = np.where(df['has_responded'] == False, 'lime', df['col'])
+                df['colour'] = np.where(df['has_responded'] == True, 'purple', df['colour'])
+                df['colour'] = np.where(df['has_responded'] == False, 'lime', df['colour'])
                 df['t'] = df['t'].map(lambda t: t / (60*60))
             
             else:

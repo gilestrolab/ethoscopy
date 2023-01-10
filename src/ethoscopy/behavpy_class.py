@@ -959,8 +959,6 @@ class behavpy(pd.DataFrame):
 
             return r_small
 
-        index_name = d_small['id'].iloc[0]
-
         time_map = pd.Series(range(d_small.t.iloc[0], 
                             d_small.t.iloc[-1] + time_window_length, 
                             time_window_length
@@ -973,8 +971,7 @@ class behavpy(pd.DataFrame):
 
         d_small['asleep'] = sleep_contiguous(d_small[mov_column], 1/time_window_length, min_valid_time = min_time_immobile)
 
-        old_index = pd.Index([index_name] * len(d_small.index), name = 'id')
-        d_small.set_index(old_index, inplace =True)  
+        d_small.set_index('id', inplace = True)
 
         return d_small  
 
@@ -1262,7 +1259,7 @@ class behavpy(pd.DataFrame):
 
         return fig
 
-    def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
+    def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1293,7 +1290,7 @@ class behavpy(pd.DataFrame):
                 col = 'grey'
 
             data = data.dropna(subset = [variable])
-            gdf = data.pivot(column = variable, function = 'mean')
+            gdf = data.pivot(column = variable, function = fun)
             median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{variable}_mean'].to_numpy())
             stats_dict[name] = zlist
 
