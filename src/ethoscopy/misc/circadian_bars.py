@@ -42,7 +42,7 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
         y_size1 = -0.05
         y_size2 = -0.02
     elif max_y > 0.2:
-        y_size1 = -max_y/50
+        y_size1 = -max_y/40
         y_size2 = 0
         split = 1
     elif max_y <= 0.2:

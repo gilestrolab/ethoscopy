@@ -355,7 +355,7 @@ def link_meta_index(metadata, remote_dir, local_dir):
         drop_df = drop_df.drop_duplicates(['machine_name', 'date'])
         droplog = split_df[split_df.duplicated(subset=['machine_name', 'date'])]
         drop_list = droplog['machine_name'].tolist()
-        if len(drop_list > 0):
+        if len(drop_list) > 0:
             warnings.warn(f'Ethoscopes {*drop_list,} have multiple files for their day, the largest file has been kept. If you want all files for that day please add a time column')
         merge_df = meta_df_original.merge(drop_df, how = 'outer', on = ['machine_name', 'date'])
         merge_df.dropna(inplace = True)

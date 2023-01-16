@@ -1291,7 +1291,7 @@ class behavpy(pd.DataFrame):
 
             data = data.dropna(subset = [variable])
             gdf = data.pivot(column = variable, function = fun)
-            median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{variable}_mean'].to_numpy())
+            median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{variable}_{fun}'].to_numpy())
             stats_dict[name] = zlist
 
             fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
@@ -1301,6 +1301,9 @@ class behavpy(pd.DataFrame):
             showlegend = False, name = name, xaxis = 'x'))
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+
+        if fun != 'mean':
+            fig['layout']['yaxis']['autorange'] = True
 
         return fig, stats_df
 
