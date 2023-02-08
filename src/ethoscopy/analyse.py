@@ -204,7 +204,7 @@ def sleep_annotation(data,
     
     return d_small
 
-def puff_mago(data, response_window = 10, velocity_correction_coef = 3e-3):
+def puff_mago(data, start_response_window = 5, response_window_length = 10, velocity_correction_coef = 3e-3):
     """
     Puff_mago finds interaction times from raw ethoscope data to detect responses in a given window.
     This function will only return data from around interaction times and not whole movement data from the experiment.
@@ -217,9 +217,12 @@ def puff_mago(data, response_window = 10, velocity_correction_coef = 3e-3):
     returns  a pandas dataframe object with columns such as 'interaction_t' and 'has_responded'
     """
 
+    if start_response_window == response_window_length or start_response_window > response_window_length:
+        raise ValueError("start_response_window must be less than response_window_length") 
+
     # check for has_interaction column, as is removed during loading of roi if all false
     if any('has_interacted' in ele for ele in data.columns.tolist()) is False:
-        print('ROI was unable to load due to no interactions in the database')
+        print('ROI was unable to load due to there being no interactions in the database')
         return None
 
     data['deltaT'] = data.t.diff()
@@ -236,7 +239,7 @@ def puff_mago(data, response_window = 10, velocity_correction_coef = 3e-3):
         return None
 
     interaction_dt['start'] = interaction_dt.int_t
-    interaction_dt['end'] = interaction_dt.int_t + response_window
+    interaction_dt['end'] = interaction_dt.int_t + response_window_length
 
     ints = data.t.values
     starts = interaction_dt.start.values 
@@ -253,12 +256,12 @@ def puff_mago(data, response_window = 10, velocity_correction_coef = 3e-3):
     # find relative time to interaction and check for movement
 
     df['t_rel'] = df.t - df.int_t
+    df = df[(df['t_rel'] > start_response_window) | (df['t_rel'] == 0)]
     df.rename(columns = {'int_t' : 'interaction_t'}, inplace = True)
     df['has_responded'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 1), True, False)
     df['has_walked'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 2.5), True, False)
     df.drop(columns = ['xy_dist_log10x1000', 'start', 'end'], inplace = True)
     df['interaction_id'] = df['has_interacted'].cumsum()
-
     response_rows = []
 
     # is any response take the interaction row and change response to True and t_rel to time till movement

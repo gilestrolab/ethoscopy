@@ -333,29 +333,16 @@ class behavpy(pd.DataFrame):
         return trace_box
 
     @staticmethod  
-    def _plot_line(df, column, name, marker_col, t_col = 't'):
+    def _plot_line(df, x_col, name, marker_col):
         """ creates traces to plot a mean line with 95% confidence intervals for a plotly figure """
 
-        def pop_std(array):
-            return np.std(array, ddof = 0)
-
-        gb_df = df.groupby(t_col).agg(**{
-                    'mean' : (column, 'mean'), 
-                    'SD' : (column, pop_std),
-                    'count' : (column, 'count')
-                })
-
-        max_var = max(gb_df['mean'])
-
-        gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
-        gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
-        gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
+        max_var = max(df['mean'])
 
         upper_bound = go.Scatter(
         showlegend = False,
         legendgroup = name,
-        x = gb_df.index.values,
-        y = gb_df['y_max'],
+        x = df[x_col],
+        y = df['y_max'],
         mode='lines',
         marker=dict(color="#444"),
         line=dict(width=0,
@@ -364,8 +351,8 @@ class behavpy(pd.DataFrame):
         )
         trace = go.Scatter(
             legendgroup = name,
-            x = gb_df.index.values,
-            y = gb_df['mean'],
+            x = df[x_col],
+            y = df['mean'],
             mode = 'lines',
             name = name,
             line = dict(
@@ -378,8 +365,8 @@ class behavpy(pd.DataFrame):
         lower_bound = go.Scatter(
             showlegend = False,
             legendgroup = name,
-            x = gb_df.index.values,
-            y = gb_df['y_min'],
+            x = df[x_col],
+            y = df['y_min'],
             mode='lines',
             marker=dict(
                 color = marker_col
@@ -1244,7 +1231,17 @@ class behavpy(pd.DataFrame):
             t_max = int(12 * ceil(data.t.max() / 12)) 
             max_t.append(t_max)
 
-            upper, trace, lower, maxV = self._plot_line(df = data, column = 'rolling', name = name, marker_col = col)
+            gb_df = data.groupby('t').agg(**{
+                        'mean' : ('rolling', 'mean'), 
+                        'SD' : ('rolling', self._pop_std),
+                        'count' : ('rolling', 'count')
+                    })
+            gb_df = gb_df.reset_index()
+            gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
+            gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
+            gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
+
+            upper, trace, lower, maxV = self._plot_line(df = gb_df, x_col = 't', name = name, marker_col = col)
             fig.add_trace(upper)
             fig.add_trace(trace) 
             fig.add_trace(lower)
@@ -1467,14 +1464,14 @@ class behavpy(pd.DataFrame):
                 d = d.dropna(subset = [mov_variable])
                 d.wrap_time(inplace = True)
                 d = d.t_filter(start_time = start[0], end_time = end)
-                total = d.pivot(column = 'moving', function = 'sum')
+                total = d.pivot(column = mov_variable, function = 'sum')
                 d = d.t_filter(start_time = start[1], end_time = end)
                 small = d.groupby(d.index).agg(**{
-                        'moving_small' : ('moving', 'sum')
+                        'moving_small' : (mov_variable, 'sum')
                         })
                 d = total.join(small)
                 d = d.dropna()
-                d['score'] = d[['moving_sum', 'moving_small']].apply(lambda x: ap_score(*x), axis = 1)   
+                d['score'] = d[[f'{mov_variable}_sum', 'moving_small']].apply(lambda x: ap_score(*x), axis = 1)   
                 zscore_list = d['score'].to_numpy()[np.abs(zscore(d['score'].to_numpy())) < 3]
                 median_list.append(np.mean(zscore_list))
                 q1, q3 = bootstrap(zscore_list)
@@ -1696,4 +1693,178 @@ class behavpy(pd.DataFrame):
         fig['layout']['plot_bgcolor'] = 'white'
 
         return fig
+
+    @staticmethod
+    def _find_runs(mov, time, id):
+        _, _, l = rle(mov)
+        count_list = np.concatenate([np.append(np.arange(1, cnt + 1, 1)[: -1], np.nan) for cnt in l], dtype = float)
+        previous_count_list = count_list[:-1]
+        previous_count_list = np.insert(previous_count_list, 0, np.nan)
+        return {'id': id, 't' : time, 'moving' : mov, 'activity_count' : count_list, 'previous_activity_count' : previous_count_list}
+
+    def plot_response_overtime(self, response_df, activity = 'inactive', mov_variable = 'moving', bin = 60, title = '', grids = False): #facet_col = None, facet_arg = None, facet_labels = None,
+        """ plot function to measure the response rate of flies to a puff of odour from a mAGO or AGO experiment over the consecutive minutes active or inactive
+                response_df = behapy dataframe intially analysed by the puff_mago loading function
+                activity = string, the choice to display reponse rate for continuous bounts of inactivity, activity, or both
+        """
+        
+        activity_choice = ['inactive', 'active', 'both']
+        if activity not in activity_choice:
+            raise KeyError(f'activity argument must be one of {*activity_choice,}')
+
+        # facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # d_list = []
+        # if facet_col is not None:
+        #     for arg in facet_arg:
+        #         d_list.append(self.xmv(facet_col, arg))
+        # else:
+        #     d_list = [self.copy(deep = True)]
+        #     facet_labels = ['']
+
+        # col_list = self._get_colours(d_list)
+
+        fig = go.Figure() 
+        y_range, dtick = self._check_boolean(list(self[mov_variable].dropna()))
+
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Response Rate', title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = 1, xlabel = f'Consecutive Minutes {activity}')
+
+        def activity_count(df, puff_df):
+
+            bin_df = df.bin_time(mov_variable, bin, function = 'max')
+            mov_gb = bin_df.groupby(bin_df.index)[f'{mov_variable}_max'].apply(np.array)
+            time_gb = bin_df.groupby(bin_df.index)['t_bin'].apply(np.array)
+            zip_gb = zip(mov_gb, time_gb, mov_gb.index)
+
+            all_runs = []
+
+            for m, t, id in zip_gb:
+                spec_run = self._find_runs(m, t, id)
+                all_runs.append(spec_run)
+
+            counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
+
+            puff_df['t'] = puff_df['interaction_t'].map(lambda t: t % 86400)
+            puff_df['t'] = puff_df['interaction_t'].map(lambda t:  bin * floor(t / bin))
+            puff_df.reset_index(inplace = True)
+
+            merged = pd.merge(counted_df, puff_df, how = 'inner', on = ['id', 't'])
+            merged['t_check'] = merged.interaction_t + merged.t_rel
+            merged['t_check'] = merged['t_check'].map(lambda t:  bin * floor(t / bin))
+            merged['previous_activity_count'] = np.where(merged['t_check'] > merged['t'], merged['activity_count'], merged['previous_activity_count'])
+            merged.dropna(subset = ['previous_activity_count'], inplace=True)
+
+            interaction_dict = {}
+            for i in [0, 1]:
+                first_filter = merged[merged['moving'] == i]
+                for q in list(set(first_filter.has_interacted)):
+                    second_filter = first_filter[first_filter['has_interacted'] == q]
+                    big_gb = second_filter.groupby('previous_activity_count').agg(**{
+                                    'mean' : ('has_responded', 'mean'),
+                                    'count' : ('has_responded', 'count'),
+                                    'ci' : ('has_responded', bootstrap)
+                        })
+                    big_gb[['y_max', 'y_min']] = pd.DataFrame(big_gb['ci'].tolist(), index =  big_gb.index)
+                    big_gb.drop('ci', axis = 1, inplace = True)
+                    big_gb.reset_index(inplace=True)
+                    big_gb['previous_activity_count'] = big_gb['previous_activity_count'].astype(int)
+
+                    interaction_dict[f'{i}_{int(q)}'] = big_gb
+
+            return interaction_dict
+
+        max_x = []
+
+        # for data, name in zip(d_list, facet_labels):
+
+        #     if len(data) == 0:
+        #         print(f'Group {name} has no values and cannot be plotted')
+        #         continue
+        
+        response_dict = activity_count(self, response_df)
     
+        if activity == 'inactive':
+            col_list = ['blue', 'black']
+            plot_list = ['0_1', '0_2']
+            label_list = ['Inactive', 'Inactive Spon. Mov.']
+        elif activity == 'active':
+            col_list = ['red', 'grey']
+            plot_list = ['1_1', '1_2']
+            label_list = ['Active', 'Active Spon. Mov.']
+        else:
+            col_list = ['blue', 'black', 'red', 'grey']
+            plot_list = ['0_1', '0_2', '1_1', '1_2']
+            label_list = ['Inactive', 'Inactive Spon. Mov.', 'Active', 'Active Spon. Mov.']
+
+        for plot, col, label in zip(plot_list, col_list, label_list):
+            small_data = response_dict[plot]
+            if len(small_data) == 0:
+                print(f'Group {label} has no values and cannot be plotted')
+                continue
+            max_x.append(max(small_data['previous_activity_count']))
+            upper, trace, lower, _ = self._plot_line(df = small_data, x_col = 'previous_activity_count', name = label, marker_col = col)
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
+                
+        fig['layout']['xaxis']['range'] = [1, max(max_x)]
+
+        return fig
+
+    def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False): 
+        """ A augmented version of plot_quanitfy that looks for true and false (spontaneous movement) interactions """
+
+        if response_col not in self.columns.tolist():
+            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with puff_mago')
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+
+        col_list = self._get_colours(d_list)
+
+        fig = go.Figure() 
+        y_range, dtick = self._check_boolean(list(self[response_col].dropna()))
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Resonse Rate', title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = '')
+
+        stats_dict = {}
+
+        for data, name, col in zip(d_list, facet_labels, col_list):
+            
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
+
+            for q in list(set(data.has_interacted)):
+
+                filtered = data[data['has_interacted'] == q]
+                filtered = filtered.dropna(subset = [response_col])
+
+                gdf = data.pivot(column = response_col, function = 'mean')
+                median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{response_col}_mean'].to_numpy())
+                stats_dict[f'{name}_{q}'] = zlist
+
+                if q == 1:
+                    col = col
+                    name = name
+                else:
+                    col = 'grey'
+                    name = f'{name} Spon. Mov'
+
+                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                x = [name], colour =  col, showlegend = False, name = name, xaxis = 'x'))
+
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [name], colour = col, 
+                showlegend = False, name = name, xaxis = 'x'))
+
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+
+        return fig, stats_df

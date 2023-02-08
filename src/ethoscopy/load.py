@@ -85,6 +85,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
     check_list = []
     # iterate through the first level of directories looking for ones that match the ethoscope names given, 
     # find the susequent files that match the date and time and add to paths list
+    # this is slow, should change to walk directory once, get all information and then match to csv
 
     for dir in files:
         temp_path = parse.path / PurePosixPath(dir)
@@ -517,7 +518,7 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
             interacted_list = data['has_interacted'].to_numpy()
             if (0 == interacted_list[:]).all() == True:
                 data = data.drop(columns = ['has_interacted'])
-                data = data.drop(columns = ['is_inferred'])
+                # data = data.drop(columns = ['is_inferred'])
         
         elif 'is_inferred' in data.columns:
             data = data[data['is_inferred'] == False]
