@@ -15,6 +15,7 @@ def fancy_range(start, stop, steps=(1,)):
         val += next(steps)
 
 def make_bars(bar, bar_col, size, split, y_size1, y_size2):
+
     shaped_bar = go.layout.Shape(type="rect", 
                                 x0=bar, 
                                 y0= y_size1, 
@@ -39,16 +40,21 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
     @circadian_night = int, the hour the lights turn off, must be between 1 and 23
     """
     if split != False:
-        y_size1 = -0.05
-        y_size2 = -0.02
-    elif max_y > 0.2:
-        y_size1 = -max_y/40
-        y_size2 = 0
-        split = 1
-    elif max_y <= 0.2:
-        y_size1 = 0
-        y_size2 = max_y/10   
-        split = 1
+        if max_y > 0.2:
+            y_size1 = -max_y/20
+            y_size2 = 0
+        if max_y <= 0.2:
+            y_size1 = 0
+            y_size2 = max_y/15   
+    else:
+        if max_y > 0.2:
+            y_size1 = -max_y/40
+            y_size2 = 0
+            split = 1
+        elif max_y <= 0.2:
+            y_size1 = 0
+            y_size2 = max_y/10   
+            split = 1
 
     if lights_off < 1 or lights_off > day_length:
         warnings.warn(f"The arugment for lights_off must be between 1 and {day_length}")
@@ -71,4 +77,4 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
                 black_bar = make_bars(bar = bars, bar_col = 'black', size = day_length - lights_off, split = c, y_size1 = y_size1, y_size2 = y_size2)
                 bar_shapes[f'shape_{i}{c}'] = black_bar
 
-    return bar_shapes
+    return bar_shapes, y_size1

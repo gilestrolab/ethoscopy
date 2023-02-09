@@ -485,13 +485,26 @@ class behavpy_HMM(behavpy):
 
         for c, (col, n) in enumerate(zip(colours, labels)):
 
-            upper, trace, lower, _ = self._plot_line(df = df, column = f'state_{c}', name = n, marker_col = col)
+            column = f'state_{c}'
+
+            gb_df = df.groupby('t').agg(**{
+                        'mean' : (column, 'mean'), 
+                        'SD' : (column, self._pop_std),
+                        'count' : (column, 'count')
+                    })
+
+            gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
+            gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
+            gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
+            gb_df = gb_df.reset_index()
+
+            upper, trace, lower, _ = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = col)
             fig.add_trace(upper)
             fig.add_trace(trace) 
             fig.add_trace(lower)
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, max_y = 1, day_length = day_length, lights_off = lights_off)
+        bar_shapes, min_bar = circadian_bars(t_min, t_max, max_y = 1, day_length = day_length, lights_off = lights_off)
         fig.update_layout(shapes=list(bar_shapes.values()))
 
         return fig
@@ -557,47 +570,62 @@ class behavpy_HMM(behavpy):
             t_range = [t_min, t_max]  
 
             for i, (lab, row, col) in enumerate(zip(labels, row_list, col_list)):
-                upper, trace, lower, _ = self._plot_line(df = analysed_df, column = f'state_{i}', name = n, marker_col = marker_col.get(i)[c])
+
+                column = f'state_{i}'
+
+                gb_df = analysed_df.groupby('t').agg(**{
+                            'mean' : (column, 'mean'), 
+                            'SD' : (column, self._pop_std),
+                            'count' : (column, 'count')
+                        })
+
+                gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
+                gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
+                gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
+                gb_df = gb_df.reset_index()
+
+                upper, trace, lower, _ = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = marker_col.get(i)[c])
                 fig.add_trace(upper,row=row, col=col)
                 fig.add_trace(trace, row=row, col=col) 
                 fig.add_trace(lower, row=row, col=col)
+
                 if c == 0:
                     fig.add_annotation(xref='x domain', yref='y domain',x=0.1, y=0.9, text = lab, font = {'size': 18, 'color' : 'black'}, showarrow = False,
                     row=row, col=col)
 
-        for axis, lab in enumerate(labels):
-            fig['layout'][f'xaxis{axis+1}'].update(
-                zeroline = False,
-                color = 'black',
-                linecolor = 'black',
-                gridcolor = 'black',
-                range = t_range,
-                tick0 = 0,
-                dtick = 6,
-                ticks = 'outside',
-                tickwidth = 2,
-                tickfont = dict(
-                    size = 18
-                ),
-                linewidth = 2,
-                showgrid = False
-            )
+        fig.update_xaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            range = t_range,
+            tick0 = 0,
+            dtick = 6,
+            ticks = 'outside',
+            tickwidth = 2,
+            tickfont = dict(
+                size = 18
+            ),
+            linewidth = 2,
+            showgrid = False
+        )
 
-            fig['layout'][f'yaxis{axis+1}'].update(
-                zeroline = False, 
-                color = 'black',
-                linecolor = 'black',
-                range = [-0.05, 1], 
-                tick0 = 0,
-                dtick = 0.2,
-                ticks = 'outside',
-                tickwidth = 2,
-                tickfont = dict(
-                    size = 18
-                ),
-                linewidth = 4,
-                showgrid = grids
-            )
+        fig.update_yaxes(
+            zeroline = False, 
+            color = 'black',
+            linecolor = 'black',
+            range = [-0.05, 1], 
+            tick0 = 0,
+            dtick = 0.2,
+            ticks = 'outside',
+            tickwidth = 2,
+            tickfont = dict(
+                size = 18
+            ),
+            linewidth = 4,
+            showgrid = grids
+        )
+
 
         fig.update_layout(
             title = title,
@@ -640,7 +668,7 @@ class behavpy_HMM(behavpy):
         )
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(t_min, t_max, max_y = 1, day_length = day_length, lights_off = lights_off, split = len(labels))
+        bar_shapes, min_bar = circadian_bars(t_min, t_max, max_y = 1, day_length = day_length, lights_off = lights_off, split = len(labels))
         fig.update_layout(shapes=list(bar_shapes.values()))
 
         return fig

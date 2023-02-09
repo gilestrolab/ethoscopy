@@ -27,9 +27,14 @@ class behavpy(pd.DataFrame):
     print(df) will only print the data df, to see both use the .display() method
 
     Initialisation Parameters:
-    @data :
-    @meta :
-    @check
+    @data = pandas DataFrame, the experimental recorded data usually loaded by the load_ethoscope function. Must contain an id column with unique IDs per speciemn
+    and a time series column called 't' with time per recording in seconds 
+    @meta = pandas Dataframe, the metadata i.e. conditions, genotypes ect of the experiment. There should be a unique row per ID in the data. 
+    Usually generated from a csv file and link_meta_index function.
+    @check = bool, when True this will check the ids in the data are in the metadata. If not an error will be raised. It also removes some columns that are no longer
+    needed that are generated in link_meta_index.
+
+    returns a behavpy object with methods to manipulate, analyse, and plot time series behavioural data
 
     """
     warnings.formatwarning = format_warning
@@ -1182,8 +1187,44 @@ class behavpy(pd.DataFrame):
         
         return self.remove('id', id_list)
 
-    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False):
+    @staticmethod
+    def _generate_overtime_plot(data, name, col, var, avg_win, wrap, day_len, light_off):
 
+        if len(data) == 0:
+            print(f'Group {name} has no values and cannot be plotted')
+            return None, None, None, None, None, None
+
+        if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+            col = 'grey'
+
+        rolling_col = data.groupby(data.index, sort = False)[var].rolling(avg_win).mean().reset_index(level = 0, drop = True)
+        data['rolling'] = rolling_col.to_numpy()
+        data = data.dropna(subset = ['rolling'])
+
+        if wrap is True:
+            data['t'] = data['t'].map(lambda t: t % (60*60*day_len))
+        data['t'] = data['t'].map(lambda t: t / (60*60))
+
+        t_min = int(light_off * floor(data.t.min() / light_off))
+        t_max = int(12 * ceil(data.t.max() / 12)) 
+
+        # Not using bootstrapping here as it takes too much time
+        gb_df = data.groupby('t').agg(**{
+                    'mean' : ('rolling', 'mean'), 
+                    'SD' : ('rolling', data._pop_std),
+                    'count' : ('rolling', 'count')
+                })
+        gb_df = gb_df.reset_index()
+        gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
+        gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
+        gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
+
+        upper, trace, lower, maxV = data._plot_line(df = gb_df, x_col = 't', name = name, marker_col = col)
+
+        return upper, trace, lower, maxV, t_min, t_max,
+
+    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False):
+        assert isinstance(wrapped, bool)
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
         d_list = []
@@ -1198,7 +1239,7 @@ class behavpy(pd.DataFrame):
 
         max_var = []
         y_range, dtick = self._check_boolean(list(self[variable].dropna()))
-        if y_range is False:
+        if y_range is not False:
             max_var.append(1)
         
         fig = go.Figure() 
@@ -1210,50 +1251,175 @@ class behavpy(pd.DataFrame):
         max_t = []
 
         for data, name, col in zip(d_list, facet_labels, col_list):
-
-            if len(data) == 0:
-                print(f'Group {name} has no values and cannot be plotted')
+            upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = data, name = name, col = col, var = variable, 
+                                                                                    avg_win = avg_window, wrap = wrapped, day_len = day_length, 
+                                                                                    light_off= lights_off)
+            if upper is None:
                 continue
 
-            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
-                col = 'grey'
-
-            rolling_col = data.groupby(data.index, sort = False)[variable].rolling(avg_window).mean().reset_index(level = 0, drop = True)
-            data['rolling'] = rolling_col.to_numpy()
-            data = data.dropna(subset = ['rolling'])
-
-            if wrapped is True:
-                data['t'] = data['t'].map(lambda t: t % (60*60*day_length))
-            data['t'] = data['t'].map(lambda t: t / (60*60))
-
-            t_min = int(lights_off * floor(data.t.min() / lights_off))
-            min_t.append(t_min)
-            t_max = int(12 * ceil(data.t.max() / 12)) 
-            max_t.append(t_max)
-
-            gb_df = data.groupby('t').agg(**{
-                        'mean' : ('rolling', 'mean'), 
-                        'SD' : ('rolling', self._pop_std),
-                        'count' : ('rolling', 'count')
-                    })
-            gb_df = gb_df.reset_index()
-            gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
-            gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
-            gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
-
-            upper, trace, lower, maxV = self._plot_line(df = gb_df, x_col = 't', name = name, marker_col = col)
             fig.add_trace(upper)
             fig.add_trace(trace) 
             fig.add_trace(lower)
 
             max_var.append(maxV)
+            min_t.append(t_min)
+            max_t.append(t_max)
 
         # Light-Dark annotaion bars
-        bar_shapes = circadian_bars(min(min_t), max(max_t), max_y = max(max_var), day_length = day_length, lights_off = lights_off)
+        bar_shapes, min_bar = circadian_bars(min(min_t), max(max_t), max_y = max(max_var), day_length = day_length, lights_off = lights_off)
         fig.update_layout(shapes=list(bar_shapes.values()))
     
         fig['layout']['xaxis']['range'] = [min(min_t), max(max_t)]
+        if min_bar < 0:
+            fig['layout']['yaxis']['range'] = [min_bar, max(max_var)+0.01]
 
+        return fig
+
+    def plot_overtime_tile(self, variable, facet_tile, wrapped = False, facet_col = None, facet_arg = None, avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False):
+        """ """
+        assert isinstance(wrapped, bool)
+
+        if facet_tile not in self.meta.columns:
+            raise KeyError(f'Column "{facet_tile}" is not a metadata column')
+
+        facet_labels = None
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # find the unique column variables and use to split df into tiled parts
+        tile_list = list(set(self.meta[facet_tile].tolist()))
+
+        tile_df = []
+        for tile in tile_list:
+            tile_df.append(self.xmv(facet_tile, tile))
+
+        # split the tiled dfs into their facet counterparts, save their constituent parts as a nested list
+        d_list = []
+        name_list = []
+        if facet_col is not None:
+            for i, n in zip(tile_df, tile_list):
+                small_list = []
+                small_names = []
+                for arg in facet_arg:
+                    small_list.append(i.xmv(facet_col, arg))
+                    small_names.append(f'{n}-{arg}')
+                d_list.append(small_list)
+                name_list.append(small_names)
+        else:
+            d_list = tile_df
+            name_list = [str(n) for n in tile_list]
+
+        col_list = self._get_colours(d_list)
+
+        # genertate a subplot figure with a single column
+        fig = make_subplots(rows=len(tile_list), cols=1, shared_xaxes = True, subplot_titles = tile_list)
+
+        max_var = []
+        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        if y_range is not False:
+            max_var.append(1)
+
+        min_t = []
+        max_t = []
+
+        for c, (plot, tile_name, master_col) in enumerate(zip(d_list, name_list, col_list)):
+            c = c+1
+            if facet_col is not None:
+                for facet_plot, facet_name in zip(plot, tile_name):
+                    upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = facet_plot, name = facet_name, col = master_col, 
+                                                                        var = variable, avg_win = avg_window, wrap = wrapped, 
+                                                                        day_len = day_length, light_off = lights_off)
+                    if upper is None:
+                        continue
+                    else:
+                        fig.append_trace(upper, row = c, col = 1)
+                        fig.append_trace(trace, row = c, col = 1)
+                        fig.append_trace(lower, row = c, col = 1)
+                        
+                        min_t.append(t_min)
+                        max_t.append(t_max)
+                        max_var.append(maxV)
+
+            else:
+                upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = plot, name = tile_name, col = master_col, 
+                                                                    var = variable, avg_win = avg_window, wrap = wrapped, 
+                                                                    day_len = day_length, light_off = lights_off)
+                if upper is None:
+                    continue
+                else:
+                    fig.append_trace(upper, row = c, col = 1)
+                    fig.append_trace(trace, row = c, col = 1)
+                    fig.append_trace(lower, row = c, col = 1)
+
+                    min_t.append(t_min)
+                    max_t.append(t_max)
+                    max_var.append(maxV)
+
+        fig.update_xaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            range = [min(min_t), max(max_t)],
+            tick0 = 0,
+            dtick = day_length/4,
+            ticks = 'outside',
+            tickwidth = 2,
+            tickfont = dict(
+                size = 18
+            ),
+            showgrid = False,
+            linewidth = 2
+        )
+
+        fig.update_yaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            tick0 = 0,
+            dtick = dtick,
+            ticks = 'outside',
+            tickwidth = 2,
+            showgrid = grids,
+            linewidth = 2
+        )
+
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = 'ZT Time (Hours)',
+                    x = 0.5,
+                    xanchor = 'center',
+                    xref = 'paper',
+                    y = 0,
+                    yanchor = 'top',
+                    yref = 'paper',
+                    yshift = -30
+                )
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = variable,
+                    x = 0,
+                    xanchor = 'left',
+                    xref = 'paper',
+                    y = 0.5,
+                    yanchor = 'middle',
+                    yref = 'paper',
+                    xshift =  -85,
+                    textangle =  -90
+        )
+
+        # Light-Dark annotaion bars
+        bar_shapes, min_bar = circadian_bars(min(min_t), max(max_t), max_y = max(max_var), day_length = day_length, lights_off = lights_off, split = len(tile_list))
+        fig.update_layout(shapes=list(bar_shapes.values()))
+
+        fig.update_annotations(font_size=18)
+        fig['layout']['title'] = title
+        fig['layout']['plot_bgcolor'] = 'white'
+        if min_bar < 0:
+            fig.update_yaxes(range = [min_bar, max(max_var)+0.01])
         return fig
 
     def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False):
@@ -1702,10 +1868,18 @@ class behavpy(pd.DataFrame):
         previous_count_list = np.insert(previous_count_list, 0, np.nan)
         return {'id': id, 't' : time, 'moving' : mov, 'activity_count' : count_list, 'previous_activity_count' : previous_count_list}
 
-    def plot_response_overtime(self, response_df, activity = 'inactive', mov_variable = 'moving', bin = 60, title = '', grids = False): #facet_col = None, facet_arg = None, facet_labels = None,
+    def plot_response_overtime(self, response_df, activity = 'inactive', mov_variable = 'moving', title = '', grids = False): #facet_col = None, facet_arg = None, facet_labels = None,
         """ plot function to measure the response rate of flies to a puff of odour from a mAGO or AGO experiment over the consecutive minutes active or inactive
-                response_df = behapy dataframe intially analysed by the puff_mago loading function
-                activity = string, the choice to display reponse rate for continuous bounts of inactivity, activity, or both
+
+        Params:
+        @response_df = behavpy, behapy dataframe intially analysed by the puff_mago loading function
+        @activity = string, the choice to display reponse rate for continuous bounts of inactivity, activity, or both. Choice one of ['inactive', 'active', 'both']
+        @mov_variable = string, the name of the column that contains the response per each interaction, should be boolean values
+        @bin = int, the value in seconds time should be binned to to then count consecutive bouts
+        @title = string, a title for the plotted figure
+        @grids = bool, true/false whether the resulting figure should have grids
+
+        returns a plotly figure object
         """
         
         activity_choice = ['inactive', 'active', 'both']
@@ -1732,7 +1906,7 @@ class behavpy(pd.DataFrame):
 
         def activity_count(df, puff_df):
 
-            bin_df = df.bin_time(mov_variable, bin, function = 'max')
+            bin_df = df.bin_time(mov_variable, 60, function = 'max')
             mov_gb = bin_df.groupby(bin_df.index)[f'{mov_variable}_max'].apply(np.array)
             time_gb = bin_df.groupby(bin_df.index)['t_bin'].apply(np.array)
             zip_gb = zip(mov_gb, time_gb, mov_gb.index)
@@ -1746,12 +1920,12 @@ class behavpy(pd.DataFrame):
             counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
 
             puff_df['t'] = puff_df['interaction_t'].map(lambda t: t % 86400)
-            puff_df['t'] = puff_df['interaction_t'].map(lambda t:  bin * floor(t / bin))
+            puff_df['t'] = puff_df['interaction_t'].map(lambda t:  60 * floor(t / 60))
             puff_df.reset_index(inplace = True)
 
             merged = pd.merge(counted_df, puff_df, how = 'inner', on = ['id', 't'])
             merged['t_check'] = merged.interaction_t + merged.t_rel
-            merged['t_check'] = merged['t_check'].map(lambda t:  bin * floor(t / bin))
+            merged['t_check'] = merged['t_check'].map(lambda t:  60 * floor(t / 60))
             merged['previous_activity_count'] = np.where(merged['t_check'] > merged['t'], merged['activity_count'], merged['previous_activity_count'])
             merged.dropna(subset = ['previous_activity_count'], inplace=True)
 
@@ -1813,7 +1987,16 @@ class behavpy(pd.DataFrame):
         return fig
 
     def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False): 
-        """ A augmented version of plot_quanitfy that looks for true and false (spontaneous movement) interactions """
+        """ A augmented version of plot_quanitfy that looks for true and false (spontaneous movement) interactions 
+        
+        Params:
+        @response_col = string, the name of the column in the data with the response per interaction, column data should be in boolean form
+        @facet_col = string, the name of the column in the metadata you wish to filter the data by
+        @facet_arg = list, if not None then a list of items from the column given in facet_col that you wish to be plotted
+        @facet_arg = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items are used
+
+        returns a plotly figure object
+        """
 
         if response_col not in self.columns.tolist():
             raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with puff_mago')
