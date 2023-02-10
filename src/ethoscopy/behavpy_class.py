@@ -1863,10 +1863,13 @@ class behavpy(pd.DataFrame):
     @staticmethod
     def _find_runs(mov, time, id):
         _, _, l = rle(mov)
-        count_list = np.concatenate([np.append(np.arange(1, cnt + 1, 1)[: -1], np.nan) for cnt in l], dtype = float)
+        # count_list = np.concatenate([np.append(np.arange(1, cnt + 1, 1)[: -1], np.nan) for cnt in l], dtype = float)
+        count_list = np.concatenate([np.arange(1, cnt + 1, 1) for cnt in l], dtype = float)
         previous_count_list = count_list[:-1]
         previous_count_list = np.insert(previous_count_list, 0, np.nan)
-        return {'id': id, 't' : time, 'moving' : mov, 'activity_count' : count_list, 'previous_activity_count' : previous_count_list}
+        previous_mov = mov[:-1].astype(float)
+        previous_mov = np.insert(previous_mov, 0, np.nan)
+        return {'id': id, 't' : time, 'moving' : mov, 'previous_moving' : previous_mov, 'activity_count' : count_list, 'previous_activity_count' : previous_count_list}
 
     def plot_response_overtime(self, response_df, activity = 'inactive', mov_variable = 'moving', title = '', grids = False): #facet_col = None, facet_arg = None, facet_labels = None,
         """ plot function to measure the response rate of flies to a puff of odour from a mAGO or AGO experiment over the consecutive minutes active or inactive
@@ -1905,7 +1908,9 @@ class behavpy(pd.DataFrame):
         self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = 1, xlabel = f'Consecutive Minutes {activity}')
 
         def activity_count(df, puff_df):
-
+            df = df.copy(deep=True)
+            puff_df = puff_df.copy(deep=True)
+            df[mov_variable] = np.where(df[mov_variable] == True, 1, 0)
             bin_df = df.bin_time(mov_variable, 60, function = 'max')
             mov_gb = bin_df.groupby(bin_df.index)[f'{mov_variable}_max'].apply(np.array)
             time_gb = bin_df.groupby(bin_df.index)['t_bin'].apply(np.array)
@@ -1931,9 +1936,11 @@ class behavpy(pd.DataFrame):
 
             interaction_dict = {}
             for i in [0, 1]:
-                first_filter = merged[merged['moving'] == i]
+                # print(merged[['t', 'moving', 'previous_moving', 'has_interacted', 'activity_count', 'previous_activity_count', 'has_responded']])
+                first_filter = merged[merged['previous_moving'] == i]
                 for q in list(set(first_filter.has_interacted)):
                     second_filter = first_filter[first_filter['has_interacted'] == q]
+                    # print(second_filter[['t', 'moving', 'previous_moving', 'has_interacted', 'activity_count', 'previous_activity_count', 'has_responded']])
                     big_gb = second_filter.groupby('previous_activity_count').agg(**{
                                     'mean' : ('has_responded', 'mean'),
                                     'count' : ('has_responded', 'count'),
@@ -1943,7 +1950,6 @@ class behavpy(pd.DataFrame):
                     big_gb.drop('ci', axis = 1, inplace = True)
                     big_gb.reset_index(inplace=True)
                     big_gb['previous_activity_count'] = big_gb['previous_activity_count'].astype(int)
-
                     interaction_dict[f'{i}_{int(q)}'] = big_gb
 
             return interaction_dict
@@ -2030,8 +2036,7 @@ class behavpy(pd.DataFrame):
 
                 filtered = data[data['has_interacted'] == q]
                 filtered = filtered.dropna(subset = [response_col])
-
-                gdf = data.pivot(column = response_col, function = 'mean')
+                gdf = filtered.pivot(column = response_col, function = 'mean')
                 median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{response_col}_mean'].to_numpy())
                 stats_dict[f'{name}_{q}'] = zlist
 
