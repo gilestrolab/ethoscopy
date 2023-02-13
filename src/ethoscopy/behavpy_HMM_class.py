@@ -154,26 +154,6 @@ class behavpy_HMM(behavpy):
         return f_arg, f_lab, h_list, b_list
 
     @staticmethod
-    def _adjust_colours(colour_list):
-
-        def adjust_color_lighten(r,g,b, factor):
-            return [round(255 - (255-r)*(1-factor)), round(255 - (255-g)*(1-factor)), round(255 - (255-b)*(1-factor))]
-
-        start_colours = []
-        end_colours = []
-        for col in colour_list:
-            c = Color(col)
-            c_hex = c.hex
-            end_colours.append(c_hex)
-            r, g, b = c.rgb
-            r, g, b = adjust_color_lighten(r*255, g*255, b*255, 0.75)
-            start_hex = "#%02x%02x%02x" % (r,g,b)
-            start_colours.append(start_hex)
-
-        return start_colours, end_colours
-
-
-    @staticmethod
     def _hmm_table(start_prob, trans_prob, emission_prob, state_names, observable_names):
         """ 
         Prints a formatted table of the probabilities from a hmmlearn MultinomialHMM object
@@ -533,8 +513,8 @@ class behavpy_HMM(behavpy):
         row_list = [item for sublist in row_list for item in sublist]
 
         colour_range_dict = {}
+        colours_dict = {'start' : start_colours, 'end' : end_colours}
         for q in range(0,len(labels)):
-            colours_dict = {'start' : start_colours, 'end' : end_colours}
             start_color = colours_dict.get('start')[q]
             end_color = colours_dict.get('end')[q]
             N = len(facet_arg)

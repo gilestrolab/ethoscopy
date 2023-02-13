@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np 
 import warnings
+
 import plotly.graph_objs as go 
 from plotly.subplots import make_subplots
 from plotly.express.colors import qualitative
@@ -10,6 +11,7 @@ from sys import exit
 from scipy.stats import zscore
 from functools import partial
 from scipy.interpolate import interp1d
+from colour import Color
 
 from ethoscopy.misc.format_warning import format_warning
 from ethoscopy.misc.circadian_bars import circadian_bars
@@ -393,6 +395,25 @@ class behavpy(pd.DataFrame):
         else:
             warnings.warn('Too many sub groups to plot with the current colour palette')
             exit()
+
+    @staticmethod
+    def _adjust_colours(colour_list):
+
+        def adjust_color_lighten(r,g,b, factor):
+            return [round(255 - (255-r)*(1-factor)), round(255 - (255-g)*(1-factor)), round(255 - (255-b)*(1-factor))]
+
+        start_colours = []
+        end_colours = []
+        for col in colour_list:
+            c = Color(col)
+            c_hex = c.hex
+            end_colours.append(c_hex)
+            r, g, b = c.rgb
+            r, g, b = adjust_color_lighten(r*255, g*255, b*255, 0.75)
+            start_hex = "#%02x%02x%02x" % (r,g,b)
+            start_colours.append(start_hex)
+
+        return start_colours, end_colours
             
     # set meta as permenant attribute
     _metadata = ['meta']
@@ -1871,7 +1892,7 @@ class behavpy(pd.DataFrame):
         previous_mov = np.insert(previous_mov, 0, np.nan)
         return {'id': id, 't' : time, 'moving' : mov, 'previous_moving' : previous_mov, 'activity_count' : count_list, 'previous_activity_count' : previous_count_list}
 
-    def plot_response_overtime(self, response_df, activity = 'inactive', mov_variable = 'moving', title = '', grids = False): #facet_col = None, facet_arg = None, facet_labels = None,
+    def plot_response_overtime(self, response_df, activity = 'inactive', mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
         """ plot function to measure the response rate of flies to a puff of odour from a mAGO or AGO experiment over the consecutive minutes active or inactive
 
         Params:
@@ -1889,17 +1910,39 @@ class behavpy(pd.DataFrame):
         if activity not in activity_choice:
             raise KeyError(f'activity argument must be one of {*activity_choice,}')
 
-        # facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-        # d_list = []
-        # if facet_col is not None:
-        #     for arg in facet_arg:
-        #         d_list.append(self.xmv(facet_col, arg))
-        # else:
-        #     d_list = [self.copy(deep = True)]
-        #     facet_labels = ['']
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
 
-        # col_list = self._get_colours(d_list)
+        if activity == 'inactive':
+            col_list = ['blue', 'black']
+            plot_list = ['0_1', '0_2']
+            label_list = ['Inactive', 'Inactive Spon. Mov.']
+        elif activity == 'active':
+            col_list = ['red', 'grey']
+            plot_list = ['1_1', '1_2']
+            label_list = ['Active', 'Active Spon. Mov.']
+        else:
+            col_list = ['blue', 'black', 'red', 'grey']
+            plot_list = ['0_1', '0_2', '1_1', '1_2']
+            label_list = ['Inactive', 'Inactive Spon. Mov.', 'Active', 'Active Spon. Mov.']
+
+        if facet_col is not None:
+
+            start_colours, end_colours = self._adjust_colours(col_list)
+            col_list = []
+            colours_dict = {'start' : start_colours, 'end' : end_colours}
+            for c in range(len(plot_list)):
+                start_color = colours_dict.get('start')[c]
+                end_color = colours_dict.get('end')[c]
+                N = len(facet_arg)
+                col_list.append([x.hex for x in list(Color(start_color).range_to(Color(end_color), N))])
 
         fig = go.Figure() 
         y_range, dtick = self._check_boolean(list(self[mov_variable].dropna()))
@@ -1908,7 +1951,6 @@ class behavpy(pd.DataFrame):
         self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = 1, xlabel = f'Consecutive Minutes {activity}')
 
         def activity_count(df, puff_df):
-            df = df.copy(deep=True)
             puff_df = puff_df.copy(deep=True)
             df[mov_variable] = np.where(df[mov_variable] == True, 1, 0)
             bin_df = df.bin_time(mov_variable, 60, function = 'max')
@@ -1936,11 +1978,16 @@ class behavpy(pd.DataFrame):
 
             interaction_dict = {}
             for i in [0, 1]:
-                # print(merged[['t', 'moving', 'previous_moving', 'has_interacted', 'activity_count', 'previous_activity_count', 'has_responded']])
                 first_filter = merged[merged['previous_moving'] == i]
+                if len(first_filter) == 0:
+                    for q in [1, 2]:
+                        interaction_dict[f'{i}_{int(q)}'] = None
+                        continue
                 for q in list(set(first_filter.has_interacted)):
                     second_filter = first_filter[first_filter['has_interacted'] == q]
-                    # print(second_filter[['t', 'moving', 'previous_moving', 'has_interacted', 'activity_count', 'previous_activity_count', 'has_responded']])
+                    if len(second_filter) == 0:
+                        interaction_dict[f'{i}_{int(q)}'] = None
+                        continue
                     big_gb = second_filter.groupby('previous_activity_count').agg(**{
                                     'mean' : ('has_responded', 'mean'),
                                     'count' : ('has_responded', 'count'),
@@ -1956,37 +2003,29 @@ class behavpy(pd.DataFrame):
 
         max_x = []
 
-        # for data, name in zip(d_list, facet_labels):
+        for c1, (data, name) in enumerate(zip(d_list, facet_labels)):
 
-        #     if len(data) == 0:
-        #         print(f'Group {name} has no values and cannot be plotted')
-        #         continue
-        
-        response_dict = activity_count(self, response_df)
-    
-        if activity == 'inactive':
-            col_list = ['blue', 'black']
-            plot_list = ['0_1', '0_2']
-            label_list = ['Inactive', 'Inactive Spon. Mov.']
-        elif activity == 'active':
-            col_list = ['red', 'grey']
-            plot_list = ['1_1', '1_2']
-            label_list = ['Active', 'Active Spon. Mov.']
-        else:
-            col_list = ['blue', 'black', 'red', 'grey']
-            plot_list = ['0_1', '0_2', '1_1', '1_2']
-            label_list = ['Inactive', 'Inactive Spon. Mov.', 'Active', 'Active Spon. Mov.']
-
-        for plot, col, label in zip(plot_list, col_list, label_list):
-            small_data = response_dict[plot]
-            if len(small_data) == 0:
-                print(f'Group {label} has no values and cannot be plotted')
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
                 continue
-            max_x.append(max(small_data['previous_activity_count']))
-            upper, trace, lower, _ = self._plot_line(df = small_data, x_col = 'previous_activity_count', name = label, marker_col = col)
-            fig.add_trace(upper)
-            fig.add_trace(trace) 
-            fig.add_trace(lower)
+        
+            response_dict = activity_count(data, response_df)
+
+            for c2, (plot, label) in enumerate(zip(plot_list, label_list)):
+
+                col = col_list[c2][c1]
+                small_data = response_dict[plot]
+
+                label = f'{name} {label}'
+                if small_data is None:
+                    print(f'Group {label} has no values and cannot be plotted')
+                    continue
+
+                max_x.append(max(small_data['previous_activity_count']))
+                upper, trace, lower, _ = self._plot_line(df = small_data, x_col = 'previous_activity_count', name = label, marker_col = col)
+                fig.add_trace(upper)
+                fig.add_trace(trace) 
+                fig.add_trace(lower)
                 
         fig['layout']['xaxis']['range'] = [1, max(max_x)]
 
