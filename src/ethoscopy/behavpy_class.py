@@ -9,10 +9,9 @@ from plotly.express.colors import qualitative
 from math import floor, ceil, sqrt
 from sys import exit
 from scipy.stats import zscore
-from functools import partial
+from functools import partial, update_wrapper
 from scipy.interpolate import interp1d
 from colour import Color
-
 from ethoscopy.misc.format_warning import format_warning
 from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.analyse import max_velocity_detector
@@ -2097,145 +2096,138 @@ class behavpy(pd.DataFrame):
 
         return fig, stats_df
 
-    @staticmethod
-    def make_tile(self, facet_tile, plot_fun):
-        """ A wrapper to take any behavpy plot and create a tile plot"""
+    ## In production, a wrapper to make tile plots of any plots
 
-        if facet_tile not in self.meta.columns:
-            raise KeyError(f'Column "{facet_tile}" is not a metadata column')
+    # def make_tile(self, facet_tile, plot_fun, rows = None, cols = None):
+    #     """ A wrapper to take any behavpy plot and create a tile plot"""
 
-        # find the unique column variables and use to split df into tiled parts
-        tile_list = list(set(self.meta[facet_tile].tolist()))
+    #     if facet_tile not in self.meta.columns:
+    #         raise KeyError(f'Column "{facet_tile}" is not a metadata column')
 
-        tile_df = []
-        for tile in tile_list:
-            tile_df.append(self.xmv(facet_tile, tile))
+    #     # find the unique column variables and use to split df into tiled parts
+    #     tile_list = list(set(self.meta[facet_tile].tolist()))
 
-        # split the tiled dfs into their facet counterparts, save their constituent parts as a nested list
-        d_list = []
-        name_list = []
-        if facet_col is not None:
-            for i, n in zip(tile_df, tile_list):
-                small_list = []
-                small_names = []
-                for arg in facet_arg:
-                    small_list.append(i.xmv(facet_col, arg))
-                    small_names.append(f'{n}-{arg}')
-                d_list.append(small_list)
-                name_list.append(small_names)
-        else:
-            d_list = tile_df
-            name_list = [str(n) for n in tile_list]
+    #     tile_df = []
+    #     for tile in tile_list:
+    #         tile_df.append(self.xmv(facet_tile, tile))
 
-        col_list = self._get_colours(d_list)
 
-        # genertate a subplot figure with a single column
-        fig = make_subplots(rows=len(tile_list), cols=1, shared_xaxes = True, subplot_titles = tile_list)
+    #     col_list = self._get_colours(d_list)
 
-        max_var = []
-        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
-        if y_range is not False:
-            max_var.append(1)
+    #     if rows is None:
+    #         rows = len(tile_list)
+    #     if cols is None:
+    #         cols = 1
 
-        min_t = []
-        max_t = []
+    #     # genertate a subplot figure with a single column
+    #     fig = make_subplots(rows=rows, cols=cols, shared_xaxes = False, subplot_titles = tile_list)
 
-        for c, (plot, tile_name, master_col) in enumerate(zip(d_list, name_list, col_list)):
-            c = c+1
-            if facet_col is not None:
-                for facet_plot, facet_name in zip(plot, tile_name):
-                    upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = facet_plot, name = facet_name, col = master_col, 
-                                                                        var = variable, avg_win = avg_window, wrap = wrapped, 
-                                                                        day_len = day_length, light_off = lights_off)
-                    if upper is None:
-                        continue
-                    else:
-                        fig.append_trace(upper, row = c, col = 1)
-                        fig.append_trace(trace, row = c, col = 1)
-                        fig.append_trace(lower, row = c, col = 1)
+    #     fun_output = getattr(data, plot_fun.func.__name__)(**plot_fun.keywords)
+
+    #     max_var = []
+    #     y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+    #     if y_range is not False:
+    #         max_var.append(1)
+
+    #     min_t = []
+    #     max_t = []
+
+    #     for c, (plot, tile_name, master_col) in enumerate(zip(d_list, name_list, col_list)):
+    #         c = c+1
+    #         if facet_col is not None:
+    #             for facet_plot, facet_name in zip(plot, tile_name):
+    #                 upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = facet_plot, name = facet_name, col = master_col, 
+    #                                                                     var = variable, avg_win = avg_window, wrap = wrapped, 
+    #                                                                     day_len = day_length, light_off = lights_off)
+    #                 if upper is None:
+    #                     continue
+    #                 else:
+    #                     fig.append_trace(upper, row = c, col = 1)
+    #                     fig.append_trace(trace, row = c, col = 1)
+    #                     fig.append_trace(lower, row = c, col = 1)
                         
-                        min_t.append(t_min)
-                        max_t.append(t_max)
-                        max_var.append(maxV)
+    #                     min_t.append(t_min)
+    #                     max_t.append(t_max)
+    #                     max_var.append(maxV)
 
-            else:
-                upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = plot, name = tile_name, col = master_col, 
-                                                                    var = variable, avg_win = avg_window, wrap = wrapped, 
-                                                                    day_len = day_length, light_off = lights_off)
-                if upper is None:
-                    continue
-                else:
-                    fig.append_trace(upper, row = c, col = 1)
-                    fig.append_trace(trace, row = c, col = 1)
-                    fig.append_trace(lower, row = c, col = 1)
+    #         else:
+    #             upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = plot, name = tile_name, col = master_col, 
+    #                                                                 var = variable, avg_win = avg_window, wrap = wrapped, 
+    #                                                                 day_len = day_length, light_off = lights_off)
+    #             if upper is None:
+    #                 continue
+    #             else:
+    #                 fig.append_trace(upper, row = c, col = 1)
+    #                 fig.append_trace(trace, row = c, col = 1)
+    #                 fig.append_trace(lower, row = c, col = 1)
 
-                    min_t.append(t_min)
-                    max_t.append(t_max)
-                    max_var.append(maxV)
+    #                 min_t.append(t_min)
+    #                 max_t.append(t_max)
+    #                 max_var.append(maxV)
 
-        fig.update_xaxes(
-            zeroline = False,
-            color = 'black',
-            linecolor = 'black',
-            gridcolor = 'black',
-            range = [min(min_t), max(max_t)],
-            tick0 = 0,
-            dtick = day_length/4,
-            ticks = 'outside',
-            tickwidth = 2,
-            tickfont = dict(
-                size = 18
-            ),
-            showgrid = False,
-            linewidth = 2
-        )
+    #     fig.update_xaxes(
+    #         zeroline = False,
+    #         color = 'black',
+    #         linecolor = 'black',
+    #         gridcolor = 'black',
+    #         range = [min(min_t), max(max_t)],
+    #         tick0 = 0,
+    #         dtick = day_length/4,
+    #         ticks = 'outside',
+    #         tickwidth = 2,
+    #         tickfont = dict(
+    #             size = 18
+    #         ),
+    #         showgrid = False,
+    #         linewidth = 2
+    #     )
 
-        fig.update_yaxes(
-            zeroline = False,
-            color = 'black',
-            linecolor = 'black',
-            gridcolor = 'black',
-            tick0 = 0,
-            dtick = dtick,
-            ticks = 'outside',
-            tickwidth = 2,
-            showgrid = grids,
-            linewidth = 2
-        )
+    #     fig.update_yaxes(
+    #         zeroline = False,
+    #         color = 'black',
+    #         linecolor = 'black',
+    #         gridcolor = 'black',
+    #         tick0 = 0,
+    #         dtick = dtick,
+    #         ticks = 'outside',
+    #         tickwidth = 2,
+    #         showgrid = grids,
+    #         linewidth = 2
+    #     )
 
-        fig.add_annotation(
-                    font = {'size': 18, 'color' : 'black'},
-                    showarrow = False,
-                    text = 'ZT Time (Hours)',
-                    x = 0.5,
-                    xanchor = 'center',
-                    xref = 'paper',
-                    y = 0,
-                    yanchor = 'top',
-                    yref = 'paper',
-                    yshift = -30
-                )
-        fig.add_annotation(
-                    font = {'size': 18, 'color' : 'black'},
-                    showarrow = False,
-                    text = variable,
-                    x = 0,
-                    xanchor = 'left',
-                    xref = 'paper',
-                    y = 0.5,
-                    yanchor = 'middle',
-                    yref = 'paper',
-                    xshift =  -85,
-                    textangle =  -90
-        )
+    #     fig.add_annotation(
+    #                 font = {'size': 18, 'color' : 'black'},
+    #                 showarrow = False,
+    #                 text = 'ZT Time (Hours)',
+    #                 x = 0.5,
+    #                 xanchor = 'center',
+    #                 xref = 'paper',
+    #                 y = 0,
+    #                 yanchor = 'top',
+    #                 yref = 'paper',
+    #                 yshift = -30
+    #             )
+    #     fig.add_annotation(
+    #                 font = {'size': 18, 'color' : 'black'},
+    #                 showarrow = False,
+    #                 text = variable,
+    #                 x = 0,
+    #                 xanchor = 'left',
+    #                 xref = 'paper',
+    #                 y = 0.5,
+    #                 yanchor = 'middle',
+    #                 yref = 'paper',
+    #                 xshift =  -85,
+    #                 textangle =  -90
+    #     )
 
-        # Light-Dark annotaion bars
-        bar_shapes, min_bar = circadian_bars(min(min_t), max(max_t), max_y = max(max_var), day_length = day_length, lights_off = lights_off, split = len(tile_list))
-        fig.update_layout(shapes=list(bar_shapes.values()))
+    #     # Light-Dark annotaion bars
+    #     bar_shapes, min_bar = circadian_bars(min(min_t), max(max_t), max_y = max(max_var), day_length = day_length, lights_off = lights_off, split = len(tile_list))
+    #     fig.update_layout(shapes=list(bar_shapes.values()))
 
-        fig.update_annotations(font_size=18)
-        fig['layout']['title'] = title
-        fig['layout']['plot_bgcolor'] = 'white'
-        if min_bar < 0:
-            fig.update_yaxes(range = [min_bar, max(max_var)+0.01])
-        return fig
+    #     fig.update_annotations(font_size=18)
+    #     fig['layout']['title'] = title
+    #     fig['layout']['plot_bgcolor'] = 'white'
+    #     if min_bar < 0:
+    #         fig.update_yaxes(range = [min_bar, max(max_var)+0.01])
+    #     return fig
