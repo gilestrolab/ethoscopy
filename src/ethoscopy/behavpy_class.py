@@ -975,11 +975,11 @@ class behavpy(pd.DataFrame):
         time_map = pd.Series(range(d_small.t.iloc[0], 
                             d_small.t.iloc[-1] + time_window_length, 
                             time_window_length
-                            ), name = 't')
+                            ), name = t_column)
 
-        missing_values = time_map[~time_map.isin(d_small['t'].tolist())]
-        d_small = d_small.merge(time_map, how = 'right', on = 't', copy = False).sort_values(by=['t'])
-        d_small['is_interpolated'] = np.where(d_small['t'].isin(missing_values), True, False)
+        missing_values = time_map[~time_map.isin(d_small[t_column].tolist())]
+        d_small = d_small.merge(time_map, how = 'right', on = t_column, copy = False).sort_values(by=[t_column])
+        d_small['is_interpolated'] = np.where(d_small[t_column].isin(missing_values), True, False)
         d_small[mov_column] = np.where(d_small['is_interpolated'] == True, False, d_small[mov_column])
 
         d_small['asleep'] = sleep_contiguous(d_small[mov_column], 1/time_window_length, min_valid_time = min_time_immobile)
@@ -1921,21 +1921,21 @@ class behavpy(pd.DataFrame):
             facet_labels = ['']
 
         if activity == 'inactive':
-            col_list = ['blue', 'black']
+            col_list = [['blue'], ['black']]
             plot_list = ['0_1', '0_2']
             label_list = ['Inactive', 'Inactive Spon. Mov.']
         elif activity == 'active':
-            col_list = ['red', 'grey']
+            col_list = [['red'], ['grey']]
             plot_list = ['1_1', '1_2']
             label_list = ['Active', 'Active Spon. Mov.']
         else:
-            col_list = ['blue', 'black', 'red', 'grey']
+            col_list = [['blue'], ['black'], ['red'], ['grey']]
             plot_list = ['0_1', '0_2', '1_1', '1_2']
             label_list = ['Inactive', 'Inactive Spon. Mov.', 'Active', 'Active Spon. Mov.']
 
         if facet_col is not None:
 
-            start_colours, end_colours = self._adjust_colours(col_list)
+            start_colours, end_colours = self._adjust_colours([col[0] for col in col_list])
             col_list = []
             colours_dict = {'start' : start_colours, 'end' : end_colours}
             for c in range(len(plot_list)):
@@ -1983,7 +1983,8 @@ class behavpy(pd.DataFrame):
                     for q in [1, 2]:
                         interaction_dict[f'{i}_{int(q)}'] = None
                         continue
-                for q in list(set(first_filter.has_interacted)):
+                # for q in list(set(first_filter.has_interacted)):
+                for q in [1, 2]:
                     second_filter = first_filter[first_filter['has_interacted'] == q]
                     if len(second_filter) == 0:
                         interaction_dict[f'{i}_{int(q)}'] = None
@@ -2095,3 +2096,146 @@ class behavpy(pd.DataFrame):
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
         return fig, stats_df
+
+    @staticmethod
+    def make_tile(self, facet_tile, plot_fun):
+        """ A wrapper to take any behavpy plot and create a tile plot"""
+
+        if facet_tile not in self.meta.columns:
+            raise KeyError(f'Column "{facet_tile}" is not a metadata column')
+
+        # find the unique column variables and use to split df into tiled parts
+        tile_list = list(set(self.meta[facet_tile].tolist()))
+
+        tile_df = []
+        for tile in tile_list:
+            tile_df.append(self.xmv(facet_tile, tile))
+
+        # split the tiled dfs into their facet counterparts, save their constituent parts as a nested list
+        d_list = []
+        name_list = []
+        if facet_col is not None:
+            for i, n in zip(tile_df, tile_list):
+                small_list = []
+                small_names = []
+                for arg in facet_arg:
+                    small_list.append(i.xmv(facet_col, arg))
+                    small_names.append(f'{n}-{arg}')
+                d_list.append(small_list)
+                name_list.append(small_names)
+        else:
+            d_list = tile_df
+            name_list = [str(n) for n in tile_list]
+
+        col_list = self._get_colours(d_list)
+
+        # genertate a subplot figure with a single column
+        fig = make_subplots(rows=len(tile_list), cols=1, shared_xaxes = True, subplot_titles = tile_list)
+
+        max_var = []
+        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        if y_range is not False:
+            max_var.append(1)
+
+        min_t = []
+        max_t = []
+
+        for c, (plot, tile_name, master_col) in enumerate(zip(d_list, name_list, col_list)):
+            c = c+1
+            if facet_col is not None:
+                for facet_plot, facet_name in zip(plot, tile_name):
+                    upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = facet_plot, name = facet_name, col = master_col, 
+                                                                        var = variable, avg_win = avg_window, wrap = wrapped, 
+                                                                        day_len = day_length, light_off = lights_off)
+                    if upper is None:
+                        continue
+                    else:
+                        fig.append_trace(upper, row = c, col = 1)
+                        fig.append_trace(trace, row = c, col = 1)
+                        fig.append_trace(lower, row = c, col = 1)
+                        
+                        min_t.append(t_min)
+                        max_t.append(t_max)
+                        max_var.append(maxV)
+
+            else:
+                upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = plot, name = tile_name, col = master_col, 
+                                                                    var = variable, avg_win = avg_window, wrap = wrapped, 
+                                                                    day_len = day_length, light_off = lights_off)
+                if upper is None:
+                    continue
+                else:
+                    fig.append_trace(upper, row = c, col = 1)
+                    fig.append_trace(trace, row = c, col = 1)
+                    fig.append_trace(lower, row = c, col = 1)
+
+                    min_t.append(t_min)
+                    max_t.append(t_max)
+                    max_var.append(maxV)
+
+        fig.update_xaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            range = [min(min_t), max(max_t)],
+            tick0 = 0,
+            dtick = day_length/4,
+            ticks = 'outside',
+            tickwidth = 2,
+            tickfont = dict(
+                size = 18
+            ),
+            showgrid = False,
+            linewidth = 2
+        )
+
+        fig.update_yaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            tick0 = 0,
+            dtick = dtick,
+            ticks = 'outside',
+            tickwidth = 2,
+            showgrid = grids,
+            linewidth = 2
+        )
+
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = 'ZT Time (Hours)',
+                    x = 0.5,
+                    xanchor = 'center',
+                    xref = 'paper',
+                    y = 0,
+                    yanchor = 'top',
+                    yref = 'paper',
+                    yshift = -30
+                )
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = variable,
+                    x = 0,
+                    xanchor = 'left',
+                    xref = 'paper',
+                    y = 0.5,
+                    yanchor = 'middle',
+                    yref = 'paper',
+                    xshift =  -85,
+                    textangle =  -90
+        )
+
+        # Light-Dark annotaion bars
+        bar_shapes, min_bar = circadian_bars(min(min_t), max(max_t), max_y = max(max_var), day_length = day_length, lights_off = lights_off, split = len(tile_list))
+        fig.update_layout(shapes=list(bar_shapes.values()))
+
+        fig.update_annotations(font_size=18)
+        fig['layout']['title'] = title
+        fig['layout']['plot_bgcolor'] = 'white'
+        if min_bar < 0:
+            fig.update_yaxes(range = [min_bar, max(max_var)+0.01])
+        return fig

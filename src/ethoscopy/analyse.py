@@ -230,6 +230,15 @@ def puff_mago(data, start_response_window = 0, response_window_length = 10, velo
     data['velocity'] = data.dist / velocity_correction_coef
     data.drop(columns = ['deltaT', 'dist'], inplace = True)
 
+    # this is tempory to add random false interactions, keep commented out and do not push to production 
+    # from random import shuffle
+    # fraction = 100
+    # int_list = [2] * (int(len(data)/fraction))
+    # int_list_2 = [0] * (len(data) - len(int_list))
+    # int_list_all = int_list + int_list_2 
+    # shuffle(int_list_all)
+    # data['has_interacted'] = int_list_all 
+
     #isolate interaction times
     interaction_dt = data['t'][(data['has_interacted'] == 1) | (data['has_interacted'] == 2)].to_frame()
     interaction_dt.rename(columns = {'t' : 'int_t'}, inplace = True)
@@ -240,6 +249,7 @@ def puff_mago(data, start_response_window = 0, response_window_length = 10, velo
 
     interaction_dt['start'] = interaction_dt.int_t
     interaction_dt['end'] = interaction_dt.int_t + response_window_length
+    interaction_dt['int_id'] = np.arange(1, len(interaction_dt) + 1)
 
     ints = data.t.values
     starts = interaction_dt.start.values 
@@ -253,31 +263,30 @@ def puff_mago(data, start_response_window = 0, response_window_length = 10, velo
         np.column_stack([data.values[i], interaction_dt.values[j]]),
         columns= data.columns.append(interaction_dt.columns)
     )
-    # find relative time to interaction and check for movement
 
+    # find relative time to interaction and check for movement
     df['t_rel'] = df.t - df.int_t
     df = df[(df['t_rel'] > start_response_window) | (df['t_rel'] == 0)]
     df.rename(columns = {'int_t' : 'interaction_t'}, inplace = True)
     df['has_responded'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 1), True, False)
     df['has_walked'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 2.5), True, False)
     df.drop(columns = ['xy_dist_log10x1000', 'start', 'end'], inplace = True)
-    df['interaction_id'] = df['has_interacted'].cumsum()
-    response_rows = []
 
+    response_rows = []
     # is any response take the interaction row and change response to True and t_rel to time till movement
     def find_interactions(response_data):
         if any(response_data['has_responded']):
             response_dict = response_data[response_data['t_rel'] == 0].to_dict('records')[0]
             response_dict['has_responded'] = True
             response_dict['t_rel'] = response_data['t_rel'][response_data['has_responded'] == True].iloc[0]
-            response_dict.pop('interaction_id')
+            response_dict.pop('int_id')
             response_rows.append(response_dict)
         else:
             response_dict = response_data[response_data['t_rel'] == 0].to_dict('records')[0]
-            response_dict.pop('interaction_id')
+            response_dict.pop('int_id')
             response_rows.append(response_dict)
 
-    df.groupby('interaction_id').apply(find_interactions)
+    df.groupby('int_id').apply(find_interactions)
 
     return pd.DataFrame(response_rows)
 
