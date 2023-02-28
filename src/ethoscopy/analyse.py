@@ -241,33 +241,38 @@ def puff_mago(data, start_response_window = 0, response_window_length = 10, velo
 
     #isolate interaction times
     interaction_dt = data['t'][(data['has_interacted'] == 1) | (data['has_interacted'] == 2)].to_frame()
-    interaction_dt.rename(columns = {'t' : 'int_t'}, inplace = True)
+    # interaction_dt.rename(columns = {'t' : 't_int'}, inplace = True)
 
     #check some interactions took place, return none if empty
     if len(interaction_dt.index) < 1:
         return None
 
-    interaction_dt['start'] = interaction_dt.int_t
-    interaction_dt['end'] = interaction_dt.int_t + response_window_length
+    interaction_dt['start'] = interaction_dt.t
+    interaction_dt['end'] = interaction_dt.t + response_window_length
     interaction_dt['int_id'] = np.arange(1, len(interaction_dt) + 1)
 
-    ints = data.t.values
+    # ints = data.t.values
     starts = interaction_dt.start.values 
     ends = interaction_dt.end.values  
 
+    #### Old method, too memory intensive - the np.where is massive
     # search all time values and retrieve the indexes of values between start and end times
     # creates two lists. first with indices for data dataframe and the second is the indices for interaction_dt
     # create dataframe of two
-    i, j = np.where((ints[:, None] >= starts) & (ints[:, None] <= ends))
-    df = pd.DataFrame(
-        np.column_stack([data.values[i], interaction_dt.values[j]]),
-        columns= data.columns.append(interaction_dt.columns)
-    )
+    # i, j = np.where((ints[:, None] >= starts) & (ints[:, None] <= ends))
+    # df = pd.DataFrame(
+    #     np.column_stack([data.values[i], interaction_dt.values[j]]),
+    #     columns= data.columns.append(interaction_dt.columns)
+    # )
+
+    # New method, but can be slow
+    df = pd.concat([data[(data['t'] >= i) & (data['t'] < q)] for i, q in zip(starts, ends)])
+    df = df.join(interaction_dt, rsuffix = '_int').fillna(method = 'ffill')
 
     # find relative time to interaction and check for movement
-    df['t_rel'] = df.t - df.int_t
+    df['t_rel'] = df.t - df.t_int
     df = df[(df['t_rel'] > start_response_window) | (df['t_rel'] == 0)]
-    df.rename(columns = {'int_t' : 'interaction_t'}, inplace = True)
+    df.rename(columns = {'t_int' : 'interaction_t'}, inplace = True)
     df['has_responded'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 1), True, False)
     df['has_walked'] = np.where((df['t_rel'] > 0) & (df['velocity'] > 2.5), True, False)
     df.drop(columns = ['xy_dist_log10x1000', 'start', 'end'], inplace = True)
