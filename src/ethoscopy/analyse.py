@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np 
+from random import shuffle
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import copy
@@ -204,7 +205,7 @@ def sleep_annotation(data,
     
     return d_small
 
-def puff_mago(data, start_response_window = 0, response_window_length = 10, velocity_correction_coef = 3e-3):
+def puff_mago(data, start_response_window = 0, response_window_length = 10, add_false = False, velocity_correction_coef = 3e-3):
     """
     Puff_mago finds interaction times from raw ethoscope data to detect responses in a given window.
     This function will only return data from around interaction times and not whole movement data from the experiment.
@@ -212,6 +213,7 @@ def puff_mago(data, start_response_window = 0, response_window_length = 10, velo
     Params:
     @data = pandas dataframe, dataframe containing behavioural variable from many or one multiple animals 
     @response_window = int, the period of time (seconds) after stimulus to check for a response (movement), default is 10 seconds
+    @add_false = bool / int, If not False then an int which is the percentage of the total of which to add false interactions, recommended is 10
     @velocity_correction_coef = float, a coefficient to correct the velocity data (change for different length tubes), default is 3e-3
     
     returns  a pandas dataframe object with columns such as 'interaction_t' and 'has_responded'
@@ -230,14 +232,16 @@ def puff_mago(data, start_response_window = 0, response_window_length = 10, velo
     data['velocity'] = data.dist / velocity_correction_coef
     data.drop(columns = ['deltaT', 'dist'], inplace = True)
 
-    # this is tempory to add random false interactions, keep commented out and do not push to production 
-    # from random import shuffle
-    # fraction = 100
-    # int_list = [2] * (int(len(data)/fraction))
-    # int_list_2 = [0] * (len(data) - len(int_list))
-    # int_list_all = int_list + int_list_2 
-    # shuffle(int_list_all)
-    # data['has_interacted'] = int_list_all 
+    if add_false is not False:
+        if add_false <= 0 or add_false >= 101:
+            raise ValueError("add_false must be between 1 and 100") 
+        int_list = [2] * (int(len(data)*(add_false/100)))
+        int_list_2 = [0] * (len(data) - len(int_list))
+        int_list_all = int_list + int_list_2 
+        shuffle(int_list_all)
+        data['has_interacted2'] = int_list_all 
+        data['has_interacted'] = np.where(data['has_interacted'] == 1, data['has_interacted'], data['has_interacted2'])
+        data = data.drop(columns = ['has_interacted2'])
 
     #isolate interaction times
     interaction_dt = data['t'][(data['has_interacted'] == 1) | (data['has_interacted'] == 2)].to_frame()
