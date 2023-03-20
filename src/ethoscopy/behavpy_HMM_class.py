@@ -15,7 +15,7 @@ from functools import partial
 
 from ethoscopy.behavpy_class import behavpy
 from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
-from ethoscopy.misc.bootstrap_CI import bootstrap
+# from ethoscopy.misc.bootstrap_CI import bootstrap
 from ethoscopy.misc.circadian_bars import circadian_bars
 
 class behavpy_HMM(behavpy):

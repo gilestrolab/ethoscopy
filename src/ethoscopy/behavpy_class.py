@@ -764,6 +764,39 @@ class behavpy(pd.DataFrame):
                                                                                                             resolution = resolution
         )), tdf.meta, check = True)
 
+    def curate_dead_animals_interactions(self, full_df, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
+        """ 
+        A variation of curate dead animals to remove responses after an animal is presumed to have died
+        
+        Params:
+        @full_df = behavpy, a behavpy dataframe that has the full time series data for each specimen in the response dataframe
+        @t_column = string, column heading for the data frames time stamp column (default is 't')
+        @mov_column = string, logical variable in `data` used to define the moving (alive) state (default is `moving`)
+        @time_window = int, window during which to define death 
+        @prop_immobile = float, proportion of immobility that counts as "dead" during time_window 
+        @resolution = int, how much scanning windows overlap. Expressed as a factor. 
+        
+        Returns a modified behavpy object with response removed when the specimen is presumed dead
+        """
+
+        if t_column not in full_df.columns.tolist():
+            warnings.warn('Variable name entered, {}, for t_column is not a column heading!'.format(t_column))
+            exit()
+        
+        if mov_column not in full_df.columns.tolist():
+            warnings.warn('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
+            exit()
+
+        tdf = self.reset_index().copy(deep=True)
+        curated_df = tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_curate_dead_animals,
+                                                                                                            time_var = t_column,
+                                                                                                            moving_var = mov_column,
+                                                                                                            time_window = time_window, 
+                                                                                                            prop_immobile = prop_immobile,
+                                                                                                            resolution = resolution
+        ))
+        
+
     @staticmethod
     def _wrapped_bin_data(data, column, bin_column, function, bin_secs):
 
