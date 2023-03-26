@@ -715,8 +715,8 @@ class behavpy(pd.DataFrame):
         return fig
 
     @staticmethod
-    def _wrapped_curate_dead_animals(data, time_var, moving_var, time_window, prop_immobile, resolution): 
-        
+    def _wrapped_curate_dead_animals(data, time_var, moving_var, time_window, prop_immobile, resolution, time_dict = False): 
+
         time_window = (60 * 60 * time_window)
         d = data[[time_var, moving_var]].copy(deep = True)
         target_t = np.array(list(range(d.t.min().astype(int), d.t.max().astype(int), floor(time_window / resolution))))
@@ -725,12 +725,14 @@ class behavpy(pd.DataFrame):
         first_death_point = np.where(local_means <= prop_immobile, True, False)
 
         if any(first_death_point) is False:
+            if time_dict is not False:
+                time_dict[data['id'].iloc[0]] = [data[time_var].min(), data[time_var].max()]
             return data
 
         last_valid_point = target_t[first_death_point]
-
-        curated_data = data[data[time_var].between(data.t.min(), last_valid_point[0])]
-        return curated_data
+        if time_dict is not False:
+            time_dict[data['id'].iloc[0]] = [data[time_var].min(), last_valid_point[0]]
+        return data[data[time_var].between(data.t.min(), last_valid_point[0])]
 
     def curate_dead_animals(self, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
         
@@ -764,37 +766,46 @@ class behavpy(pd.DataFrame):
                                                                                                             resolution = resolution
         )), tdf.meta, check = True)
 
-    def curate_dead_animals_interactions(self, full_df, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
+    def curate_dead_animals_interactions(self, mov_df, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
         """ 
         A variation of curate dead animals to remove responses after an animal is presumed to have died
         
         Params:
-        @full_df = behavpy, a behavpy dataframe that has the full time series data for each specimen in the response dataframe
+        @mov_df = behavpy, a behavpy dataframe that has the full time series data for each specimen in the response dataframe
         @t_column = string, column heading for the data frames time stamp column (default is 't')
         @mov_column = string, logical variable in `data` used to define the moving (alive) state (default is `moving`)
         @time_window = int, window during which to define death 
         @prop_immobile = float, proportion of immobility that counts as "dead" during time_window 
         @resolution = int, how much scanning windows overlap. Expressed as a factor. 
         
-        Returns a modified behavpy object with response removed when the specimen is presumed dead
+        Returns two modified behavpy object, the 1st the interaction behavpy dataframe that had the method called on it and the
+        2nd the movment df with all the data points. Both filted to remove specimens where presumed dead
         """
 
-        if t_column not in full_df.columns.tolist():
+        def curate_filter(df, dict):
+            return df[df['t'].between(dict[df['id'].iloc[0]][0], dict[df['id'].iloc[0]][1])]
+
+        if t_column not in self.columns.tolist() or t_column not in mov_df.columns.tolist():
             warnings.warn('Variable name entered, {}, for t_column is not a column heading!'.format(t_column))
             exit()
         
-        if mov_column not in full_df.columns.tolist():
+        if mov_column not in mov_df.columns.tolist():
             warnings.warn('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
             exit()
 
         tdf = self.reset_index().copy(deep=True)
-        curated_df = tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_curate_dead_animals,
+        tdf2 = mov_df.reset_index().copy(deep=True)
+        time_dict = {}
+        curated_df = tdf2.groupby('id', group_keys = False).apply(partial(self._wrapped_curate_dead_animals,
                                                                                                             time_var = t_column,
                                                                                                             moving_var = mov_column,
                                                                                                             time_window = time_window, 
                                                                                                             prop_immobile = prop_immobile,
-                                                                                                            resolution = resolution
+                                                                                                            resolution = resolution, 
+                                                                                                            time_dict = time_dict
         ))
+        curated_puff = tdf.groupby('id', group_keys = False, sort = False).apply(partial(curate_filter, dict = time_dict))
+        return behavpy(curated_puff, tdf.meta, check = True), behavpy(curated_df, tdf2.meta, check = True), 
         
 
     @staticmethod
