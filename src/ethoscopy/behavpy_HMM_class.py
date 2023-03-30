@@ -39,7 +39,7 @@ class behavpy_HMM(behavpy):
             self._check_conform(self)
 
     _colours_four = ['darkblue', 'dodgerblue', 'red', 'darkred']
-    _hmm_labels = ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake']
+    _hmm_labels = ['Deep sleep', 'Light sleep', 'Quiet awake', 'Active awake']
 
     @staticmethod
     def _hmm_decode(d, h, b, var, fun, return_type = 'array'):
