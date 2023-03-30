@@ -42,7 +42,7 @@ class behavpy_HMM(behavpy):
     _hmm_labels = ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake']
 
     @staticmethod
-    def _hmm_decode(d, h, b, var, fun):
+    def _hmm_decode(d, h, b, var, fun, return_type = 'array'):
 
         # change the movement column of choice to intergers, 1 == active, 0 == inactive
         if var == 'moving' or var == 'asleep':
@@ -55,16 +55,29 @@ class behavpy_HMM(behavpy):
 
         # logprob_list = []
         states_list = []
+        df = pd.DataFrame()
 
-        for i in gb:
-            seq = np.array(i)
-            seq = seq.reshape(-1, 1)
+        for i, t, id in zip(gb, time_list, time_list.index):
+            seq_o = np.array(i)
+            seq = seq_o.reshape(-1, 1)
             logprob, states = h.decode(seq)
 
             #logprob_list.append(logprob)
-            states_list.append(states)
-                
-        return states_list, time_list #, logprob_list
+            if return_type == 'array':
+                states_list.append(states)
+            if return_type == 'table':
+                label = [id] * len(t)
+                previous_state = np.array(states[:-1], dtype = float)
+                previous_state = np.insert(previous_state, 0, np.nan)
+                all = zip(label, t, states, previous_state, seq_o)
+                all = pd.DataFrame(data = all)
+                df = pd.concat([df, all], ignore_index = False)
+        
+        if return_type == 'array':
+            return states_list, time_list #, logprob_list
+        if return_type == 'table':
+            df.columns = ['id', 'bin', 'state', 'previous_state', 'moving']
+            return df
 
 
     # Internal methods for checking data/arguments before plotting
@@ -1047,3 +1060,86 @@ class behavpy_HMM(behavpy):
         )
 
         return fig
+    
+    def plot_hmm_response(self, mov_df, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
+        """
+        
+        """
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        list_states = list(range(len(labels)))
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+
+        if facet_col is not None:
+            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+            mov_df_list = [mov_df.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            df_list = [self.copy(deep = True)]
+            mov_df_list = [mov_df.copy(deep = True)]
+
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func, return_type = 'table') for n, d, h, b in zip(facet_arg, mov_df_list, h_list, b_list)}
+        puff_dict = {f'pdf{n}' : d for n, d in zip(facet_arg, df_list)}
+
+        def alter_merge(data, puff):
+            puff['bin'] = puff['interaction_t'].map(lambda t:  60 * floor(t / 60))
+            puff.reset_index(inplace = True)
+
+            merged = pd.merge(data, puff, how = 'inner', on = ['id', 'bin'])
+            merged['t_check'] = merged.interaction_t + merged.t_rel
+            merged['t_check'] = merged['t_check'].map(lambda t:  60 * floor(t / 60))
+
+            merged['previous_state'] = np.where(merged['t_check'] > merged['bin'], merged['state'], merged['previous_state'])
+
+            interaction_dict = {}
+            for i in list(set(merged.has_interacted)):
+                filt_merged = merged[merged['has_interacted'] == i]
+                big_gb = filt_merged.groupby(['id', 'previous_state']).agg(**{
+                            'prop_respond' : ('has_responded', 'mean')
+                    })
+                interaction_dict[f'int_{int(i)}'] = big_gb.groupby('previous_state')['prop_respond'].apply(np.array)
+
+            return interaction_dict
+
+        analysed_dict = {f'df{n}' : alter_merge(decoded_dict[f'df{n}'], puff_dict[f'pdf{n}']) for n in facet_arg}
+        
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Response Rate', title = title, grid = grids)
+
+        stats_dict = {}
+
+        for state, col, lab in zip(list_states, colours, labels):
+
+            for arg, i in zip(facet_arg, facet_labels):
+
+                for q in [1, 2]:
+                    try:
+                        median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][f'int_{q}'][state])
+                    except KeyError:
+                        continue
+
+                    stats_dict[f'{arg}_{lab}_{q}'] = zlist
+
+                    if q == 2:
+                        i = f'{i} Spon. mov.'
+
+                    if 'baseline' in i.lower() or 'control' in i.lower() or 'ctrl' in i.lower():
+                            marker_col = 'black'
+                    elif 'spon. mov.' in i.lower():
+                            marker_col = 'grey'
+                    else:
+                        marker_col = col
+
+                    fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                    x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
+
+                    label_list = [i] * len(zlist)
+                    fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
+                    showlegend = False, name = i, xaxis = f'x{state+1}'))
+
+            domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
+            axis = f'xaxis{state+1}'
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+        
+        return fig, stats_df
