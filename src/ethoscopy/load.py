@@ -394,7 +394,7 @@ def load_ethoscope(metadata, min_time = 0 , max_time = float('inf'), reference_h
 
     Params:
     metadata = pd.DataFrame object, metadata df as returned from link_meta_index function
-    min_time = int, the minimum time you want to load data from with 0 being the experiment start or first reference hour (in hours), for all experiments
+    min_time = int, the minimum time you want to load data from with 0 being the experiment start (in hours), for all experiments
     max_time = int, same as above
     reference_hour = int, the hour at which lights on occurs when the experiment is begun. None equals the start of the experiment
     cache = string, the local path to find and store cached versions of each ROI per database. Cached files are in a pickle format
@@ -410,35 +410,34 @@ def load_ethoscope(metadata, min_time = 0 , max_time = float('inf'), reference_h
 
     # iterate over the ROI of each ethoscope in the metadata df
     for i in range(len(metadata.index)):
-        # try:
-        if verbose is True:
-            print('Loading ROI_{} from {}'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
-        roi_1 = read_single_roi(file = metadata.iloc[i,:],
-                                min_time = min_time,
-                                max_time = max_time,
-                                reference_hour = reference_hour,
-                                cache = cache
-                                )
-
-        if roi_1 is None:
+        try:
             if verbose is True:
-                print('ROI_{} from {} was unable to load due to an error formatting roi'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
-            continue
+                print('Loading ROI_{} from {}'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
+            roi_1 = read_single_roi(file = metadata.iloc[i,:],
+                                    min_time = min_time,
+                                    max_time = max_time,
+                                    reference_hour = reference_hour,
+                                    cache = cache
+                                    )
 
-        if FUN is not None:
-            roi_1.to_pickle('./memory_pickle.pkl')
-            roi_1 = FUN(roi_1) 
+            if roi_1 is None:
+                if verbose is True:
+                    print('ROI_{} from {} was unable to load due to an error formatting roi'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
+                continue
 
-        if roi_1 is None:
+            if FUN is not None:
+                roi_1 = FUN(roi_1) 
+
+            if roi_1 is None:
+                if verbose is True:
+                    print('ROI_{} from {} was unable to load due to an error in applying the function'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
+                continue
+            roi_1.insert(0, 'id', metadata['id'].iloc[i])
+            data = pd.concat([data, roi_1], ignore_index= True)
+        except:
             if verbose is True:
-                print('ROI_{} from {} was unable to load due to an error in applying the function'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
+                print('ROI_{} from {} was unable to load due to an error loading roi'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
             continue
-        roi_1.insert(0, 'id', metadata['id'].iloc[i])
-        data = pd.concat([data, roi_1], ignore_index= True)
-        # except:
-        #     if verbose is True:
-        #         print('ROI_{} from {} was unable to load due to an error loading roi'.format(metadata['region_id'].iloc[i], metadata['machine_name'].iloc[i]))
-        #     continue
 
     return data
 

@@ -1942,7 +1942,7 @@ class behavpy(pd.DataFrame):
         @response_df = behavpy, behapy dataframe intially analysed by the puff_mago loading function
         @activity = string, the choice to display reponse rate for continuous bounts of inactivity, activity, or both. Choice one of ['inactive', 'active', 'both']
         @mov_variable = string, the name of the column that contains the response per each interaction, should be boolean values
-        @bin = int, the value in seconds time should be binned to to then count consecutive bouts
+        @bin = int, the value in seconds time should be binned to and then count consecutive bouts
         @title = string, a title for the plotted figure
         @grids = bool, true/false whether the resulting figure should have grids
 
