@@ -5,5 +5,4 @@ dist/
 *vscode
 __pycache__/
 ethoscopy.egg-info/
-periodogram_test.pkl
 test/
