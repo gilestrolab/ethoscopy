@@ -305,8 +305,12 @@ class behavpy_HMM(behavpy):
             print("True Convergence:" + str(h.monitor_.history[-1] - h.monitor_.history[-2] < h.monitor_.tol))
             print("Final log liklihood score:" + str(h.score(seq_train, len_seq_train)))
 
+
             if i == 0:
-                with open(file_name, "wb") as file: pickle.dump(h, file)
+                try:
+                    pickle.load(open(file_name, "rb"))
+                except OSError as e:
+                    with open(file_name, "wb") as file: pickle.dump(h, file)
 
             else:
                 with open(file_name, "rb") as file: 
