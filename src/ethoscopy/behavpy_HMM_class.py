@@ -305,16 +305,20 @@ class behavpy_HMM(behavpy):
             print("True Convergence:" + str(h.monitor_.history[-1] - h.monitor_.history[-2] < h.monitor_.tol))
             print("Final log liklihood score:" + str(h.score(seq_train, len_seq_train)))
 
-
             if i == 0:
                 try:
-                    pickle.load(open(file_name, "rb"))
+                    h_old = pickle.load(open(file_name, "rb"))
+                    if h.score(seq_test, len_seq_test) > h_old.score(seq_test, len_seq_test):
+                        print('New Matrix:')
+                        df_t = pd.DataFrame(h.transmat_, index = states, columns = states)
+                        print(tabulate(df_t, headers = 'keys', tablefmt = "github") + "\n")
+                        
+                        with open(file_name, "wb") as file: pickle.dump(h, file)
                 except OSError as e:
                     with open(file_name, "wb") as file: pickle.dump(h, file)
 
             else:
-                with open(file_name, "rb") as file: 
-                    h_old = pickle.load(file)
+                h_old = pickle.load(open(file_name, "rb"))
                 if h.score(seq_test, len_seq_test) > h_old.score(seq_test, len_seq_test):
                     print('New Matrix:')
                     df_t = pd.DataFrame(h.transmat_, index = states, columns = states)
@@ -322,8 +326,7 @@ class behavpy_HMM(behavpy):
                     with open(file_name, "wb") as file: pickle.dump(h, file)
 
             if i+1 == iterations:
-                with open(file_name, "rb") as file: 
-                    h = pickle.load(file)
+                h = pickle,load(open(file_name, "rb"))
                 #print tables of trained emission probabilties, not accessible as objects for the user
                 self._hmm_table(start_prob = h.startprob_, trans_prob = h.transmat_, emission_prob = h.emissionprob_, state_names = states, observable_names = observables)
                 return h
@@ -708,8 +711,11 @@ class behavpy_HMM(behavpy):
         for state, col, lab in zip(list_states, colours, labels):
 
             for arg, i in zip(facet_arg, facet_labels):
-
-                median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy())
+                
+                try:
+                    median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy())
+                except KeyError:
+                    median, q3, q1, zlist = [0], [0], [0], [np.nan]
                 
                 stats_dict[f'{arg}_{lab}'] = zlist
 
@@ -772,7 +778,10 @@ class behavpy_HMM(behavpy):
 
             for arg, i in zip(facet_arg, facet_labels):
 
-                median, q3, q1, zlist = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy())
+                try:
+                    median, q3, q1, zlist = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy())
+                except KeyError:
+                    median, q3, q1, zlist = [0], [0], [0], [np.nan]
                 stats_dict[f'{arg}_{lab}'] = zlist
 
                 if 'baseline' in i or 'control' in i:
@@ -831,8 +840,11 @@ class behavpy_HMM(behavpy):
         for state, col, lab in zip(list_states, colours, labels):
 
             for arg, i in zip(facet_arg, facet_labels):
-
-                median, q3, q1, _ = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy(), min_max = True)
+                
+                try:
+                    median, q3, q1, _ = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy(), min_max = True)
+                except KeyError:
+                    median, q3, q1 = [0], [0], [0]
 
                 if 'baseline' in i or 'control' in i:
                     if 'rebound' in i:
@@ -883,8 +895,12 @@ class behavpy_HMM(behavpy):
         for state, col, lab in zip(list_states, colours, labels):
 
             for arg, i in zip(facet_arg, facet_labels):
+                
+                try:
+                    median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][str(state)].to_numpy())  
+                except KeyError:
+                    median, q3, q1, zlist = [0], [0], [0], [np.nan]
 
-                median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][str(state)].to_numpy())  
                 stats_dict[f'{arg}_{lab}'] = zlist
 
                 if 'baseline' in i.lower() or 'control' in i.lower():
