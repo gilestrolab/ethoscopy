@@ -1131,7 +1131,7 @@ class behavpy_HMM(behavpy):
 
             for arg, i in zip(facet_arg, facet_labels):
 
-                for q in [1, 2]:
+                for q in [2, 1]:
                     try:
                         median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][f'int_{q}'][state])
                     except KeyError:
