@@ -1144,9 +1144,9 @@ class behavpy_HMM(behavpy):
                     else:
                         lab = i
 
-                    if 'baseline' in i.lower() or 'control' in i.lower() or 'ctrl' in i.lower():
+                    if 'baseline' in lab.lower() or 'control' in lab.lower() or 'ctrl' in lab.lower():
                             marker_col = 'black'
-                    elif 'spon. mov.' in i.lower():
+                    elif 'spon. mov.' in lab.lower():
                             marker_col = 'grey'
                     else:
                         marker_col = col
