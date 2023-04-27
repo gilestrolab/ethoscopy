@@ -2119,6 +2119,7 @@ class behavpy(pd.DataFrame):
                 loop_itr = [1]
             else:
                 loop_itr = [2, 1]
+
             for q in loop_itr:
 
                 filtered = data[data['has_interacted'] == q]
@@ -2129,16 +2130,16 @@ class behavpy(pd.DataFrame):
 
                 if q == 1:
                     col = col
-                    name = name
+                    lab = name
                 else:
                     col = 'grey'
-                    name = f'{name} Spon. Mov'
+                    lab = f'{name} Spon. Mov'
 
                 fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
-                x = [name], colour =  col, showlegend = False, name = name, xaxis = 'x'))
+                x = [lab], colour =  col, showlegend = False, name = lab, xaxis = 'x'))
 
-                fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [name], colour = col, 
-                showlegend = False, name = name, xaxis = 'x'))
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [lab], colour = col, 
+                showlegend = False, name = lab, xaxis = 'x'))
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 

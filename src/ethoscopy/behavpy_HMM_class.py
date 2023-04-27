@@ -1140,7 +1140,9 @@ class behavpy_HMM(behavpy):
                     stats_dict[f'{arg}_{lab}_{q}'] = zlist
 
                     if q == 2:
-                        i = f'{i} Spon. mov.'
+                        lab = f'{i} Spon. mov.'
+                    else:
+                        lab = i
 
                     if 'baseline' in i.lower() or 'control' in i.lower() or 'ctrl' in i.lower():
                             marker_col = 'black'
@@ -1150,11 +1152,11 @@ class behavpy_HMM(behavpy):
                         marker_col = col
 
                     fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
-                    x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
+                    x = [lab], colour =  marker_col, showlegend = False, name = lab, xaxis = f'x{state+1}'))
 
-                    label_list = [i] * len(zlist)
+                    label_list = [lab] * len(zlist)
                     fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
-                    showlegend = False, name = i, xaxis = f'x{state+1}'))
+                    showlegend = False, name = lab, xaxis = f'x{state+1}'))
 
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
             axis = f'xaxis{state+1}'
