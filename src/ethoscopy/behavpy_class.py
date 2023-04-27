@@ -2114,8 +2114,12 @@ class behavpy(pd.DataFrame):
             if len(data) == 0:
                 print(f'Group {name} has no values and cannot be plotted')
                 continue
-
-            for q in list(set(data.has_interacted)):
+            
+            if len(list(set(data.has_interacted))) == 1:
+                loop_itr = [1]
+            else:
+                loop_itr = [2, 1]
+            for q in loop_itr:
 
                 filtered = data[data['has_interacted'] == q]
                 filtered = filtered.dropna(subset = [response_col])
