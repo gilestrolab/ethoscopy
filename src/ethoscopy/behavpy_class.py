@@ -570,13 +570,13 @@ class behavpy(pd.DataFrame):
         return pivot
 
     @staticmethod
-    def _wrapped_bout_analysis(data, var_name, as_hist, bin_size, max_bins, time_immobile, asleep):
+    def _wrapped_bout_analysis(data, var_name, as_hist, bin_size, max_bins, time_immobile, asleep, t_column = 't'):
         """ Finds runs of bouts of immobility or moving and sorts into a historgram per unqiue specimen in a behavpy dataframe"""
 
         index_name = data['id'].iloc[0]
         bin_width = bin_size*60
         
-        dt = data[['t',var_name]].copy(deep = True)
+        dt = data[[t_column,var_name]].copy(deep = True)
         dt['deltaT'] = dt.t.diff()
         bout_rle = rle(dt[var_name])
         vals = bout_rle[0]
@@ -594,7 +594,7 @@ class behavpy(pd.DataFrame):
         time = np.array([dt.t.iloc[0]])
         time = np.concatenate((time, bout_times['duration'].iloc[:-1]), axis = None)
         time = np.cumsum(time)
-        bout_times['t'] = time
+        bout_times[t_column] = time
         bout_times.reset_index(level=0, inplace=True)
         bout_times.drop(columns = ['bout_id'], inplace = True)
         old_index = pd.Index([index_name] * len(bout_times.index), name = 'id')
@@ -783,7 +783,7 @@ class behavpy(pd.DataFrame):
         """
 
         def curate_filter(df, dict):
-            return df[df['t'].between(dict[df['id'].iloc[0]][0], dict[df['id'].iloc[0]][1])]
+            return df[df[t_column].between(dict[df['id'].iloc[0]][0], dict[df['id'].iloc[0]][1])]
 
         if t_column not in self.columns.tolist() or t_column not in mov_df.columns.tolist():
             warnings.warn('Variable name entered, {}, for t_column is not a column heading!'.format(t_column))
@@ -851,7 +851,7 @@ class behavpy(pd.DataFrame):
 
         data = self.copy(deep = True)
         data = data.bin_time(column = variable, t_column = t_column, bin_secs = step_size)
-        data = data.rename(columns = {f'{t_column}_bin' : 't', f'{variable}_mean' : variable})
+        data = data.rename(columns = {f'{t_column}_bin' : t_column, f'{variable}_mean' : variable})
         data = data.reset_index()
         return  behavpy(data.groupby('id', group_keys = False).apply(partial(self._wrapped_interpolate, var = variable, step = step_size)), data.meta, check = True)
 
@@ -880,7 +880,7 @@ class behavpy(pd.DataFrame):
                                                                                                 bin_secs = bin_secs
         )), tdf.meta, check = True)
 
-    def summary(self, detailed = False):
+    def summary(self, detailed = False, t_column = 't'):
         """ 
         Prints a table with summary statistics of metadata and data counts.
             
@@ -920,8 +920,8 @@ class behavpy(pd.DataFrame):
 
 
             group = self.groupby('id').agg(
-                data_points = pd.NamedAgg(column = 't', aggfunc = 'count'),
-                time_range = pd.NamedAgg(column = 't', aggfunc = time_range)
+                data_points = pd.NamedAgg(column = t_column, aggfunc = 'count'),
+                time_range = pd.NamedAgg(column = t_column, aggfunc = time_range)
             )
 
             print(group)
@@ -1105,7 +1105,7 @@ class behavpy(pd.DataFrame):
 
             return new
 
-    def heatmap(self, variable = 'moving', title = ''):
+    def heatmap(self, variable = 'moving', t_column = 't', title = ''):
         """
         Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
         
@@ -1119,7 +1119,7 @@ class behavpy(pd.DataFrame):
         if variable == 'moving':
             heatmap_df[variable] = np.where(heatmap_df[variable] == True, 1, 0)
 
-        heatmap_df = heatmap_df.bin_time(column = variable, bin_secs = 1800)
+        heatmap_df = heatmap_df.bin_time(column = variable, bin_secs = 1800, t_column = t_column)
         heatmap_df['t_bin'] = heatmap_df['t_bin'] / (60*60)
         # create an array starting with the earliest half hour bin and the last with 0.5 intervals
         start = heatmap_df['t_bin'].min().astype(int)
@@ -1287,7 +1287,7 @@ class behavpy(pd.DataFrame):
 
         return upper, trace, lower, maxV, t_min, t_max,
 
-    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False):
+    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False):
         assert isinstance(wrapped, bool)
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1339,7 +1339,7 @@ class behavpy(pd.DataFrame):
 
         return fig
 
-    def plot_overtime_tile(self, variable, facet_tile, wrapped = False, facet_col = None, facet_arg = None, avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False):
+    def plot_overtime_tile(self, variable, facet_tile, wrapped = False, facet_col = None, facet_arg = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False):
         """ """
         assert isinstance(wrapped, bool)
 
@@ -1935,7 +1935,7 @@ class behavpy(pd.DataFrame):
         previous_mov = np.insert(previous_mov, 0, np.nan)
         return {'id': id, 't' : time, 'moving' : mov, 'previous_moving' : previous_mov, 'activity_count' : count_list, 'previous_activity_count' : previous_count_list}
 
-    def plot_response_overtime(self, response_df, activity = 'inactive', mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
+    def plot_response_overtime(self, response_df, activity = 'inactive', mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', t_column = 't', grids = False):
         """ plot function to measure the response rate of flies to a puff of odour from a mAGO or AGO experiment over the consecutive minutes active or inactive
 
         Params:
@@ -1977,15 +1977,21 @@ class behavpy(pd.DataFrame):
             label_list = ['Inactive', 'Inactive Spon. Mov.', 'Active', 'Active Spon. Mov.']
 
         if facet_col is not None:
-
-            start_colours, end_colours = self._adjust_colours([col[0] for col in col_list])
-            col_list = []
-            colours_dict = {'start' : start_colours, 'end' : end_colours}
-            for c in range(len(plot_list)):
-                start_color = colours_dict.get('start')[c]
-                end_color = colours_dict.get('end')[c]
-                N = len(facet_arg)
-                col_list.append([x.hex for x in list(Color(start_color).range_to(Color(end_color), N))])
+            
+            if activity_choice == 'both':
+                start_colours, end_colours = self._adjust_colours([col[0] for col in col_list])
+                col_list = []
+                colours_dict = {'start' : start_colours, 'end' : end_colours}
+                for c in range(len(plot_list)):
+                    start_color = colours_dict.get('start')[c]
+                    end_color = colours_dict.get('end')[c]
+                    N = len(facet_arg)
+                    col_list.append([x.hex for x in list(Color(start_color).range_to(Color(end_color), N))])
+            
+            else:
+                col_list = [[col] for col in self._get_colours(facet_arg)]
+                end_colours, start_colours = self._adjust_colours([col[0] for col in col_list])
+                col_list = [start_colours, end_colours]
 
         fig = go.Figure() 
         y_range, dtick = self._check_boolean(list(self[mov_variable].dropna()))
@@ -1996,9 +2002,9 @@ class behavpy(pd.DataFrame):
         def activity_count(df, puff_df):
             puff_df = puff_df.copy(deep=True)
             df[mov_variable] = np.where(df[mov_variable] == True, 1, 0)
-            bin_df = df.bin_time(mov_variable, 60, function = 'max')
+            bin_df = df.bin_time(mov_variable, 60, function = 'max', t_column = t_column)
             mov_gb = bin_df.groupby(bin_df.index)[f'{mov_variable}_max'].apply(np.array)
-            time_gb = bin_df.groupby(bin_df.index)['t_bin'].apply(np.array)
+            time_gb = bin_df.groupby(bin_df.index)[f'{t_column}_bin'].apply(np.array)
             zip_gb = zip(mov_gb, time_gb, mov_gb.index)
 
             all_runs = []
@@ -2009,14 +2015,14 @@ class behavpy(pd.DataFrame):
 
             counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
 
-            puff_df['t'] = puff_df['interaction_t'].map(lambda t: t % 86400)
-            puff_df['t'] = puff_df['interaction_t'].map(lambda t:  60 * floor(t / 60))
+            puff_df[t_column] = puff_df['interaction_t'].map(lambda t: t % 86400)
+            puff_df[t_column] = puff_df['interaction_t'].map(lambda t:  60 * floor(t / 60))
             puff_df.reset_index(inplace = True)
 
-            merged = pd.merge(counted_df, puff_df, how = 'inner', on = ['id', 't'])
+            merged = pd.merge(counted_df, puff_df, how = 'inner', on = ['id', t_column])
             merged['t_check'] = merged.interaction_t + merged.t_rel
             merged['t_check'] = merged['t_check'].map(lambda t:  60 * floor(t / 60))
-            merged['previous_activity_count'] = np.where(merged['t_check'] > merged['t'], merged['activity_count'], merged['previous_activity_count'])
+            merged['previous_activity_count'] = np.where(merged['t_check'] > merged[t_column], merged['activity_count'], merged['previous_activity_count'])
             merged.dropna(subset = ['previous_activity_count'], inplace=True)
 
             interaction_dict = {}
@@ -2145,6 +2151,48 @@ class behavpy(pd.DataFrame):
 
         return fig, stats_df
 
+    def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', x_position = 'x', time_col = 't'):
+
+        if food_position != 'outside' and food_position != 'inside':
+            raise ValueError("Argument for food_position must be 'outside' or 'inside'")
+            
+        ds = self.copy(deep = True)
+        
+        # normalise x values for ROI on the right 11-20
+        ds_r = ds.xmv('region_id', list(range(11,21)))
+        ds_l = ds.xmv('region_id', list(range(1,11)))
+        ds_r[x_position] = 1 - ds_r[x_position]
+        ds = ds_l.concat(ds_r)
+        
+        def find_feed(d):
+            
+            # if there's less than 2 data points just run the check
+            if len(d) < 2:
+                if food_position == 'outside':
+                    d['feeding'] = np.where((d[x_position] < d[x_position].min()+dist_from_food) & (d[micro_mov] == True), True, False)
+                elif food_position == 'inside':
+                    d['feeding'] = np.where((d[x_position] > d[x_position].max()-dist_from_food) & (d[micro_mov] == True), True, False)
+                return d
+            
+            # ignore the first 3 hours in case tracking is wonky and get x min and max
+            t_diff = d[time_col].iloc[1] - d[time_col].iloc[0]
+            t_ignore = int(10800 / t_diff)
+            tdf = d.iloc[t_ignore:]
+            x_min = tdf[x_position].min()
+            x_max = tdf[x_position].max()
+            
+            # if the fly is near to the food and mirco moving, then they are assumed to be feeding
+            if food_position == 'outside':
+                d['feeding'] = np.where((d[x_position] < x_min+dist_from_food) & (d[micro_mov] == True), True, False)
+            elif food_position == 'inside':
+                d['feeding'] = np.where((d[x_position] > x_max-dist_from_foodo) & (d[micro_mov] == True), True, False)
+            return d
+            
+        ds.reset_index(inplace = True)   
+        ds_meta = ds.meta
+        return etho.behavpy(ds.groupby('id', group_keys = False).apply(find_feed).set_index('id'), ds_meta)
+    
+    
     ## In production, a wrapper to make tile plots of any plots
 
     # def make_tile(self, facet_tile, plot_fun, rows = None, cols = None):
