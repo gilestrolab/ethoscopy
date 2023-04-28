@@ -2191,8 +2191,45 @@ class behavpy(pd.DataFrame):
         ds.reset_index(inplace = True)   
         ds_meta = ds.meta
         return etho.behavpy(ds.groupby('id', group_keys = False).apply(find_feed).set_index('id'), ds_meta)
-    
-    
+
+
+    def remove_sleep_deprived(self, start_time, end_time, remove = False, sleep_column = 'asleep', t_column = 't'):
+        """ Removes speciemns that during a period of sleep deprivation are asleep a certain percentage of the period
+        """
+
+        if start_time > end_time:
+            raise KeyError('The start time can not be greater than the end time')
+
+        if start_time < 0:
+            raise KeyError('The start time can not be less than zero')
+
+        if remove is not False:
+            if remove >= 0 and remove < 1:
+                pass
+            else:
+                raise ValueError('Remove must be a float that is greater/equal to zero and less than 1')
+
+        # Filter by the period and remove other columns to reduce memory
+        fdf = self.t_filter(start_time = start_time, end_time = end_time, t_column = t_column)[[t_column, sleep_column]]
+
+        gb = fdf.groupby(fdf.index).agg(**{
+            'time asleep' : (sleep_column, 'sum'),
+            'min t' : (t_column, 'min'),
+            'max t' : (t_column, 'max'),
+
+        })
+        tdiff = fdf[t_column].diff().mode()[0]
+        gb['time asleep(s)'] = gb['time asleep'] * tdiff
+        gb['time(s)'] = gb['max t'] - gb['min t']
+        gb['Percent awake'] = gb['time asleep(s)'] / gb['time(s)']
+        gb.drop(columns = ['time asleep', 'max t', 'min t'], inplace = True)
+
+        if remove == False:
+            return gb
+        else:
+            remove_ids = gb[gb['Percent awake'] > remove].index.tolist()
+            return df.remove('id', remove_ids)
+
     ## In production, a wrapper to make tile plots of any plots
 
     # def make_tile(self, facet_tile, plot_fun, rows = None, cols = None):
