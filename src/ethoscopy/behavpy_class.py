@@ -67,9 +67,9 @@ class behavpy(pd.DataFrame):
         if check is True:
             self._check_conform(self)
 
-    @staticmethod
-    def _pop_std(array):
-        return np.std(array, ddof = 0)
+    # @staticmethod
+    # def _pop_std(array):
+    #     return np.std(array, ddof = 0)
 
     @staticmethod
     def _check_conform(dataframe):
@@ -151,7 +151,7 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _check_boolean(lst):
-        if all(isinstance(i, bool) for i in lst):
+        if max(lst) == 1 and min(lst) == 0:
             y_range = [-0.025, 1.01]
             dtick = 0.2
         else:
@@ -603,7 +603,8 @@ class behavpy(pd.DataFrame):
         if as_hist is True:
 
             filtered = bout_times[bout_times[var_name] == asleep]
-            filtered['duration_bin'] = filtered['duration'].map(lambda d: bin_width * floor(d / bin_width))
+            # filtered['duration_bin'] = filtered['duration'].map(lambda d: bin_width * floor(d / bin_width))
+            filtered['duration_bin'] = bin_width * floor(filtered['duration'] / bin_width)
             bout_gb = filtered.groupby('duration_bin').agg(**{
                         'count' : ('duration_bin', 'count')
             })
@@ -679,7 +680,7 @@ class behavpy(pd.DataFrame):
 
             plot_gb = bouts.groupby('bins').agg(**{
                     'mean' : ('prob', 'mean'),
-                    'SD' : ('prob', self._pop_std),
+                    'SD' : ('prob', 'std'),
                     'count' : ('prob', 'count')
             })
             plot_gb['SE'] = (1.96*plot_gb['SD']) / np.sqrt(plot_gb['count'])
@@ -813,7 +814,8 @@ class behavpy(pd.DataFrame):
 
         index_name = data['id'].iloc[0]
 
-        data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
+        # data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
+        data[bin_column] = bin_secs * floor(data[bin_column] / bin_secs)
         
         output_parse_name = f'{column}_{function}' # create new column name
     
@@ -940,13 +942,15 @@ class behavpy(pd.DataFrame):
         night_in_secs = lights_off * 60 * 60
 
         if inplace == True:
-            self['day'] = self[time_column].map(lambda t: floor(t / day_in_secs))
+            # self['day'] = self[time_column].map(lambda t: floor(t / day_in_secs))
+            self['day'] = floor(self[time_column] / day_in_secs)
             self['phase'] = np.where(((self[time_column] % day_in_secs) > night_in_secs), 'dark', 'light')
             self['phase'] = self['phase'].astype('category')
 
         elif inplace == False:
             new_df = self.copy(deep = True)
-            new_df['day'] = new_df[time_column].map(lambda t: floor(t / day_in_secs)) 
+            # new_df['day'] = new_df[time_column].map(lambda t: floor(t / day_in_secs)) 
+            new_df['day'] = floor(new_df[time_column] / day_in_secs)
             new_df['phase'] = np.where(((new_df[time_column] % day_in_secs) > night_in_secs), 'dark', 'light')
             new_df['phase'] = new_df['phase'].astype('category')
 
@@ -1089,21 +1093,17 @@ class behavpy(pd.DataFrame):
             warnings.warn('Baseline days column: "{}", is not in the metadata table'.format(column))
             exit()
 
-        dict = self.meta[column].to_dict()
+        day_dict = self.meta[column].to_dict()
 
-        def d2s(x):
-            id = x.name
-            seconds = dict.get(id) * (60*60*day_length)
-            return x[t_column] + seconds
-
-        if inplace is True:
-            self[t_column] = self.apply(d2s, axis = 1)
-
+        if inplace == True:
+            self['tmp_col'] = self.index.to_series().map(day_dict)
+            self[t_column] = self[t_column] + (self['tmp_col'] * (60*60*24))
+            self.drop(columns = ['tmp_col'], inplace = True)
         else:
             new = self.copy(deep = True)
-            new[t_column] = new.apply(d2s, axis = 1)
-
-            return new
+            new['tmp_col'] = new.index.to_series().map(day_dict)
+            new[t_column] = new[t_column] + (new['tmp_col'] * (60*60*24))
+            return new.drop(columns = ['tmp_col'])
 
     def heatmap(self, variable = 'moving', t_column = 't', title = ''):
         """
@@ -1252,7 +1252,7 @@ class behavpy(pd.DataFrame):
         return self.remove('id', id_list)
 
     @staticmethod
-    def _generate_overtime_plot(data, name, col, var, avg_win, wrap, day_len, light_off):
+    def _generate_overtime_plot(data, name, col, var, avg_win, wrap, day_len, light_off, t_col):
 
         if len(data) == 0:
             print(f'Group {name} has no values and cannot be plotted')
@@ -1263,19 +1263,20 @@ class behavpy(pd.DataFrame):
 
         rolling_col = data.groupby(data.index, sort = False)[var].rolling(avg_win).mean().reset_index(level = 0, drop = True)
         data['rolling'] = rolling_col.to_numpy()
-        data = data.dropna(subset = ['rolling'])
+        # removing dropna to speed it up
+        # data = data.dropna(subset = ['rolling'])
 
         if wrap is True:
-            data['t'] = data['t'].map(lambda t: t % (60*60*day_len))
-        data['t'] = data['t'].map(lambda t: t / (60*60))
+            data[t_col] = data[t_col] % (60*60*day_len)
+        data[t_col] = data[t_col] / (60*60)
 
         t_min = int(light_off * floor(data.t.min() / light_off))
         t_max = int(12 * ceil(data.t.max() / 12)) 
 
         # Not using bootstrapping here as it takes too much time
-        gb_df = data.groupby('t').agg(**{
+        gb_df = data.groupby(t_col).agg(**{
                     'mean' : ('rolling', 'mean'), 
-                    'SD' : ('rolling', data._pop_std),
+                    'SD' : ('rolling', 'std'),
                     'count' : ('rolling', 'count')
                 })
         gb_df = gb_df.reset_index()
@@ -1287,7 +1288,7 @@ class behavpy(pd.DataFrame):
 
         return upper, trace, lower, maxV, t_min, t_max,
 
-    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False):
+    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't'):
         assert isinstance(wrapped, bool)
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1317,7 +1318,7 @@ class behavpy(pd.DataFrame):
         for data, name, col in zip(d_list, facet_labels, col_list):
             upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = data, name = name, col = col, var = variable, 
                                                                                     avg_win = avg_window, wrap = wrapped, day_len = day_length, 
-                                                                                    light_off= lights_off)
+                                                                                    light_off= lights_off, t_col = t_column)
             if upper is None:
                 continue
 
@@ -1339,7 +1340,7 @@ class behavpy(pd.DataFrame):
 
         return fig
 
-    def plot_overtime_tile(self, variable, facet_tile, wrapped = False, facet_col = None, facet_arg = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False):
+    def plot_overtime_tile(self, variable, facet_tile, wrapped = False, facet_col = None, facet_arg = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't'):
         """ """
         assert isinstance(wrapped, bool)
 
@@ -1379,7 +1380,7 @@ class behavpy(pd.DataFrame):
         fig = make_subplots(rows=len(tile_list), cols=1, shared_xaxes = True, subplot_titles = tile_list)
 
         max_var = []
-        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        y_range, dtick = self._check_boolean(list(self[variable]))
         if y_range is not False:
             max_var.append(1)
 
@@ -1392,7 +1393,7 @@ class behavpy(pd.DataFrame):
                 for facet_plot, facet_name in zip(plot, tile_name):
                     upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = facet_plot, name = facet_name, col = master_col, 
                                                                         var = variable, avg_win = avg_window, wrap = wrapped, 
-                                                                        day_len = day_length, light_off = lights_off)
+                                                                        day_len = day_length, light_off = lights_off, t_col = t_column)
                     if upper is None:
                         continue
                     else:
@@ -1407,7 +1408,7 @@ class behavpy(pd.DataFrame):
             else:
                 upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = plot, name = tile_name, col = master_col, 
                                                                     var = variable, avg_win = avg_window, wrap = wrapped, 
-                                                                    day_len = day_length, light_off = lights_off)
+                                                                    day_len = day_length, light_off = lights_off, t_col = t_column)
                 if upper is None:
                     continue
                 else:
@@ -1501,7 +1502,7 @@ class behavpy(pd.DataFrame):
         col_list = self._get_colours(d_list)
 
         fig = go.Figure() 
-        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        y_range, dtick = self._check_boolean(list(self[variable]))
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
         self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = '')
 
@@ -1547,7 +1548,7 @@ class behavpy(pd.DataFrame):
             facet_labels = ['']
 
         fig = go.Figure()
-        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        y_range, dtick = self._check_boolean(list(self[variable]))
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variable, title = title, grid = grids)
 
         stats_dict = {}
@@ -1643,10 +1644,10 @@ class behavpy(pd.DataFrame):
                 axis_counter += 1
             fig['data'][i]['xaxis'] = f'x{axis_counter}'
 
-        y_range, dtick = self._check_boolean(list(self[variables[0]].dropna()))
+        y_range, dtick = self._check_boolean(list(self[variables[0]]))
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variables[0], title = title, secondary = False, grid = grids)
 
-        y_range, dtick = self._check_boolean(list(self[variables[-1]].dropna()))
+        y_range, dtick = self._check_boolean(list(self[variables[-1]]))
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = variables[-1], title = title, secondary = True, xdomain = f'x{axis_counter}', grid = grids)
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
@@ -1801,7 +1802,7 @@ class behavpy(pd.DataFrame):
 
         data = self.copy(deep=True)
         data = data.bin_time(mov_variable, bin_window*60, t_column = t_column)
-        data.add_day_phase(time_column = 't_bin')
+        data.add_day_phase(time_column = f'{t_column}_bin')
 
         for arg, col, row in zip(facet_arg, col_list, row_list): 
 
@@ -1812,15 +1813,15 @@ class behavpy(pd.DataFrame):
                     print(f'Group {arg} has no values and cannot be plotted')
                     continue
 
-                d = d.groupby('t_bin').agg(**{
+                d = d.groupby(f'{t_column}_bin').agg(**{
                     'moving_mean' : ('moving_mean', 'mean'),
                     'day' : ('day', 'max')
                 })
                 d.reset_index(inplace = True)
-                d['t_bin'] = d['t_bin'].map(lambda t: (t % (day_length*60*60)) / (60*60))
+                d[f'{t_column}_bin'] = (d[f'{t_column}_bin'] % (day_length*60*60)) / (60*60)
             else:
-                d = data.wrap_time(24, time_column = 't_bin')
-                d['t_bin'] = d['t_bin'] / (60*60)
+                d = data.wrap_time(24, time_column = f'{t_column}_bin')
+                d[f'{t_column}_bin'] = d[f'{t_column}_bin'] / (60*60)
 
             self._actogram_plot(fig = fig, data = d, mov = mov_variable, day = day_length, row = row, col = col)
 
@@ -1994,7 +1995,7 @@ class behavpy(pd.DataFrame):
                 col_list = [start_colours, end_colours]
 
         fig = go.Figure() 
-        y_range, dtick = self._check_boolean(list(self[mov_variable].dropna()))
+        y_range, dtick = self._check_boolean(list(self[mov_variable]))
 
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Response Rate', title = title, grid = grids)
         self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = 1, xlabel = f'Consecutive Minutes {activity}')
@@ -2015,13 +2016,13 @@ class behavpy(pd.DataFrame):
 
             counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
 
-            puff_df[t_column] = puff_df['interaction_t'].map(lambda t: t % 86400)
-            puff_df[t_column] = puff_df['interaction_t'].map(lambda t:  60 * floor(t / 60))
+            puff_df[t_column] = puff_df['interaction_t'] % 86400
+            puff_df[t_column] = 60 * floor(puff_df['interaction_t'] / 60)
             puff_df.reset_index(inplace = True)
 
             merged = pd.merge(counted_df, puff_df, how = 'inner', on = ['id', t_column])
             merged['t_check'] = merged.interaction_t + merged.t_rel
-            merged['t_check'] = merged['t_check'].map(lambda t:  60 * floor(t / 60))
+            merged['t_check'] = 60 * floor(merged['t_check'] / 60)
             merged['previous_activity_count'] = np.where(merged['t_check'] > merged[t_column], merged['activity_count'], merged['previous_activity_count'])
             merged.dropna(subset = ['previous_activity_count'], inplace=True)
 
@@ -2109,7 +2110,7 @@ class behavpy(pd.DataFrame):
         col_list = self._get_colours(d_list)
 
         fig = go.Figure() 
-        y_range, dtick = self._check_boolean(list(self[response_col].dropna()))
+        y_range, dtick = self._check_boolean(list(self[response_col]))
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Resonse Rate', title = title, grid = grids)
         self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = '')
 

@@ -489,7 +489,7 @@ class behavpy_HMM(behavpy):
 
             gb_df = df.groupby('t').agg(**{
                         'mean' : (column, 'mean'), 
-                        'SD' : (column, self._pop_std),
+                        'SD' : (column, 'std'),
                         'count' : (column, 'count')
                     })
 
@@ -575,7 +575,7 @@ class behavpy_HMM(behavpy):
 
                 gb_df = analysed_df.groupby('t').agg(**{
                             'mean' : (column, 'mean'), 
-                            'SD' : (column, self._pop_std),
+                            'SD' : (column, 'std'),
                             'count' : (column, 'count')
                         })
 
