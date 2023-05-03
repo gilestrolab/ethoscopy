@@ -67,10 +67,6 @@ class behavpy(pd.DataFrame):
         if check is True:
             self._check_conform(self)
 
-    # @staticmethod
-    # def _pop_std(array):
-    #     return np.std(array, ddof = 0)
-
     @staticmethod
     def _check_conform(dataframe):
         """ 
@@ -603,8 +599,7 @@ class behavpy(pd.DataFrame):
         if as_hist is True:
 
             filtered = bout_times[bout_times[var_name] == asleep]
-            # filtered['duration_bin'] = filtered['duration'].map(lambda d: bin_width * floor(d / bin_width))
-            filtered['duration_bin'] = bin_width * floor(filtered['duration'] / bin_width)
+            filtered['duration_bin'] = filtered['duration'].map(lambda d: bin_width * floor(d / bin_width))
             bout_gb = filtered.groupby('duration_bin').agg(**{
                         'count' : ('duration_bin', 'count')
             })
@@ -814,9 +809,7 @@ class behavpy(pd.DataFrame):
 
         index_name = data['id'].iloc[0]
 
-        # data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
-        data[bin_column] = bin_secs * floor(data[bin_column] / bin_secs)
-        
+        data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
         output_parse_name = f'{column}_{function}' # create new column name
     
         bout_gb = data.groupby(bin_column).agg(**{
@@ -942,15 +935,13 @@ class behavpy(pd.DataFrame):
         night_in_secs = lights_off * 60 * 60
 
         if inplace == True:
-            # self['day'] = self[time_column].map(lambda t: floor(t / day_in_secs))
-            self['day'] = floor(self[time_column] / day_in_secs)
+            self['day'] = self[time_column].map(lambda t: floor(t / day_in_secs))
             self['phase'] = np.where(((self[time_column] % day_in_secs) > night_in_secs), 'dark', 'light')
             self['phase'] = self['phase'].astype('category')
 
         elif inplace == False:
             new_df = self.copy(deep = True)
-            # new_df['day'] = new_df[time_column].map(lambda t: floor(t / day_in_secs)) 
-            new_df['day'] = floor(new_df[time_column] / day_in_secs)
+            new_df['day'] = new_df[time_column].map(lambda t: floor(t / day_in_secs)) 
             new_df['phase'] = np.where(((new_df[time_column] % day_in_secs) > night_in_secs), 'dark', 'light')
             new_df['phase'] = new_df['phase'].astype('category')
 
@@ -1170,9 +1161,6 @@ class behavpy(pd.DataFrame):
                 dtick = 12,
                 ticks = 'outside',
                 tickwidth = 2,
-                tickfont = dict(
-                    size = 16
-                ),
                 linewidth = 2)
                 )
 
@@ -1303,7 +1291,7 @@ class behavpy(pd.DataFrame):
         col_list = self._get_colours(d_list)
 
         max_var = []
-        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        y_range, dtick = self._check_boolean(list(self[variable]))
         if y_range is not False:
             max_var.append(1)
         
@@ -2017,12 +2005,12 @@ class behavpy(pd.DataFrame):
             counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
 
             puff_df[t_column] = puff_df['interaction_t'] % 86400
-            puff_df[t_column] = 60 * floor(puff_df['interaction_t'] / 60)
+            puff_df[t_column] = puff_df['interaction_t'].map(lambda t:  60 * floor(t / 60))
             puff_df.reset_index(inplace = True)
 
             merged = pd.merge(counted_df, puff_df, how = 'inner', on = ['id', t_column])
             merged['t_check'] = merged.interaction_t + merged.t_rel
-            merged['t_check'] = 60 * floor(merged['t_check'] / 60)
+            merged['t_check'] = merged['t_check'].map(lambda t:  60 * floor(t / 60))            
             merged['previous_activity_count'] = np.where(merged['t_check'] > merged[t_column], merged['activity_count'], merged['previous_activity_count'])
             merged.dropna(subset = ['previous_activity_count'], inplace=True)
 
