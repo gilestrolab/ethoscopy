@@ -57,7 +57,7 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
             split = 1
 
     if lights_off < 1 or lights_off > day_length:
-        warnings.warn(f"The arugment for lights_off must be between 1 and {day_length}")
+        warnings.warn(f"The argument for lights_off must be between 1 and {day_length}")
         exit()
 
     # Light-Dark annotaion bars

@@ -147,7 +147,7 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _check_boolean(lst):
-        if max(lst) == 1 and min(lst) == 0:
+        if np.nanmax(lst) == 1 and np.nanmin(lst) == 0:
             y_range = [-0.025, 1.01]
             dtick = 0.2
         else:
@@ -338,7 +338,7 @@ class behavpy(pd.DataFrame):
     def _plot_line(df, x_col, name, marker_col):
         """ creates traces to plot a mean line with 95% confidence intervals for a plotly figure """
 
-        max_var = max(df['mean'])
+        max_var = np.nanmax(df['mean'])
 
         upper_bound = go.Scatter(
         showlegend = False,
@@ -705,7 +705,7 @@ class behavpy(pd.DataFrame):
             fig.add_trace(trace)
             
         fig.update_layout(barmode = 'overlay', bargap=0)
-        self._plot_ylayout(fig, yrange = [0, max(max_y)], t0 = 0, dtick = max(max_y) / 5, ylabel = 'Proportion of total Bouts', title = title, grid = grids)
+        self._plot_ylayout(fig, yrange = [0, np.nanmax(max_y)], t0 = 0, dtick = np.nanmax(max_y) / 5, ylabel = 'Proportion of total Bouts', title = title, grid = grids)
         self._plot_xlayout(fig, xrange = [time_immobile, np.max(x)+0.5], t0 = time_immobile, dtick = bin_size, xlabel = 'Bouts (minutes)')
 
         return fig
@@ -829,7 +829,7 @@ class behavpy(pd.DataFrame):
         """ Take the min and max time, create a time series at a given time step and interpolate missing values from the data """
 
         id = data['id'].iloc[0]
-        sample_seq = np.arange(min(data[t_col]), max(data[t_col]), step)
+        sample_seq = np.arange(min(data[t_col]), np.nanmax(data[t_col]), step)
         if len(sample_seq) < 3:
             return None
         f  = interp1d(data[t_col].to_numpy(), data[var].to_numpy())
@@ -887,7 +887,7 @@ class behavpy(pd.DataFrame):
 
         def print_table(table):
             longest_cols = [
-                (max([len(str(row[i])) for row in table]) + 3)
+                (np.nanmax([len(str(row[i])) for row in table]) + 3)
                 for i in range(len(table[0]))
             ]
             row_format = "".join(["{:>" + str(longest_col) + "}" for longest_col in longest_cols])
@@ -911,7 +911,7 @@ class behavpy(pd.DataFrame):
         if detailed is True:
 
             def time_range(data):
-                return (str(min(data)) + '  ->  ' + str(max(data)))
+                return (str(min(data)) + '  ->  ' + str(np.nanmax(data)))
 
 
             group = self.groupby('id').agg(
@@ -1249,7 +1249,7 @@ class behavpy(pd.DataFrame):
         if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
             col = 'grey'
 
-        rolling_col = data.groupby(data.index, sort = False)[var].rolling(avg_win).mean().reset_index(level = 0, drop = True)
+        rolling_col = data.groupby(data.index, sort = False)[var].rolling(avg_win, min_periods = 1).mean().reset_index(level = 0, drop = True)
         data['rolling'] = rolling_col.to_numpy()
         # removing dropna to speed it up
         # data = data.dropna(subset = ['rolling'])
@@ -1274,7 +1274,7 @@ class behavpy(pd.DataFrame):
 
         upper, trace, lower, maxV = data._plot_line(df = gb_df, x_col = 't', name = name, marker_col = col)
 
-        return upper, trace, lower, maxV, t_min, t_max,
+        return upper, trace, lower, maxV, t_min, t_max
 
     def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't'):
         assert isinstance(wrapped, bool)
@@ -1319,12 +1319,12 @@ class behavpy(pd.DataFrame):
             max_t.append(t_max)
 
         # Light-Dark annotaion bars
-        bar_shapes, min_bar = circadian_bars(min(min_t), max(max_t), max_y = max(max_var), day_length = day_length, lights_off = lights_off)
+        bar_shapes, min_bar = circadian_bars(np.nanmin(min_t), np.nanmax(max_t), max_y = np.nanmax(max_var), day_length = day_length, lights_off = lights_off)
         fig.update_layout(shapes=list(bar_shapes.values()))
     
-        fig['layout']['xaxis']['range'] = [min(min_t), max(max_t)]
+        fig['layout']['xaxis']['range'] = [np.nanmin(min_t), np.nanmax(max_t)]
         if min_bar < 0:
-            fig['layout']['yaxis']['range'] = [min_bar, max(max_var)+0.01]
+            fig['layout']['yaxis']['range'] = [min_bar, np.nanmax(max_var)+0.01]
 
         return fig
 
@@ -1413,7 +1413,7 @@ class behavpy(pd.DataFrame):
             color = 'black',
             linecolor = 'black',
             gridcolor = 'black',
-            range = [min(min_t), max(max_t)],
+            range = [np.nanmin(min_t), np.nanmax(max_t)],
             tick0 = 0,
             dtick = day_length/4,
             ticks = 'outside',
@@ -1465,14 +1465,14 @@ class behavpy(pd.DataFrame):
         )
 
         # Light-Dark annotaion bars
-        bar_shapes, min_bar = circadian_bars(min(min_t), max(max_t), max_y = max(max_var), day_length = day_length, lights_off = lights_off, split = len(tile_list))
+        bar_shapes, min_bar = circadian_bars(np.nanmin(min_t), np.nanmax(max_t), max_y = np.nanmax(max_var), day_length = day_length, lights_off = lights_off, split = len(tile_list))
         fig.update_layout(shapes=list(bar_shapes.values()))
 
         fig.update_annotations(font_size=18)
         fig['layout']['title'] = title
         fig['layout']['plot_bgcolor'] = 'white'
         if min_bar < 0:
-            fig.update_yaxes(range = [min_bar, max(max_var)+0.01])
+            fig.update_yaxes(range = [min_bar, np.nanmax(max_var)+0.01])
         return fig
 
     def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False):
@@ -2060,13 +2060,13 @@ class behavpy(pd.DataFrame):
                     print(f'Group {label} has no values and cannot be plotted')
                     continue
 
-                max_x.append(max(small_data['previous_activity_count']))
+                max_x.append(np.nanmax(small_data['previous_activity_count']))
                 upper, trace, lower, _ = self._plot_line(df = small_data, x_col = 'previous_activity_count', name = label, marker_col = col)
                 fig.add_trace(upper)
                 fig.add_trace(trace) 
                 fig.add_trace(lower)
                 
-        fig['layout']['xaxis']['range'] = [1, max(max_x)]
+        fig['layout']['xaxis']['range'] = [1, np.nanmax(max_x)]
 
         return fig
 
