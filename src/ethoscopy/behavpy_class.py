@@ -171,8 +171,8 @@ class behavpy(pd.DataFrame):
                             font = dict(
                                 size = 12
                                 ),
-                                x = 0.85,
-                                y = 0.99
+                                x = 1.01,
+                                y = 0.5
                             )
                         )
         fig['layout'][axis].update(
@@ -193,7 +193,7 @@ class behavpy(pd.DataFrame):
                             size = 18,
                             color = 'black'
                         ),
-                        linewidth = 4
+                        linewidth = 2.5
                     )
         if yrange is not False:
             fig['layout'][axis]['range'] = yrange
@@ -239,7 +239,7 @@ class behavpy(pd.DataFrame):
                             size = 18,
                             color = 'black'
                         ),
-                        linewidth = 4
+                        linewidth = 2.5
                     )
 
         if xrange is not False:
@@ -2141,7 +2141,17 @@ class behavpy(pd.DataFrame):
         return fig, stats_df
 
     def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', x_position = 'x', time_col = 't'):
+        """ A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food
+        Params:
+        @food_postion = string, must be either "outside" or "inside". This signifies the postion of the food in relation to the center of the arena
+        @dist_from_food = float, the distance measured between 0-1, as the x coordinate in the ethoscope, that you classify as being near the food, default 0.05
+        @micro_mov = string, the name of the column that contains the data for whether micromovements occurs, True/False
+        @x_position = string, the name of the column that contains the x postion
+        @time_col = string, the name of the column that contains the time. This is so the first hour can be ignored for when the ethoscope is 
+        calcuting it's tracking. If set to False it will ignore this filter
 
+        returns an augmented behavpy object with an addtional column 'feeding' with boolean variables
+        """
         if food_position != 'outside' and food_position != 'inside':
             raise ValueError("Argument for food_position must be 'outside' or 'inside'")
             
@@ -2163,10 +2173,13 @@ class behavpy(pd.DataFrame):
                     d['feeding'] = np.where((d[x_position] > d[x_position].max()-dist_from_food) & (d[micro_mov] == True), True, False)
                 return d
             
-            # ignore the first 3 hours in case tracking is wonky and get x min and max
+            # ignore the first hour in case tracking is wonky and get x min and max
             t_diff = d[time_col].iloc[1] - d[time_col].iloc[0]
-            t_ignore = int(10800 / t_diff)
-            tdf = d.iloc[t_ignore:]
+            if t_col is not False:
+                t_ignore = int(3600 / t_diff)
+                tdf = d.iloc[t_ignore:]
+            else:
+                tdf = d
             x_min = tdf[x_position].min()
             x_max = tdf[x_position].max()
             
@@ -2183,7 +2196,16 @@ class behavpy(pd.DataFrame):
 
 
     def remove_sleep_deprived(self, start_time, end_time, remove = False, sleep_column = 'asleep', t_column = 't'):
-        """ Removes speciemns that during a period of sleep deprivation are asleep a certain percentage of the period
+        """ Removes specimens that during a period of sleep deprivation are asleep a certain percentage of the period
+        Params:
+        @start_time = int, the time in seconds that the period of sleep deprivation begins
+        @end_time = int, the time in seconds that the period of sleep deprivation ends
+        @remove = int or bool, an int >= 0 or < 1 that is the percentage of sleep allowed during the period without being removed.
+        The default is False, which will return a new groupby pandas df with the asleep percentages per specimen
+        @sleep_column = string, the name of the column that contains the data of whether the specimen is asleep or not
+        @t_column = string, the name of the column that contains the time
+
+        returns if remove is not False an augmented behavpy df with specimens removed that are not sleep deprived enough. See remove for the alternative.
         """
 
         if start_time > end_time:
@@ -2210,147 +2232,101 @@ class behavpy(pd.DataFrame):
         tdiff = fdf[t_column].diff().mode()[0]
         gb['time asleep(s)'] = gb['time asleep'] * tdiff
         gb['time(s)'] = gb['max t'] - gb['min t']
-        gb['Percent awake'] = gb['time asleep(s)'] / gb['time(s)']
+        gb['Percent Asleep'] = gb['time asleep(s)'] / gb['time(s)']
         gb.drop(columns = ['time asleep', 'max t', 'min t'], inplace = True)
 
         if remove == False:
             return gb
         else:
-            remove_ids = gb[gb['Percent awake'] > remove].index.tolist()
+            remove_ids = gb[gb['Percent Asleep'] > remove].index.tolist()
             return df.remove('id', remove_ids)
 
-    ## In production, a wrapper to make tile plots of any plots
+    def make_tile(self, facet_tile, plot_fun, rows = None, cols = None):
+        """ A wrapper to take any behavpy plot and create a tile plot
+        Params:
+        @facet_tile = string, the name of column in the metadata you can to split the tile plot by
+        @plot_fun = partial function, the plotting method you want per tile with its arguments in the format of partial function. See tutorial.
+        @rows = int, the number of rows you would like. Note, if left as the default none the number of rows will be the lengh of faceted variables
+        @cols = int, the number of cols you would like. Note, if left as the default none the number of columns will be 1
+        **Make sure the rows and cols fit the total number of plots your facet should create.**
+        
+        returns a plotly subplot figure
+        """
 
-    # def make_tile(self, facet_tile, plot_fun, rows = None, cols = None):
-    #     """ A wrapper to take any behavpy plot and create a tile plot"""
+        if facet_tile not in self.meta.columns:
+            raise KeyError(f'Column "{facet_tile}" is not a metadata column')
 
-    #     if facet_tile not in self.meta.columns:
-    #         raise KeyError(f'Column "{facet_tile}" is not a metadata column')
+        # find the unique column variables and use to split df into tiled parts
+        tile_list = list(set(self.meta[facet_tile].tolist()))
 
-    #     # find the unique column variables and use to split df into tiled parts
-    #     tile_list = list(set(self.meta[facet_tile].tolist()))
+        tile_df = []
+        for tile in tile_list:
+            tile_df.append(self.xmv(facet_tile, tile))
 
-    #     tile_df = []
-    #     for tile in tile_list:
-    #         tile_df.append(self.xmv(facet_tile, tile))
+        if rows is None:
+            nrows = len(tile_list)
+        if cols is None:
+            ncols = 1
 
+        # get a list for col number and rows 
+        col_list = list(range(1, ncols+1)) * nrows
+        row_list = list([i] * ncols for i in range(1, nrows+1))
+        row_list = [item for sublist in row_list for item in sublist]
 
-    #     col_list = self._get_colours(d_list)
+        # genertate a subplot figure with a single column
+        fig = make_subplots(rows=nrows, cols=ncols, shared_xaxes = True, subplot_titles = tile_list)
 
-    #     if rows is None:
-    #         rows = len(tile_list)
-    #     if cols is None:
-    #         cols = 1
+        layouts = []
 
-    #     # genertate a subplot figure with a single column
-    #     fig = make_subplots(rows=rows, cols=cols, shared_xaxes = False, subplot_titles = tile_list)
+        #iterate through the tile df's
+        for d, c, r in zip(tile_df, col_list, row_list):
+                # take the arguemnts for the plotting function and set them on the function with the small df
+                fig_output = getattr(d, plot_fun.func.__name__)(**plot_fun.keywords)
+                # if a quantify plot it comes out as a tuple (fig, stats), drop the stats
+                if isinstance(fig_output, tuple):
+                    fig_output = fig_output[0]
+                # add the traces to the plot and put the layout settings into a list
+                for f in range(len(fig_output['data'])):
+                    fig.add_trace(fig_output['data'][f], col = c, row = r)
+                layouts.append(fig_output['layout'])
 
-    #     fun_output = getattr(data, plot_fun.func.__name__)(**plot_fun.keywords)
+        # set the background white and put the legend to the side
+        fig.update_layout({'legend': {'bgcolor': 'rgba(201, 201, 201, 1)', 'bordercolor': 'grey', 'font': {'size': 12}, 'x': 1.01, 'y': 0.5}, 'plot_bgcolor': 'white'})
+        # set the layout on all the different axises
+        end_index = len(layouts) - 1
+        for c, lay in enumerate(layouts):
+            yaxis_title = lay['yaxis'].pop('title')
+            xaxis_title = lay['xaxis'].pop('title')
+            lay['yaxis']['tickfont'].pop('size')
+            lay['xaxis']['tickfont'].pop('size')
+            
+            fig['layout'][f'yaxis{c+1}'].update(lay['yaxis'])
+            fig['layout'][f'xaxis{c+1}'].update(lay['xaxis'])
 
-    #     max_var = []
-    #     y_range, dtick = self._check_boolean(list(self[variable].dropna()))
-    #     if y_range is not False:
-    #         max_var.append(1)
-
-    #     min_t = []
-    #     max_t = []
-
-    #     for c, (plot, tile_name, master_col) in enumerate(zip(d_list, name_list, col_list)):
-    #         c = c+1
-    #         if facet_col is not None:
-    #             for facet_plot, facet_name in zip(plot, tile_name):
-    #                 upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = facet_plot, name = facet_name, col = master_col, 
-    #                                                                     var = variable, avg_win = avg_window, wrap = wrapped, 
-    #                                                                     day_len = day_length, light_off = lights_off)
-    #                 if upper is None:
-    #                     continue
-    #                 else:
-    #                     fig.append_trace(upper, row = c, col = 1)
-    #                     fig.append_trace(trace, row = c, col = 1)
-    #                     fig.append_trace(lower, row = c, col = 1)
-                        
-    #                     min_t.append(t_min)
-    #                     max_t.append(t_max)
-    #                     max_var.append(maxV)
-
-    #         else:
-    #             upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = plot, name = tile_name, col = master_col, 
-    #                                                                 var = variable, avg_win = avg_window, wrap = wrapped, 
-    #                                                                 day_len = day_length, light_off = lights_off)
-    #             if upper is None:
-    #                 continue
-    #             else:
-    #                 fig.append_trace(upper, row = c, col = 1)
-    #                 fig.append_trace(trace, row = c, col = 1)
-    #                 fig.append_trace(lower, row = c, col = 1)
-
-    #                 min_t.append(t_min)
-    #                 max_t.append(t_max)
-    #                 max_var.append(maxV)
-
-    #     fig.update_xaxes(
-    #         zeroline = False,
-    #         color = 'black',
-    #         linecolor = 'black',
-    #         gridcolor = 'black',
-    #         range = [min(min_t), max(max_t)],
-    #         tick0 = 0,
-    #         dtick = day_length/4,
-    #         ticks = 'outside',
-    #         tickwidth = 2,
-    #         tickfont = dict(
-    #             size = 18
-    #         ),
-    #         showgrid = False,
-    #         linewidth = 2
-    #     )
-
-    #     fig.update_yaxes(
-    #         zeroline = False,
-    #         color = 'black',
-    #         linecolor = 'black',
-    #         gridcolor = 'black',
-    #         tick0 = 0,
-    #         dtick = dtick,
-    #         ticks = 'outside',
-    #         tickwidth = 2,
-    #         showgrid = grids,
-    #         linewidth = 2
-    #     )
-
-    #     fig.add_annotation(
-    #                 font = {'size': 18, 'color' : 'black'},
-    #                 showarrow = False,
-    #                 text = 'ZT Time (Hours)',
-    #                 x = 0.5,
-    #                 xanchor = 'center',
-    #                 xref = 'paper',
-    #                 y = 0,
-    #                 yanchor = 'top',
-    #                 yref = 'paper',
-    #                 yshift = -30
-    #             )
-    #     fig.add_annotation(
-    #                 font = {'size': 18, 'color' : 'black'},
-    #                 showarrow = False,
-    #                 text = variable,
-    #                 x = 0,
-    #                 xanchor = 'left',
-    #                 xref = 'paper',
-    #                 y = 0.5,
-    #                 yanchor = 'middle',
-    #                 yref = 'paper',
-    #                 xshift =  -85,
-    #                 textangle =  -90
-    #     )
-
-    #     # Light-Dark annotaion bars
-    #     bar_shapes, min_bar = circadian_bars(min(min_t), max(max_t), max_y = max(max_var), day_length = day_length, lights_off = lights_off, split = len(tile_list))
-    #     fig.update_layout(shapes=list(bar_shapes.values()))
-
-    #     fig.update_annotations(font_size=18)
-    #     fig['layout']['title'] = title
-    #     fig['layout']['plot_bgcolor'] = 'white'
-    #     if min_bar < 0:
-    #         fig.update_yaxes(range = [min_bar, max(max_var)+0.01])
-    #     return fig
+        # add x and y axis titles
+        fig.add_annotation(
+            font = {'size': 18, 'color' : 'black'},
+            showarrow = False,
+            text = yaxis_title['text'],
+            x = 0.01,
+            xanchor = 'left',
+            xref = 'paper',
+            y = 0.5,
+            yanchor = 'middle',
+            yref = 'paper',
+            xshift =  -85,
+            textangle =  -90
+        )
+        fig.add_annotation(
+            font = {'size': 18, 'color' : 'black'},
+            showarrow = False,
+            text = xaxis_title['text'],
+            x = 0.5,
+            xanchor = 'center',
+            xref = 'paper',
+            y = 0,
+            yanchor = 'top',
+            yref = 'paper',
+            yshift = -30
+        )
+        return fig

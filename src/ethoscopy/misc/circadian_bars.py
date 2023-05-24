@@ -23,7 +23,7 @@ def make_bars(bar, bar_col, size, split, y_size1, y_size2):
                                 y1= y_size2,
                                 line=dict(
                                     color="black", 
-                                    width=1) ,
+                                    width=0.5) ,
                                 fillcolor=bar_col
                             )
     if split != 0:
