@@ -1,0 +1,67 @@
+#!/bin/Rscript
+
+install.packages(
+c(
+	 'EnvStats',
+         'Hmisc',
+	 'IRkernel',
+         'BiocManager',
+	 'caTools',
+	 'callr',
+	 'caret',
+         'cowplot',
+	 'crayon',
+	 'curl',
+	 'devtools',
+         'DescTools',
+	 'digest',
+	 'dplyr',
+	 'forecast',
+	 'formatR',
+	 'ggplot2',
+         'ggpubr',
+         'ggtern',
+         'ggrepel',
+	 'gh',
+	 'git2r',
+	 'httr',
+	 'nycflights13',
+	 'openssl',
+	 'plotly',
+	 'r-plyr',
+	 'randomforest',
+	 'rcurl',
+	 'remotes',
+	 'reshape2',
+	 'rlang',
+	 'rmarkdown',
+	 'rsqlite',
+	 'selectr',
+	 'shiny',
+	 'shiny',
+	 'stringi',
+	 'stringr',
+	 'survminer',
+	 'tictoc',
+	 'tidyr',
+	 'tidyverse',
+	 'usethis',
+	 'uuid',
+	 'wesanderson',
+	 'xgboost'
+  ),
+  repos='http://cran.uk.r-project.org'
+)
+
+install.packages(
+c('behavr', 
+  'ggetho', 
+  'damr',
+  'scopr', 
+  'sleepr', 
+  'zeitgebr'
+  ),
+  repos= 'http://cran.uk.r-project.org'
+)
+
+IRkernel::installspec(user = FALSE)
