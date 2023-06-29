@@ -73,8 +73,6 @@ class behavpy(pd.DataFrame):
         Checks the data augument is a pandas dataframe
         If metadata is provided and skip is False it will check as above and check the ID's in
         metadata match those in the data
-        params: 
-        @skip = boolean indicating whether to skip a check that unique id's are in both meta and data match 
         """
         
         # formats warming method to not double print and allow string formatting
@@ -104,8 +102,7 @@ class behavpy(pd.DataFrame):
         # checks if all id's of data are in the metadata dataframe
         check_data = all(elem in set(dataframe.meta.index.tolist()) for elem in set(dataframe.index.tolist()))
         if check_data is not True:
-            warnings.warn("There are ID's in the data that are not in the metadata, please check. You can skip this process by changing the parameter skip to False")
-            exit()
+            warnings.warn("There are ID's in the data that are not in the metadata, please check")
 
     def _check_lists(self, f_col, f_arg, f_lab):
         """
@@ -979,12 +976,13 @@ class behavpy(pd.DataFrame):
                 exit()
 
         tdf = self.reset_index().copy(deep=True)
+        m = tdf.meta
         return  behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_motion_detector,
                                                                                                         time_window_length = time_window_length,
                                                                                                         velocity_correction_coef = velocity_correction_coef,
                                                                                                         masking_duration = masking_duration,
                                                                                                         optional_columns = optional_columns
-        )), tdf.meta, check = True)
+        )), m, check = True)
 
     @staticmethod
     def _wrapped_sleep_contiguous(d_small, mov_column, t_column, time_window_length, min_time_immobile):
@@ -1021,7 +1019,7 @@ class behavpy(pd.DataFrame):
         d_small[mov_column] = np.where(d_small['is_interpolated'] == True, False, d_small[mov_column])
 
         d_small['asleep'] = sleep_contiguous(d_small[mov_column], 1/time_window_length, min_valid_time = min_time_immobile)
-
+        d_small['id'] = [d_small['id'].iloc[0]] * len(d_small)
         d_small.set_index('id', inplace = True)
 
         return d_small  
@@ -1043,12 +1041,13 @@ class behavpy(pd.DataFrame):
             exit()  
 
         tdf = self.reset_index().copy(deep = True)
+        m = tdf.meta
         return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_sleep_contiguous,
                                                                                                         mov_column = mov_column,
                                                                                                         t_column = t_column,
                                                                                                         time_window_length = time_window_length,
                                                                                                         min_time_immobile = min_time_immobile
-        )), tdf.meta, check = True)
+        )), m, check = True)
 
     def wrap_time(self, wrap_time = 24, time_column = 't', inplace = False):
         """
