@@ -326,7 +326,7 @@ class behavpy_HMM(behavpy):
                     with open(file_name, "wb") as file: pickle.dump(h, file)
 
             if i+1 == iterations:
-                h = pickle,load(open(file_name, "rb"))
+                h = pickle.load(open(file_name, "rb"))
                 #print tables of trained emission probabilties, not accessible as objects for the user
                 self._hmm_table(start_prob = h.startprob_, trans_prob = h.transmat_, emission_prob = h.emissionprob_, state_names = states, observable_names = observables)
                 return h

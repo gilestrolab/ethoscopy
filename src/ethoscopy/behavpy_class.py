@@ -573,7 +573,7 @@ class behavpy(pd.DataFrame):
         bin_width = bin_size*60
         
         dt = data[[t_column,var_name]].copy(deep = True)
-        dt['deltaT'] = dt.t.diff()
+        dt['deltaT'] = dt[t_column].diff()
         bout_rle = rle(dt[var_name])
         vals = bout_rle[0]
         bout_range = list(range(1,len(vals)+1))
@@ -587,7 +587,7 @@ class behavpy(pd.DataFrame):
         duration = pd.NamedAgg(column='deltaT', aggfunc='sum')
         )
         bout_times[var_name] = vals
-        time = np.array([dt.t.iloc[0]])
+        time = np.array([dt[t_column].iloc[0]])
         time = np.concatenate((time, bout_times['duration'].iloc[:-1]), axis = None)
         time = np.cumsum(time)
         bout_times[t_column] = time
@@ -715,7 +715,7 @@ class behavpy(pd.DataFrame):
 
         time_window = (60 * 60 * time_window)
         d = data[[time_var, moving_var]].copy(deep = True)
-        target_t = np.array(list(range(d.t.min().astype(int), d.t.max().astype(int), floor(time_window / resolution))))
+        target_t = np.array(list(range(d[time_var].min().astype(int), d[time_var].max().astype(int), floor(time_window / resolution))))
         local_means = np.array([d[d[time_var].between(i, i + time_window)][moving_var].mean() for i in target_t])
 
         first_death_point = np.where(local_means <= prop_immobile, True, False)
@@ -728,7 +728,7 @@ class behavpy(pd.DataFrame):
         last_valid_point = target_t[first_death_point]
         if time_dict is not False:
             time_dict[data['id'].iloc[0]] = [data[time_var].min(), last_valid_point[0]]
-        return data[data[time_var].between(data.t.min(), last_valid_point[0])]
+        return data[data[time_var].between(data[time_var].min(), last_valid_point[0])]
 
     def curate_dead_animals(self, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
         
@@ -1010,8 +1010,8 @@ class behavpy(pd.DataFrame):
 
             return r_small
 
-        time_map = pd.Series(range(d_small.t.iloc[0], 
-                            d_small.t.iloc[-1] + time_window_length, 
+        time_map = pd.Series(range(d_small[t_column].iloc[0], 
+                            d_small[t_column].iloc[-1] + time_window_length, 
                             time_window_length
                             ), name = t_column)
 
@@ -1258,8 +1258,8 @@ class behavpy(pd.DataFrame):
             data[t_col] = data[t_col] % (60*60*day_len)
         data[t_col] = data[t_col] / (60*60)
 
-        t_min = int(light_off * floor(data.t.min() / light_off))
-        t_max = int(12 * ceil(data.t.max() / 12)) 
+        t_min = int(light_off * floor(data[t_col].min() / light_off))
+        t_max = int(12 * ceil(data[t_col].max() / 12)) 
 
         # Not using bootstrapping here as it takes too much time
         gb_df = data.groupby(t_col).agg(**{
