@@ -16,13 +16,17 @@ RUN apt-get update && \
 RUN apt-get update && \
     apt-get install -y jupyter && \
     rm -rf /var/lib/apt/lists/*
+
+#Will install version 3.6.4
 RUN pip3 install jupyterlab --ignore-installed
 
+#To upgrade to version 4.0.2
+#RUN pip3 install jupyterlab --upgrade
+
 #Jupyter extensions
+#This is compatible only with 3.*
 RUN pip3 install jupyterlab-spreadsheet-editor
 
-#activate the multiuser jupyterlab in hub
-COPY jupyterhub_config.py /srv/jupyterhub/jupyterhub_config.py
 
 # Install Ethoscope and related packages
 RUN pip3 install pandas seaborn bokeh lifelines
@@ -38,12 +42,15 @@ RUN echo 'ethoscopelab:ethoscopelab' | chpasswd
 
 #install ethoscopy
 #https://github.com/Lblackhurst29/ethoscopy
-RUN pip3 install ethoscopy
+RUN pip3 install ethoscopy pycatch22
 
-#install R packages
+#install R packages and rethomics
 COPY install_r_packages.r /root/install_r_packages.r
 RUN ln -s /bin/tar /bin/gtar && \
     Rscript /root/install_r_packages.r
+
+#activate the multiuser jupyterlab in hub
+COPY jupyterhub_config.py /srv/jupyterhub/jupyterhub_config.py
 
 WORKDIR /srv/jupyterhub/
 

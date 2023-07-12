@@ -1,7 +1,7 @@
 # Ethoscopelab docker instance
 
 Note: Most users will **not** need to recreate this image. These instructions are just provided as reference.
-The ethoscopelab docker instance lives on dockerhub at the following address: [https://hub.docker.com/r/ggilestro/ethoscope-lab](https://hub.docker.com/r/ggilestro/ethoscope-lab) and this is what regular users should download and run. Follow instructions there.
+The ethoscopelab docker instance lives on dockerhub at the following address: [https://hub.docker.com/r/ggilestro/ethoscope-lab](https://hub.docker.com/r/ggilestro/ethoscope-lab) and this is what regular users should download and run. Follow instructions there and on the [ethoscopy manual](https://bookstack.lab.gilest.ro/books/ethoscopy/page/getting-started).
 
 
 ## Docker files that were used to create the ethoscope-lab docker instance
@@ -54,4 +54,6 @@ sudo docker run -d -p 8000:8000 \
 ```
 
 Note that in this latter case the credential files will be mounted as `ro` and can only be modified from the host machine, not from within the container.
+
+The environment variables in the example below are used in conjunction with nginx-proxy and nginx-proxy-companion.
 
