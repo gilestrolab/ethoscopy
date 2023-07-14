@@ -35,6 +35,14 @@ class behavpy_core(pd.DataFrame):
     """
     warnings.formatwarning = format_warning
 
+    # set meta as permenant attribute
+    _metadata = ['meta']
+    _canvas = None
+
+    @property
+    def canvas(self):
+        return self._canvas
+
     @property
     def _constructor(self):
         return behavpy_core._internal_constructor(self.__class__)
@@ -293,7 +301,7 @@ class behavpy_core(pd.DataFrame):
 
         for df in args:
 
-            if isinstance(df, type(self)) is not True or isinstance(df, behavpy) is not True:
+            if isinstance(df, type(self)) is not True or isinstance(df, behavpy_core) is not True:
                 warnings.warn('Object(s) to concat is(are) not a Behavpy object')
                 exit()
 
@@ -984,3 +992,48 @@ class behavpy_core(pd.DataFrame):
         else:
             remove_ids = gb[gb['Percent Asleep'] > remove].index.tolist()
             return df.remove('id', remove_ids)
+
+
+    def heatmap_dataset(self, variable = 'moving', t_column = 't'):
+        """
+        Creates an aligned heatmap of the movement data binned to 30 minute intervals
+        
+        Params:
+        @variable = string, name for the column containing the variable of interest, the default is moving
+        
+        returns gbm, time_list, id
+        """
+
+        heatmap_df = self.copy(deep = True)
+        # change movement values from boolean to intergers and bin to 30 mins finding the mean
+        if variable == 'moving':
+            heatmap_df[variable] = np.where(heatmap_df[variable] == True, 1, 0)
+
+        heatmap_df = heatmap_df.bin_time(column = variable, bin_secs = 1800, t_column = t_column)
+        heatmap_df['t_bin'] = heatmap_df['t_bin'] / (60*60)
+        # create an array starting with the earliest half hour bin and the last with 0.5 intervals
+        start = heatmap_df['t_bin'].min().astype(int)
+        end = heatmap_df['t_bin'].max().astype(int)
+        time_list = np.array([x / 10 for x in range(start*10, end*10+5, 5)])
+        time_map = pd.Series(time_list, 
+                    name = 't_bin')
+
+        def align_data(data):
+            """merge the individual fly groups time with the time map, filling in missing points with NaN values"""
+
+            index_name = data.index[0]
+
+            df = data.merge(time_map, how = 'right', on = 't_bin', copy = False).sort_values(by=['t_bin'])
+
+            # read the old id index lost in the merge
+            old_index = pd.Index([index_name] * len(df.index), name = 'id')
+            df.set_index(old_index, inplace =True)  
+
+            return df                    
+
+        heatmap_df = heatmap_df.groupby('id', group_keys = False).apply(align_data)
+
+        gbm = heatmap_df.groupby(heatmap_df.index)[f'{variable}_mean'].apply(list)
+        id = heatmap_df.groupby(heatmap_df.index)['t_bin'].mean().index.tolist()
+
+        return gbm, time_list, id 

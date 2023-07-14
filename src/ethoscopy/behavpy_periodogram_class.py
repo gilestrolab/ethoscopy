@@ -16,10 +16,10 @@ from scipy.signal import find_peaks
 
 from astropy.timeseries import LombScargle
 
-from ethoscopy.behavpy_class import behavpy
+from ethoscopy.behavpy_core import behavpy_core
 from ethoscopy.misc.periodogram_functions import chi_squared, lomb_scargle, fourier, welch, wavelet
 
-class behavpy_periodogram(behavpy):
+class behavpy_periodogram(behavpy_core):
     """
     The behavpy_circadian class is a subclassed version of behavpy, itself a subclass of pandas. See behavpy doc strings for more information on behavpy.
 

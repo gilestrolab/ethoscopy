@@ -2,25 +2,456 @@ import pandas as pd
 import numpy as np 
 import warnings
 
+#plotly
 import plotly.graph_objs as go 
 from plotly.subplots import make_subplots
 from plotly.express.colors import qualitative
+
+#seaborn
+import seaborn as sns
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 from math import floor, ceil, sqrt
 from sys import exit
 from scipy.stats import zscore
 from functools import partial
 from colour import Color
+import re
 
 from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.misc.bootstrap_CI import bootstrap
 
 from ethoscopy.behavpy_core import behavpy_core
 
-class behavpy_plotly(behavpy_core):
+
+
+class behavpy_draw(behavpy_core):
     """
-    default plotly wrapper around core_behavpy
+    Default drawing class containing some general methods that can be used by all children drawing classes
     """
+
+    @staticmethod
+    def _is_hex_color(s):
+        """Returns True if s is a valid hex color. Otherwise False"""
+        if re.search(r'^#(?:[0-9a-fA-F]{3}){1,2}$', s):
+            return True
+        return False
+
+
+    @staticmethod
+    def _rgb_to_hex(rgb_string):
+        """
+        Takes a string defining an RGB color and converts it a string of equivalent hex
+        Input should be a string containing at least 3 numbers separated by a comma.
+        The following input will all work:
+        rgb(123,122,100)
+        123,122,100
+        """
+
+        # Only keep digits and commas
+        filtered_string = ''.join(c for c in rgb_string if c.isdigit() or c == ',')
+
+        # Split the filtered string by comma and convert each part to integer
+        rgb_values = list(map(int, filtered_string.split(',')))
+
+        # Map the values to integers
+        r, g, b = map(int, rgb_values)
+
+        # Convert RGB to hex
+        hex_string = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+
+        return hex_string
+
+
+    @staticmethod
+    def _get_colours(plot_list):
+        """ returns a colour palette from plotly for plotly"""
+        
+        # a list of 11 colors from plotly qualitative package. Each color is a string specifying RGBs (e.g. 'rgb(136, 204, 238)')
+        if len(plot_list) <= 11:
+            return qualitative.Safe
+
+        # a longer list of colors from plotly qualitative. Each color is a string specify HEX (e.g. '#2E91E5')
+        elif len(plot_list) < 24:
+            return qualitative.Dark24
+
+        else:
+            warnings.warn('Too many sub groups to plot with the current colour palette')
+            exit()
+
+
+    @staticmethod
+    def _adjust_colours(colour_list):
+        """
+        Adjust a list of colours to make them lighter
+        Each color in colour list can be a versatile input based on RGB or HEX. It will be converted using the Colour clas
+
+        returns two lists: the starting list (converted to list of hex strings) and the lighten list (same format)
+        """
+
+        def adjust_color_lighten(r,g,b, factor):
+            return [round(255 - (255-r)*(1-factor)), round(255 - (255-g)*(1-factor)), round(255 - (255-b)*(1-factor))]
+
+        start_colours = []
+        end_colours = []
+        for col in colour_list:
+            c = Color(col)
+            c_hex = c.hex
+            end_colours.append(c_hex)
+            r, g, b = c.rgb
+            r, g, b = adjust_color_lighten(r*255, g*255, b*255, 0.75)
+            start_hex = "#%02x%02x%02x" % (r,g,b)
+            start_colours.append(start_hex)
+
+        return start_colours, end_colours
+
+
+class behavpy_seaborn(behavpy_draw):
+
+    _canvas = 'seaborn'
+    palette  = 'deep'
+    error = 'se'
+
+    def heatmap(self, variable = 'moving', t_column = 't', title = '', figsize = (0,0)):
+        """
+        Plots a heatmap of a chosen variable.
+
+        Args:
+            variable (str, optional): The variable from the DataFrame to plot. Default is 'moving'.
+            t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
+            title (str, optional): The title of the plot. Default is an empty string.
+            figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+        Returns:
+            matplotlib.figure.Figure: The created figure.
+
+        Note:
+            For accurate results, the data should be appropriately preprocessed to ensure that 't' values are
+            in the correct format (seconds from time 0) and that 'variable' exists in the DataFrame.
+        """
+        
+        data, time_list, id = self.heatmap_dataset(variable, t_column)
+
+        data = pd.DataFrame(data.tolist())
+
+        # Set every nth x-tick label, in this example every 12th label
+        n = 12
+        x_labels = time_list[::n].astype(int)  # Get every nth label
+        x_ticks = np.arange(0, len(time_list), n)  # Get every nth location
+
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = (0.5*len(x_ticks), 0.1*len(id))
+
+        fig, ax = plt.subplots(figsize=figsize)
+        sns.heatmap(data, cmap="viridis", ax=ax)
+
+
+        plt.xticks(ticks=x_ticks, labels=x_labels, rotation=0)
+        plt.xlabel("ZT Time (Hours)")
+
+        plt.yticks(ticks=np.arange(0, len(id), 2), labels=id[::-2], rotation=0)
+
+        if title: fig.suptitle(title, fontsize=16)
+
+        return fig
+
+    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't', figsize = (0,0)):
+        """
+        Plots a line hypnogram using seaborn, displaying rolling averages of a chosen variable over time.
+        Optionally, the plot can be wrapped and faceted.
+
+        Args:
+            variable (str): The name of the variable in the DataFrame to plot. eg: asleep, moving
+            wrapped (bool, optional): If True, time data will be wrapped to daylength. Default is False.
+            facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. Default is None.
+            facet_labels (list, optional): The labels to use for faceting. Default is None.
+            avg_window (int, optional): The window size for rolling average calculation. Default is 180.
+            day_length (int, optional): The length of the day in hours for wrapping. Default is 24.
+            lights_off (int, optional): The time of "lights off" in hours. Default is 12.
+            title (str, optional): The title of the plot. Default is an empty string.
+            grids (bool, optional): If True, horizontal grid lines will be displayed on the plot. Default is False.
+            t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
+            figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+        Returns:
+            matplotlib.figure.Figure: The created figure.
+
+        Raises:
+            AssertionError: If wrapped is not a boolean.
+
+        Note:
+            For accurate results, the data should be appropriately preprocessed to ensure that 't' values are
+            in the correct format (seconds from time 0) and that 'variable' exists in the DataFrame.
+        """
+
+        assert isinstance(wrapped, bool)
+
+        # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg).merge(self.meta, left_index=True, right_index=True)
+        else:
+            data = self.copy(deep=True)
+
+        # creates the rolling average of the chosen variable over time
+        rolling_col = data.groupby(data.index, sort = False)[variable].rolling(avg_window, min_periods = 1).mean().reset_index(level = 0, drop = True)
+        data['rolling'] = rolling_col.to_numpy()
+
+        # change t values to wrap data if requested
+        if wrapped is True:
+            data[t_column] = data[t_column] % (60*60*day_length)
+        data[t_column] = data[t_column] / (60*60)
+
+        #calculates the min, max time
+        t_min = int(lights_off * floor(data[t_column].min() / lights_off))
+        t_max = int(12 * ceil(data[t_column].max() / 12)) 
+        x_ticks = np.arange(t_min, t_max, 6)
+
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = ( 6 + 1/4 * len(x_ticks), 
+                        4 + 1/32 * len(x_ticks) 
+                        )
+
+
+        fig, ax = plt.subplots(figsize=figsize)
+
+        sns.lineplot(data, x='t', y='rolling', errorbar=self.error, hue=facet_col, hue_order=facet_arg, ax=ax, palette=self.palette)
+
+        #Customise legend values
+        handles, _ = ax.get_legend_handles_labels()
+        ax.legend(handles=handles, labels=facet_labels)
+
+        plt.ylim(0, 1)
+        plt.xlim(t_min, t_max)
+
+        plt.xticks(ticks=x_ticks, labels=x_ticks, rotation=0)
+        plt.xlabel("ZT Time (Hours)")
+        plt.ylabel(variable)
+
+        plt.title(title)
+
+        if grids:
+            plt.grid(axis='y')
+
+        thickness = -0.04
+        offset = -0.15 #negative means below the figure
+        # For every 24 hours, draw a rectangle from 0-12 (daytime) and another from 12-24 (nighttime)
+        for i in range(t_min, t_max, day_length):
+            # Daytime patch
+            ax.add_patch(mpatches.Rectangle((i, offset), lights_off, thickness, color='black', alpha=0.4, clip_on=False, fill=None))
+            # Nighttime patch
+            ax.add_patch(mpatches.Rectangle((i+lights_off, offset), lights_off, thickness, color='black', alpha=0.8, clip_on=False))
+
+        return fig
+
+    def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False, figsize = (0,0)):
+        """
+        Creates a boxplot and swarmplot for the given data with the option to facet by a specific column.
+
+        Args:
+            variable (str): The variable column name to be plotted. e.g. asleep
+            facet_col (str, optional): The column name used for faceting. Defaults to None.
+            facet_arg (list, optional): List of values used for faceting. Defaults to None.
+            facet_labels (list, optional): List of labels used for faceting. Defaults to None.
+            fun (str, optional): Function to apply on the data, e.g., 'mean'. Defaults to 'mean'.
+            title (str, optional): Title of the plot. Defaults to ''.
+            grids (bool, optional): If True, add a grid to the plot. Defaults to False.
+            figsize (tuple, optional): Tuple specifying the figure size. Default is (0, 0) which auto-adjusts the size.
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
+
+        Raises:
+            ValueError: If `fun` is not a valid function.
+
+        Note:
+            This function uses seaborn to create a boxplot and swarmplot. It allows to facet the data by a specific column.
+            The function to be applied on the data is specified by the `fun` parameter.
+        """
+
+        # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        if not isinstance(variable, list):
+            variable = [variable]
+
+        data_summary = {}
+        for var in variable:
+            data_summary .update( {
+                "%s_mean" % var : (var, 'mean'),
+                "%s_std" % var : (var, 'std')
+                } )
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+
+            # takes subselection of df that contains the specified facet columns
+            data = self.xmv(facet_col, facet_arg)
+            
+            # apply the specified operation and add the specified columns from metadata
+            #data = data.pivot(column = variable, function = fun).merge(data.meta.loc[:,facet_col], left_index=True, right_index=True)
+            # we use the following line instead of the builtin pivot method because it allows us to calculate multiple functions
+            data = self.groupby(self.index).agg(**data_summary).merge(self.meta.loc[:,facet_col], left_index=True, right_index=True)
+        
+        # this possibility is actually never true because of the self._check_lists output that creates a facet_arg if facet_col exists
+        elif facet_col and not facet_arg:
+            data = self.groupby(self.index).agg(**data_summary).merge(self.meta.loc[:,facet_col], left_index=True, right_index=True)
+
+        # this applies in case we want to apply the specified information to ALL the data
+        else:
+            #no need to merge with metadata if facet_col is not specified
+            #data = self.copy(deep=True).pivot(column = variable, function = fun)
+            data = self.copy(deep=True).groupby(self.index).agg(**data_summary)
+        
+
+        # BOXPLOT
+        fig_rows = len(variable)
+        fig_cols = 1
+
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = (2*len(facet_arg), 4*fig_rows)
+
+        fig, axes = plt.subplots(fig_rows, fig_cols, figsize=figsize)
+        
+        # axes is
+        #  matplotlib.axes._axes.Axes if only one subplot
+        #  numpy.ndarray if multiple subplots
+        # Flatten the axes list, in case we have more than one row
+        if fig_rows > 1:
+            axes = axes.flatten()
+        else:
+            axes = [axes]
+
+        for ax, var in zip(axes, variable):
+        
+            plot_column = f'{var}_{fun}'
+
+            y_range, dtick = self._check_boolean(list(self[var]))
+
+            if y_range: 
+                ax.set_ylim(y_range)
+            #else:
+             #   plt.ylim((0,12))
+
+            if grids: plt.grid(axis='y')
+        
+            sns.boxplot(data=data, x=facet_col, y=plot_column, ax=ax, palette=self.palette)
+            sns.swarmplot(data=data, x=facet_col, y=plot_column, ax=ax, size=8, hue=facet_col, alpha=0.5, edgecolor='black', linewidth=1, palette=self.palette)
+
+            ax.set_xticklabels(sorted(facet_labels))
+
+        #Customise legend values
+        #handles, _ = ax.get_legend_handles_labels()
+        #ax.legend(handles=handles, labels=facet_labels)
+
+        plt.title(title)
+        
+        # Adjust the layout
+        plt.tight_layout()
+
+        # reorder dataframe for stats output
+        if facet_col: data = data.sort_values(facet_col)
+
+        return fig, data
+
+    def plot_compare_variables(variables, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False, figsize = (0,0)):
+        """
+        Just an alias for plot_quantify that we use for retrocompatibility with the plotly class
+        """
+        return self.plot_quanitfy(variables, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False, figsize = (0,0))
+
+    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, figsize=(0,0)):
+        """
+        Plot day and night data.
+
+        Parameters:
+            variable (str): The variable to plot.
+            facet_col (str, optional): The column to facet the data by. Default is None.
+            facet_arg (list, optional): The list of values to use for faceting. Default is None.
+            facet_labels (list, optional): The list of labels for the facet_arg values. Default is None.
+            day_length (int, optional): The length of the day in hours. Default is 24.
+            lights_off (int, optional): The hour when lights are turned off. Default is 12.
+            title (str, optional): The title of the plot. Default is an empty string.
+            grids (bool, optional): Whether to display grid lines. Default is False.
+            figsize (tuple, optional): The size of the figure. Default is (0, 0) which auto-adjusts the size.
+
+        Returns:
+            tuple: A tuple containing the figure object and the processed data.
+
+        Raises:
+            None
+
+        """
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+        plot_column = f'{variable}_mean'
+
+        data_summary = {
+            "%s_mean" % variable : (variable, 'mean'),
+            "%s_std" % variable : (variable, 'std'),
+            }
+
+        data = self.copy(deep=True)
+        
+        #Add phase information to the data
+        data.add_day_phase(day_length = day_length, lights_off = lights_off)
+
+        # Do the groupby operation on the entire dataframe and calculate mean and std on the given variable
+        grouped_data = data.groupby([data.index, 'phase']).agg(**data_summary)
+
+        # Reset the index to bring 'phase' back as a column
+        grouped_data = grouped_data.reset_index()
+
+        # Ensure 'phase' column is categorical for efficient memory usage
+        grouped_data['phase'] = grouped_data['phase'].astype('category')
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            # Add the specified columns from metadata
+            data = grouped_data.merge(data.meta.loc[:,facet_col], left_on='id', right_index=True)
+        else:
+            data = grouped_data
+
+
+        # BOXPLOT
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = (2*len(facet_arg), 4)
+
+        fig, ax = plt.subplots(figsize=figsize)
+
+        y_range, dtick = self._check_boolean(list(self[variable]))
+        plt.ylim(y_range)
+
+        sns.boxplot(data=data, x="phase", y=plot_column, hue=facet_col, hue_order=facet_arg, ax=ax, palette="Paired", order=["light", "dark"])
+        #sns.swarmplot(data=data, x="phase", y=plot_column, hue=facet_col, ax=ax, size=8, alpha=0.5, edgecolor='black', linewidth=1, palette=self.palette)
+
+        #ax.set_xticklabels(sorted(facet_labels))
+
+        #Customise legend values
+        handles, _ = ax.get_legend_handles_labels()
+        ax.legend(handles=handles, labels=facet_labels)
+
+        plt.title(title)
+        if grids: plt.grid(axis='y')
+
+        # reorder dataframe for stats output
+        if facet_col: data = data.sort_values(facet_col)
+
+        return fig, data
+
+
+class behavpy_plotly(behavpy_draw):
+    """
+    default plotly wrapper around behavpy_core
+    """
+
+    _canvas = 'plotly'
 
     @staticmethod
     def _plot_ylayout(fig, yrange, ylabel, title, t0 = False, dtick = False, secondary = False, xdomain = False, tickvals = False, ticktext = False, ytype = "-", grid = False):
@@ -219,38 +650,125 @@ class behavpy_plotly(behavpy_core):
         return upper_bound, trace, lower_bound, max_var
 
     @staticmethod
-    def _get_colours(plot_list):
-        """ returns a colour palette from plotly for plotly"""
-        if len(plot_list) <= 11:
-            return qualitative.Safe
-        elif len(plot_list) < 24:
-            return qualitative.Dark24
-        else:
-            warnings.warn('Too many sub groups to plot with the current colour palette')
-            exit()
+    def _get_subplots(length):
+        """Get the nearest higher square number"""
+        square = sqrt(length) 
+        closest = [floor(square)**2, ceil(square)**2]
+        return int(sqrt(closest[1]))
 
     @staticmethod
-    def _adjust_colours(colour_list):
+    def _actogram_plot(fig, data, mov, day, row, col):
+        try:
+            max_days = int(data['day'].max())
+            for i in range(max_days):
+                x_list_2 = data['t_bin'][data['day'] == i+1].to_numpy() + day
+                x_list = np.append(data['t_bin'][data['day'] == i].to_numpy(), x_list_2)
+                y_list = np.append(data[f'{mov}_mean'][data['day'] == i].tolist(), data[f'{mov}_mean'][data['day'] == i+1].tolist())
+                y_mod = np.array([i+1] * len(y_list)) - (y_list)
+                fig.append_trace(go.Box(
+                        showlegend = False,
+                        median = (([i+1]*len(x_list) + y_mod) / 2),
+                        q1 = y_mod,
+                        q3 = [i+1]*len(x_list),
+                        x = x_list,
+                        marker = dict(
+                            color = 'black',
+                        ),
+                        fillcolor = 'black',
+                        boxpoints = False
+                ), row = row, col = col)
+        except ValueError:
+            x_list = list(range(0,24,2))
+            fig.append_trace(go.Box(
+                    showlegend = False,
+                    x = x_list,
+                    marker = dict(
+                        color = 'black',
+                    ),
+                    fillcolor = 'black',
+                    boxpoints = False
+            ), row = row, col = col)
 
-        def adjust_color_lighten(r,g,b, factor):
-            return [round(255 - (255-r)*(1-factor)), round(255 - (255-g)*(1-factor)), round(255 - (255-b)*(1-factor))]
 
-        start_colours = []
-        end_colours = []
-        for col in colour_list:
-            c = Color(col)
-            c_hex = c.hex
-            end_colours.append(c_hex)
-            r, g, b = c.rgb
-            r, g, b = adjust_color_lighten(r*255, g*255, b*255, 0.75)
-            start_hex = "#%02x%02x%02x" % (r,g,b)
-            start_colours.append(start_hex)
+    @staticmethod
+    def _generate_overtime_plot(data, name, col, var, avg_win, wrap, day_len, light_off, t_col):
 
-        return start_colours, end_colours
-            
-    # set meta as permenant attribute
-    _metadata = ['meta']
+        if len(data) == 0:
+            print(f'Group {name} has no values and cannot be plotted')
+            return None, None, None, None, None, None
 
+        if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+            col = 'grey'
+
+        rolling_col = data.groupby(data.index, sort = False)[var].rolling(avg_win, min_periods = 1).mean().reset_index(level = 0, drop = True)
+        data['rolling'] = rolling_col.to_numpy()
+        # removing dropna to speed it up
+        # data = data.dropna(subset = ['rolling'])
+
+        if wrap is True:
+            data[t_col] = data[t_col] % (60*60*day_len)
+        data[t_col] = data[t_col] / (60*60)
+
+        t_min = int(light_off * floor(data[t_col].min() / light_off))
+        t_max = int(12 * ceil(data[t_col].max() / 12)) 
+
+        # Not using bootstrapping here as it takes too much time
+        gb_df = data.groupby(t_col).agg(**{
+                    'mean' : ('rolling', 'mean'), 
+                    'SD' : ('rolling', 'std'),
+                    'count' : ('rolling', 'count')
+                })
+        gb_df = gb_df.reset_index()
+        gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
+        gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
+        gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
+
+        upper, trace, lower, maxV = data._plot_line(df = gb_df, x_col = 't', name = name, marker_col = col)
+
+        return upper, trace, lower, maxV, t_min, t_max
+
+    def heatmap(self, variable = 'moving', t_column = 't', title = ''):
+        """
+        Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
+        
+        Params:
+        @variable = string, name for the column containing the variable of interest, the default is moving
+        
+        returns None
+        """
+        gbm, time_list, id = self.heatmap_dataset(variable, t_column)
+
+
+        fig = go.Figure(data=go.Heatmap(
+                        z = gbm,
+                        x = time_list,
+                        y = id,
+                        colorscale = 'Viridis'))
+
+        fig.update_layout(
+            title = title,
+            xaxis = dict(
+                zeroline = False,
+                color = 'black',
+                linecolor = 'black',
+                gridcolor = 'black',
+                title = dict(
+                    text = 'ZT Time (Hours)',
+                    font = dict(
+                        size = 18,
+                        color = 'black'
+                    )
+                ),
+                tick0 = 0,
+                dtick = 12,
+                ticks = 'outside',
+                tickwidth = 2,
+                linewidth = 2)
+                )
+
+        return fig
+
+           
     def plot_sleep_bouts(self, sleep_column = 'asleep', facet_col = None, facet_arg = None, facet_labels = None, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True, title = '', grids = False):
         """ Plot with faceting the sleep bouts analysis function"""
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
@@ -314,113 +832,6 @@ class behavpy_plotly(behavpy_core):
         self._plot_xlayout(fig, xrange = [time_immobile, np.max(x)+0.5], t0 = time_immobile, dtick = bin_size, xlabel = 'Bouts (minutes)')
 
         return fig
-
-    def heatmap(self, variable = 'moving', t_column = 't', title = ''):
-        """
-        Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
-        
-        Params:
-        @variable = string, name for the column containing the variable of interest, the default is moving
-        
-        returns None
-        """
-        heatmap_df = self.copy(deep = True)
-        # change movement values from boolean to intergers and bin to 30 mins finding the mean
-        if variable == 'moving':
-            heatmap_df[variable] = np.where(heatmap_df[variable] == True, 1, 0)
-
-        heatmap_df = heatmap_df.bin_time(column = variable, bin_secs = 1800, t_column = t_column)
-        heatmap_df['t_bin'] = heatmap_df['t_bin'] / (60*60)
-        # create an array starting with the earliest half hour bin and the last with 0.5 intervals
-        start = heatmap_df['t_bin'].min().astype(int)
-        end = heatmap_df['t_bin'].max().astype(int)
-        time_list = np.array([x / 10 for x in range(start*10, end*10+5, 5)])
-        time_map = pd.Series(time_list, 
-                    name = 't_bin')
-
-        def align_data(data):
-            """merge the individual fly groups time with the time map, filling in missing points with NaN values"""
-
-            index_name = data.index[0]
-
-            df = data.merge(time_map, how = 'right', on = 't_bin', copy = False).sort_values(by=['t_bin'])
-
-            # read the old id index lost in the merge
-            old_index = pd.Index([index_name] * len(df.index), name = 'id')
-            df.set_index(old_index, inplace =True)  
-
-            return df                    
-
-        heatmap_df = heatmap_df.groupby('id', group_keys = False).apply(align_data)
-
-        gbm = heatmap_df.groupby(heatmap_df.index)[f'{variable}_mean'].apply(list)
-        id = heatmap_df.groupby(heatmap_df.index)['t_bin'].mean().index.tolist()
-
-        fig = go.Figure(data=go.Heatmap(
-                        z = gbm,
-                        x = time_list,
-                        y = id,
-                        colorscale = 'Viridis'))
-
-        fig.update_layout(
-            title = title,
-            xaxis = dict(
-                zeroline = False,
-                color = 'black',
-                linecolor = 'black',
-                gridcolor = 'black',
-                title = dict(
-                    text = 'ZT Time (Hours)',
-                    font = dict(
-                        size = 18,
-                        color = 'black'
-                    )
-                ),
-                tick0 = 0,
-                dtick = 12,
-                ticks = 'outside',
-                tickwidth = 2,
-                linewidth = 2)
-                )
-
-        return fig
-
-    @staticmethod
-    def _generate_overtime_plot(data, name, col, var, avg_win, wrap, day_len, light_off, t_col):
-
-        if len(data) == 0:
-            print(f'Group {name} has no values and cannot be plotted')
-            return None, None, None, None, None, None
-
-        if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
-            col = 'grey'
-
-        rolling_col = data.groupby(data.index, sort = False)[var].rolling(avg_win, min_periods = 1).mean().reset_index(level = 0, drop = True)
-        data['rolling'] = rolling_col.to_numpy()
-        # removing dropna to speed it up
-        # data = data.dropna(subset = ['rolling'])
-
-        if wrap is True:
-            data[t_col] = data[t_col] % (60*60*day_len)
-        data[t_col] = data[t_col] / (60*60)
-
-        t_min = int(light_off * floor(data[t_col].min() / light_off))
-        t_max = int(12 * ceil(data[t_col].max() / 12)) 
-
-        # Not using bootstrapping here as it takes too much time
-        gb_df = data.groupby(t_col).agg(**{
-                    'mean' : ('rolling', 'mean'), 
-                    'SD' : ('rolling', 'std'),
-                    'count' : ('rolling', 'count')
-                })
-        gb_df = gb_df.reset_index()
-        gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
-        gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
-        gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
-
-        upper, trace, lower, maxV = data._plot_line(df = gb_df, x_col = 't', name = name, marker_col = col)
-
-        return upper, trace, lower, maxV, t_min, t_max
 
     def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't'):
         assert isinstance(wrapped, bool)
@@ -510,7 +921,7 @@ class behavpy_plotly(behavpy_core):
 
         col_list = self._get_colours(d_list)
 
-        # genertate a subplot figure with a single column
+        # generate a subplot figure with a single column
         fig = make_subplots(rows=len(tile_list), cols=1, shared_xaxes = True, subplot_titles = tile_list)
 
         max_var = []
@@ -875,46 +1286,6 @@ class behavpy_plotly(behavpy_core):
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
         return fig, stats_df
-
-    @staticmethod
-    def _get_subplots(length):
-        """Get the nearest higher square number"""
-        square = sqrt(length) 
-        closest = [floor(square)**2, ceil(square)**2]
-        return int(sqrt(closest[1]))
-
-    @staticmethod
-    def _actogram_plot(fig, data, mov, day, row, col):
-        try:
-            max_days = int(data['day'].max())
-            for i in range(max_days):
-                x_list_2 = data['t_bin'][data['day'] == i+1].to_numpy() + day
-                x_list = np.append(data['t_bin'][data['day'] == i].to_numpy(), x_list_2)
-                y_list = np.append(data[f'{mov}_mean'][data['day'] == i].tolist(), data[f'{mov}_mean'][data['day'] == i+1].tolist())
-                y_mod = np.array([i+1] * len(y_list)) - (y_list)
-                fig.append_trace(go.Box(
-                        showlegend = False,
-                        median = (([i+1]*len(x_list) + y_mod) / 2),
-                        q1 = y_mod,
-                        q3 = [i+1]*len(x_list),
-                        x = x_list,
-                        marker = dict(
-                            color = 'black',
-                        ),
-                        fillcolor = 'black',
-                        boxpoints = False
-                ), row = row, col = col)
-        except ValueError:
-            x_list = list(range(0,24,2))
-            fig.append_trace(go.Box(
-                    showlegend = False,
-                    x = x_list,
-                    marker = dict(
-                        color = 'black',
-                    ),
-                    fillcolor = 'black',
-                    boxpoints = False
-            ), row = row, col = col)
 
     def plot_actogram(self, mov_variable = 'moving', bin_window = 5, t_column = 't', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = ''):
         
@@ -1365,10 +1736,21 @@ class behavpy_plotly(behavpy_core):
         )
         return fig
 
+def behavpy ( data, meta, check = False, index= None, columns=None, dtype=None, copy=True, canvas='plotly' ):
+
+    if canvas == 'plotly':
+        return behavpy_plotly(data, meta, check = False, index= None, columns=None, dtype=None, copy=True)
+
+    elif canvas == 'seaborn':
+        return behavpy_seaborn(data, meta, check = False, index= None, columns=None, dtype=None, copy=True)
+
+    elif canvas == None:
+        return behavpy_core(data, meta, check = False, index= None, columns=None, dtype=None, copy=True)
+
+    else:
+        raise ValueError('Invalid canvas specified')
 
 
-class behavpy(behavpy_plotly):
-    """ 
-    Just an alias of behavpy_ploty to maintain compatibility for the time being
-    """
-    pass
+
+def test():
+    print (1)
