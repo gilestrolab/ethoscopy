@@ -1739,18 +1739,13 @@ class behavpy_plotly(behavpy_draw):
 def behavpy ( data, meta, check = False, index= None, columns=None, dtype=None, copy=True, canvas='plotly' ):
 
     if canvas == 'plotly':
-        return behavpy_plotly(data, meta, check = False, index= None, columns=None, dtype=None, copy=True)
+        return behavpy_plotly(data, meta, check, index, columns, dtype, copy)
 
     elif canvas == 'seaborn':
-        return behavpy_seaborn(data, meta, check = False, index= None, columns=None, dtype=None, copy=True)
+        return behavpy_seaborn(data, meta, check, index, columns, dtype, copy)
 
     elif canvas == None:
-        return behavpy_core(data, meta, check = False, index= None, columns=None, dtype=None, copy=True)
+        return behavpy_core(data, meta, check, index, columns, dtype, copy)
 
     else:
         raise ValueError('Invalid canvas specified')
-
-
-
-def test():
-    print (1)
