@@ -63,7 +63,6 @@ class behavpy_draw(behavpy_core):
 
         return hex_string
 
-
     @staticmethod
     def _get_colours(plot_list):
         """ returns a colour palette from plotly for plotly"""
@@ -79,7 +78,6 @@ class behavpy_draw(behavpy_core):
         else:
             warnings.warn('Too many sub groups to plot with the current colour palette')
             exit()
-
 
     @staticmethod
     def _adjust_colours(colour_list):
@@ -241,11 +239,13 @@ class behavpy_seaborn(behavpy_draw):
         thickness = -0.04
         offset = -0.15 #negative means below the figure
         # For every 24 hours, draw a rectangle from 0-12 (daytime) and another from 12-24 (nighttime)
-        for i in range(t_min, t_max, day_length):
+        for i in circadian_bars(t_min, t_max, max_y = 0, day_length = day_length, lights_off = lights_off, canvas = 'seaborn'):
             # Daytime patch
-            ax.add_patch(mpatches.Rectangle((i, offset), lights_off, thickness, color='black', alpha=0.4, clip_on=False, fill=None))
-            # Nighttime patch
-            ax.add_patch(mpatches.Rectangle((i+lights_off, offset), lights_off, thickness, color='black', alpha=0.8, clip_on=False))
+            if i % day_length == 0:
+                ax.add_patch(mpatches.Rectangle((i, offset), lights_off, thickness, color='black', alpha=0.4, clip_on=False, fill=None))
+            else:
+                # Nighttime patch
+                ax.add_patch(mpatches.Rectangle((i, offset), day_length-lights_off, thickness, color='black', alpha=0.8, clip_on=False))
 
         return fig
 

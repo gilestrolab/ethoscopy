@@ -32,7 +32,7 @@ def make_bars(bar, bar_col, size, split, y_size1, y_size2):
 
     return shaped_bar
 
-def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split = False):
+def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split = False, canvas = 'plotly'):
     """ 
     create boxes within plotly to represent the light, dark phases in light sensitive experiments
     @t_min = int, the minimum time point as a multiple of 12 
@@ -67,6 +67,9 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
         used_range = fancy_range(t_min, t_max, (day_length-lights_off, lights_off))
     else:
         used_range = fancy_range(t_min, t_max, (lights_off, day_length-lights_off))
+
+    if canvas == 'seaborn':
+        return used_range
 
     for i, bars in enumerate(used_range):
         for c in range(split):
