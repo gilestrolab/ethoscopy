@@ -24,6 +24,9 @@ from ethoscopy.misc.bootstrap_CI import bootstrap
 
 from ethoscopy.behavpy_core import behavpy_core
 
+#fig to img
+import io
+import PIL
 
 
 class behavpy_draw(behavpy_core):
@@ -110,6 +113,17 @@ class behavpy_seaborn(behavpy_draw):
     _canvas = 'seaborn'
     palette  = 'deep'
     error = 'se'
+
+
+    @staticmethod
+    # Function to convert figure to image
+    def _fig2img(fig, format='png'):
+        buf = io.BytesIO()
+        fig.savefig(buf, format=format, bbox_inches='tight', pad_inches=0)
+        buf.seek(0)
+        img = PIL.Image.open(buf)
+        return img
+
 
     def heatmap(self, variable = 'moving', t_column = 't', title = '', figsize = (0,0)):
         """
@@ -444,6 +458,140 @@ class behavpy_seaborn(behavpy_draw):
         if facet_col: data = data.sort_values(facet_col)
 
         return fig, data
+
+    def plot_actogram(self, mov_variable = 'moving', bin_window = 5, t_column = 't', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = '', figsize=(0,0)):
+        """
+        This function creates actogram plots from the provided data. Actograms are useful for visualizing 
+        patterns in activity data (like movement or behavior) over time, often with an emphasis on daily 
+        (24-hour) rhythms. 
+
+        Args:
+            mov_variable (str, optional): The name of the column in the dataframe representing movement 
+                data. Default is 'moving'.
+            bin_window (int, optional): The bin size for data aggregation in minutes. Default is 5.
+            t_column (str, optional): The name of the column in the dataframe representing time data.
+                Default is 't'.
+            facet_col (str, optional): The name of the column to be used for faceting. If None, no faceting 
+                is applied. Default is None.
+            facet_arg (list, optional): List of arguments to be used for faceting. If None and if 
+                facet_col is not None, all unique values in the facet_col are used. Default is None.
+            facet_labels (list, optional): List of labels to be used for the facets. If None and if 
+                facet_col is not None, all unique values in the facet_col are used as labels. Default is None.
+            day_length (int, optional): The length of the day in hours. Default is 24.
+            title (str, optional): The title of the plot. Default is an empty string.
+            figsize (tuple, optional): The size of the figure to be plotted as (width, height). If set to 
+                (0,0), the size is determined automatically. Default is (0,0).
+
+        Returns:
+            matplotlib.figure.Figure: If facet_col is provided, returns a figure that contains subplots for each 
+            facet. If facet_col is not provided, returns a single actogram plot.
+
+        Raises:
+            ValueError: If facet_arg is provided but facet_col is None.
+            SomeOtherException: If some other condition is met.
+
+        Example:
+            >>> instance.plot_actogram(mov_variable='movement', bin_window=10, 
+            ...                        t_column='time', facet_col='activity_type')
+        """
+        def _plot_single_actogram(dt, figsize, days, title, day_length):
+
+            # (0,0) means automatic size
+            if figsize == (0,0):
+                figsize = (8, len(days)/3)
+
+            fig, axes = plt.subplots(len(days)-1, 1, figsize=figsize, sharex=True)
+            axes[0].set_title(title)
+
+            for ax, day in zip(axes, days[:-1]):
+
+                subset = dt[dt['day'].isin([day, day+1])].copy()
+                subset.loc[subset['day'] == day+1, 'hours'] += 24
+
+                # Remove x and y axis labels and ticks
+                ax.set(yticklabels=[])
+                ax.tick_params(axis='both', which='both', length=0)
+
+                #ax.step(subset["hours"], subset["moving_mean"], alpha=0.5) 
+                ax.fill_between(subset["hours"], subset["moving_mean"], step="pre", color="black", alpha=1.0)
+
+            plt.xticks(range(0, day_length*2+1, int(day_length*2/8)))
+            plt.xlim(0,48)
+            plt.xlabel("ZT (Hours)")
+            #plt.tight_layout()
+
+            sns.despine(left=True, bottom=True)
+            return fig 
+
+        # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg)
+        else:
+            data = self.copy(deep=True)
+
+        data = data.bin_time(mov_variable, bin_window*60, t_column = t_column)
+        data.add_day_phase(time_column = f'{t_column}_bin')
+        days = data["day"].unique()
+
+        data = data.merge(data.meta, left_index=True, right_index=True)
+
+        data["hours"] = (data[f'{t_column}_bin'] / (60*60))
+        data["hours"] = data["hours"] - (data["day"]*24)
+
+        if facet_col:
+            data = data.groupby([f'{t_column}_bin', facet_col]).agg(**{
+                'moving_mean' : ('moving_mean', 'mean'),
+                'day' : ('day', 'max'),
+                'hours': ('hours', 'max')
+
+            }).reset_index()
+        else:
+            data = data.groupby(f'{t_column}_bin').agg(**{
+                'moving_mean' : ('moving_mean', 'mean'),
+                'day' : ('day', 'max'),
+                'hours': ('hours', 'max')
+
+            }).reset_index()
+
+
+        if facet_col:
+            figs = []
+            for subplot in facet_arg:
+
+                dt = data.loc [data[facet_col] == subplot]
+                title = "%s - %s" % (title, subplot)
+                fig = _plot_single_actogram(dt, figsize, days, title, day_length)
+                plt.close()
+
+                figs.append(fig)
+
+            
+            # Create a new figure to combine the figures
+            cols, rows = 3, -(-len(facet_arg) // 3)
+            c = []
+
+            if figsize == (0,0):
+                figsize = (8*rows, len(days))
+
+            combined_fig = plt.figure(figsize = figsize )
+            
+            for pos, f in enumerate(figs):
+
+                c.append( combined_fig.add_subplot(rows, cols, pos+1))
+                c[-1].axis('off')  # Turn off axis
+                c[-1].imshow( self._fig2img (f) )
+
+            # Adjust the layout of the subplots in the combined figure
+            #combined_fig.tight_layout()
+
+            return combined_fig
+
+        else:
+
+            return _plot_single_actogram(data, figsize, days, title, day_length)
 
 
 class behavpy_plotly(behavpy_draw):
