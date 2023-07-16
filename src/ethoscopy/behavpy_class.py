@@ -353,8 +353,6 @@ class behavpy_seaborn(behavpy_draw):
             #else:
              #   plt.ylim((0,12))
 
-            if grids: plt.grid(axis='y')
-        
             sns.boxplot(data=data, x=facet_col, y=plot_column, ax=ax, palette=self.palette)
             sns.swarmplot(data=data, x=facet_col, y=plot_column, ax=ax, size=8, hue=facet_col, alpha=0.5, edgecolor='black', linewidth=1, palette=self.palette)
 
@@ -364,9 +362,8 @@ class behavpy_seaborn(behavpy_draw):
         #handles, _ = ax.get_legend_handles_labels()
         #ax.legend(handles=handles, labels=facet_labels)
 
+        if grids: plt.grid(axis='y')
         plt.title(title)
-        
-        # Adjust the layout
         plt.tight_layout()
 
         # reorder dataframe for stats output
@@ -593,10 +590,119 @@ class behavpy_seaborn(behavpy_draw):
 
             return _plot_single_actogram(data, figsize, days, title, day_length)
 
+    def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, figsize=(0,0)):
+        """
+        Plots the anticipation scores for lights on and off periods, separately for each category defined by facet_col.
+        
+        This function calculates the anticipation scores for lights off and on conditions and then plots a seaborn boxplot.
+
+        Parameters
+        ----------
+        mov_variable : str, optional
+            The movement variable to consider for calculating the anticipation score, by default 'moving'.
+        facet_col : str, optional
+            The column name to be used for faceting, by default None.
+        facet_arg : list, optional
+            List of arguments to consider for faceting, by default None.
+        facet_labels : list, optional
+            Labels for the facet arguments, by default None.
+        day_length : int, optional
+            The length of the day in hours, by default 24.
+        lights_off : int, optional
+            The time in hours when the lights are turned off, by default 12.
+        title : str, optional
+            The title of the plot, by default ''.
+        grids : bool, optional
+            If True, the grid is displayed on the plot, by default False.
+        figsize : tuple, optional
+            Tuple indicating the size of the figure (width, height), by default (0,0) which indicates automatic size.
+
+        Returns
+        -------
+        tuple
+            A tuple containing the figure and the dataset used for plotting.
+        """
+        def anticipation_score(d, mov_variable, start, end):
+            
+            def _ap_score(total, small):
+                try:
+                    return (small / total) * 100
+                except ZeroDivisionError:
+                    return 0
+
+            d = d.t_filter(start_time = start[0], end_time = end)
+            total = d.pivot(column = mov_variable, function = 'sum')
+            
+            d = d.t_filter(start_time = start[1], end_time = end)
+            small = d.groupby(d.index).agg(**{
+                    'moving_small' : (mov_variable, 'sum')
+                    })
+            d = total.join(small)
+            d = d.dropna()
+            
+            return d[[f'{mov_variable}_sum', 'moving_small']].apply(lambda x: _ap_score(*x), axis = 1)
+
+
+        # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg).merge(self.meta, left_index=True, right_index=True)
+        else:
+            data = self.copy(deep=True)
+
+        data = data.dropna(subset=[mov_variable])
+        data.wrap_time(inplace = True)
+
+        # calculate anticipation score for lights_off
+        start, end = [lights_off - 6, lights_off - 3], lights_off
+        lights_off = pd.DataFrame( anticipation_score(data, mov_variable, start, end).rename("anticipation_score") )
+        lights_off["phase"] = "Lights Off"
+
+        # calculate anticipation score for lights_on
+        start, end = [day_length - 6, day_length - 3], day_length
+        lights_on = pd.DataFrame( anticipation_score(data, mov_variable, start, end).rename("anticipation_score") )
+        lights_on["phase"] = "Lights On"
+
+        # reset the index for both dataframes
+        lights_off_reset = lights_off.reset_index()
+        lights_on_reset = lights_on.reset_index()
+
+        # concatenate along the row axis (i.e., append the dataframes one on top of the other) then set id as index
+        anticipation_scores_df = pd.concat([lights_off_reset, lights_on_reset], axis=0).set_index("id")
+
+        # Add the metadata columns and mark them as category
+        dataset = anticipation_scores_df.join(self.meta)
+        dataset[self.meta.columns] = dataset[self.meta.columns].astype('category')
+
+
+        # BOXPLOT
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = (2*len(facet_arg), 4)
+
+        fig, ax = plt.subplots(figsize=figsize)
+
+        sns.boxplot(data=dataset, x="phase", y="anticipation_score", hue=facet_col, hue_order=facet_arg, palette=self.palette, ax=ax)
+        #sns.swarmplot(data=dataset, x="phase", y="anticipation_score", hue=facet_col, size=8, alpha=0.5, edgecolor='black', linewidth=1, palette=self.palette, ax=ax)
+
+        if grids: plt.grid(axis='y')
+        plt.title(title)
+        plt.tight_layout()
+
+        # The score is in %
+        plt.ylim(0,100)
+
+        # reorder dataframe for stats output
+        if facet_col: dataset = dataset.sort_values(facet_col)
+
+        return fig, dataset
+
 
 class behavpy_plotly(behavpy_draw):
     """
-    default plotly wrapper around behavpy_core
+    plotly wrapper around behavpy_core
     """
 
     _canvas = 'plotly'
@@ -1348,7 +1454,38 @@ class behavpy_plotly(behavpy_draw):
         return fig, stats_df
 
     def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False):
+        """
+        Plots the anticipatory activity score and returns a DataFrame containing the data.
 
+        The anticipation score is the ratio of the final 3 hours of activity compared to the total 6 hours of activity prior to lights on/off.
+
+        Parameters
+        ----------
+        mov_variable : str, default 'moving'
+            Column name for the moving activity.
+        facet_col : str, optional
+            Column name to be used to group the data into separate box plots.
+        facet_arg : list, optional
+            List of arguments for grouping by facet_col.
+        facet_labels : list, optional
+            List of labels corresponding to facet_arg. 
+        day_length : int, default 24
+            The duration of a full day cycle.
+        lights_off : int, default 12
+            The time when lights are turned off.
+        title : str, optional
+            The title for the plot.
+        grids : bool, default False
+            Whether to display grid lines on the plot.
+
+        Returns
+        -------
+        fig : plotly.graph_objs._figure.Figure
+            The figure object of the plot.
+        stats_df : pandas.DataFrame
+            DataFrame containing the anticipatory phase scores.
+
+        """        
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
         d_list = []
