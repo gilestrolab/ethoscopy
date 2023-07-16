@@ -245,6 +245,21 @@ class behavpy_core(pd.DataFrame):
         self.meta = self.meta[self.meta.index.isin(new_index_list)]
         return self
 
+    def export(self):
+        """
+        Merges the current DataFrame with the metadata and converts the metadata columns to type 'category'. 
+        
+        Returns
+        -------
+        pandas.DataFrame
+            The DataFrame with all metadata columns as type 'category'.
+        """
+        data = self.join(self.meta)
+        data[self.meta.columns] = data[self.meta.columns].astype('category')
+
+        return data
+
+
     def t_filter(self, end_time = None, start_time = 0, t_column = 't'):
         """
         Filters the data to only be inbetween the provided start and end points
