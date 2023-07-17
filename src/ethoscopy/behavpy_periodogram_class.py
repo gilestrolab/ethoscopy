@@ -335,7 +335,7 @@ class behavpy_periodogram(behavpy):
             if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
                 col = 'grey'
 
-            upper, trace, lower, _ = self._plot_line(df = data, column = 'power', name = name, marker_col = col, t_col = 'period')
+            upper, trace, lower, _, _, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = 'power', avg_win = False, wrap = False, day_len = False, light_off = False, t_col = 'period')
             fig.add_trace(upper)
             fig.add_trace(trace) 
             fig.add_trace(lower)

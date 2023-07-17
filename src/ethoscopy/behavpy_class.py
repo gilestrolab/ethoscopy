@@ -1248,17 +1248,23 @@ class behavpy(pd.DataFrame):
         if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
             col = 'grey'
 
-        rolling_col = data.groupby(data.index, sort = False)[var].rolling(avg_win, min_periods = 1).mean().reset_index(level = 0, drop = True)
-        data['rolling'] = rolling_col.to_numpy()
-        # removing dropna to speed it up
-        # data = data.dropna(subset = ['rolling'])
+        if avg_win  != False:
+            rolling_col = data.groupby(data.index, sort = False)[var].rolling(avg_win, min_periods = 1).mean().reset_index(level = 0, drop = True)
+            data['rolling'] = rolling_col.to_numpy()
+            # removing dropna to speed it up
+            # data = data.dropna(subset = ['rolling'])
+        else:
+            data = data.rename(columns={var: 'rolling'})
 
-        if wrap is True:
-            data[t_col] = data[t_col] % (60*60*day_len)
-        data[t_col] = data[t_col] / (60*60)
+        if day_len != False:
+            if wrap is True:
+                data[t_col] = data[t_col] % (60*60*day_len)
+            data[t_col] = data[t_col] / (60*60)
 
-        t_min = int(light_off * floor(data[t_col].min() / light_off))
-        t_max = int(12 * ceil(data[t_col].max() / 12)) 
+            t_min = int(light_off * floor(data[t_col].min() / light_off))
+            t_max = int(12 * ceil(data[t_col].max() / 12)) 
+        else:
+            t_min, t_max = None, None
 
         # Not using bootstrapping here as it takes too much time
         gb_df = data.groupby(t_col).agg(**{
@@ -1271,7 +1277,7 @@ class behavpy(pd.DataFrame):
         gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
         gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
 
-        upper, trace, lower, maxV = data._plot_line(df = gb_df, x_col = 't', name = name, marker_col = col)
+        upper, trace, lower, maxV = data._plot_line(df = gb_df, x_col = t_col, name = name, marker_col = col)
 
         return upper, trace, lower, maxV, t_min, t_max
 
