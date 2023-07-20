@@ -2145,14 +2145,14 @@ class behavpy(pd.DataFrame):
 
         return fig, stats_df
 
-    def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', x_position = 'x', time_col = 't'):
+    def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', x_position = 'x', t_column = 't'):
         """ A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food
         Params:
         @food_postion = string, must be either "outside" or "inside". This signifies the postion of the food in relation to the center of the arena
         @dist_from_food = float, the distance measured between 0-1, as the x coordinate in the ethoscope, that you classify as being near the food, default 0.05
         @micro_mov = string, the name of the column that contains the data for whether micromovements occurs, True/False
         @x_position = string, the name of the column that contains the x postion
-        @time_col = string, the name of the column that contains the time. This is so the first hour can be ignored for when the ethoscope is 
+        @t_column = string, the name of the column that contains the time. This is so the first hour can be ignored for when the ethoscope is 
         calcuting it's tracking. If set to False it will ignore this filter
 
         returns an augmented behavpy object with an addtional column 'feeding' with boolean variables
@@ -2179,8 +2179,8 @@ class behavpy(pd.DataFrame):
                 return d
             
             # ignore the first hour in case tracking is wonky and get x min and max
-            t_diff = d[time_col].iloc[1] - d[time_col].iloc[0]
-            if t_col is not False:
+            t_diff = d[t_column].iloc[1] - d[t_column].iloc[0]
+            if t_column is not False:
                 t_ignore = int(3600 / t_diff)
                 tdf = d.iloc[t_ignore:]
             else:
@@ -2197,7 +2197,7 @@ class behavpy(pd.DataFrame):
             
         ds.reset_index(inplace = True)   
         ds_meta = ds.meta
-        return etho.behavpy(ds.groupby('id', group_keys = False).apply(find_feed).set_index('id'), ds_meta)
+        return behavpy(ds.groupby('id', group_keys = False).apply(find_feed).set_index('id'), ds_meta)
 
 
     def remove_sleep_deprived(self, start_time, end_time, remove = False, sleep_column = 'asleep', t_column = 't'):
