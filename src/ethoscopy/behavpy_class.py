@@ -983,7 +983,7 @@ class behavpy_plotly(behavpy_draw):
         gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
         gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
 
-        upper, trace, lower, maxV = data._plot_line(df = gb_df, x_col = 't', name = name, marker_col = col)
+        upper, trace, lower, maxV = data._plot_line(df = gb_df, x_col = t_col, name = name, marker_col = col)
 
         return upper, trace, lower, maxV, t_min, t_max
 
