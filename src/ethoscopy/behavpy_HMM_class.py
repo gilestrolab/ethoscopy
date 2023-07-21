@@ -13,12 +13,12 @@ from colour import Color
 from scipy.stats import zscore
 from functools import partial
 
-from ethoscopy.behavpy_core import behavpy_core
+from ethoscopy.behavpy_class import behavpy_plotly, behavpy_seaborn
 from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
 # from ethoscopy.misc.bootstrap_CI import bootstrap
 from ethoscopy.misc.circadian_bars import circadian_bars
 
-class behavpy_HMM(behavpy_core):
+class behavpy_HMM(behavpy_plotly):
     """
     The behavpy_HMM class is a subclassed version of behavpy, itself a subclass of pandas. See behavpy doc strings for more information on behavpy.
 
@@ -27,7 +27,8 @@ class behavpy_HMM(behavpy_core):
     """
 
     def __init__(self, data, meta, check = False, index= None, columns=None, dtype=None, copy=True):
-        super(behavpy, self).__init__(data=data,
+        super(behavpy_plotly, self).__init__(data=data,
+                                        meta=meta,
                                         index=index,
                                         columns=columns,
                                         dtype=dtype,
