@@ -908,16 +908,21 @@ class behavpy_core(pd.DataFrame):
         return {'id': id, 't' : time, 'moving' : mov, 'previous_moving' : previous_mov, 'activity_count' : count_list, 'previous_activity_count' : previous_count_list}
 
     def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', x_position = 'x', time_col = 't'):
-        """ A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food
-        Params:
-        @food_postion = string, must be either "outside" or "inside". This signifies the postion of the food in relation to the center of the arena
-        @dist_from_food = float, the distance measured between 0-1, as the x coordinate in the ethoscope, that you classify as being near the food, default 0.05
-        @micro_mov = string, the name of the column that contains the data for whether micromovements occurs, True/False
-        @x_position = string, the name of the column that contains the x postion
-        @time_col = string, the name of the column that contains the time. This is so the first hour can be ignored for when the ethoscope is 
-        calcuting it's tracking. If set to False it will ignore this filter
+        """
+        A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food.
 
-        returns an augmented behavpy object with an addtional column 'feeding' with boolean variables
+        Params:
+            food_position (str): Position of the food in relation to the center of the arena. Must be either "outside" or "inside".
+            dist_from_food (float): Distance measured between 0-1, as the x coordinate in the ethoscope, that you classify as being near the food. Default: 0.05.
+            micro_mov (str): Name of the column that contains the data for whether micromovements occur (True/False).
+            x_position (str): Name of the column that contains the x position.
+            time_col (str): Name of the column that contains the time. This is used to ignore the first hour when calculating tracking. If set to False, this filter is ignored.
+
+        Returns:
+            behavpy object: Augmented behavpy object with an additional column 'feeding' containing boolean variables.
+        
+        Raises:
+            ValueError: If the argument for food_position is not 'outside' or 'inside'.
         """
         if food_position != 'outside' and food_position != 'inside':
             raise ValueError("Argument for food_position must be 'outside' or 'inside'")
@@ -950,11 +955,11 @@ class behavpy_core(pd.DataFrame):
             x_min = tdf[x_position].min()
             x_max = tdf[x_position].max()
             
-            # if the fly is near to the food and mirco moving, then they are assumed to be feeding
+            # if the fly is near to the food and micro moving, then they are assumed to be feeding
             if food_position == 'outside':
                 d['feeding'] = np.where((d[x_position] < x_min+dist_from_food) & (d[micro_mov] == True), True, False)
             elif food_position == 'inside':
-                d['feeding'] = np.where((d[x_position] > x_max-dist_from_foodo) & (d[micro_mov] == True), True, False)
+                d['feeding'] = np.where((d[x_position] > x_max-dist_from_food) & (d[micro_mov] == True), True, False)
             return d
             
         ds.reset_index(inplace = True)   
@@ -963,16 +968,24 @@ class behavpy_core(pd.DataFrame):
 
 
     def remove_sleep_deprived(self, start_time, end_time, remove = False, sleep_column = 'asleep', t_column = 't'):
-        """ Removes specimens that during a period of sleep deprivation are asleep a certain percentage of the period
-        Params:
-        @start_time = int, the time in seconds that the period of sleep deprivation begins
-        @end_time = int, the time in seconds that the period of sleep deprivation ends
-        @remove = int or bool, an int >= 0 or < 1 that is the percentage of sleep allowed during the period without being removed.
-        The default is False, which will return a new groupby pandas df with the asleep percentages per specimen
-        @sleep_column = string, the name of the column that contains the data of whether the specimen is asleep or not
-        @t_column = string, the name of the column that contains the time
+        """
+        Removes specimens that, during a period of sleep deprivation, are asleep a certain percentage of the period.
 
-        returns if remove is not False an augmented behavpy df with specimens removed that are not sleep deprived enough. See remove for the alternative.
+        Params:
+            start_time (int): The time in seconds that the period of sleep deprivation begins.
+            end_time (int): The time in seconds that the period of sleep deprivation ends.
+            remove (int or bool): An int >= 0 or < 1 that represents the percentage of sleep allowed during the period without being removed. 
+                If False, a new groupby pandas DataFrame with the asleep percentages per specimen is returned. Default: False.
+            sleep_column (str): The name of the column that contains the data indicating whether the specimen is asleep or not.
+            t_column (str): The name of the column that contains the time.
+
+        Returns:
+            If remove is not False, an augmented behavpy DataFrame with specimens removed that are not sleep deprived enough. 
+            If remove is False, a new groupby pandas DataFrame with the asleep percentages per specimen is returned.
+
+        Raises:
+            KeyError: If the start_time is greater than the end_time or if the start_time is less than zero.
+            ValueError: If remove is not False and is not a float between 0 and 1.
         """
 
         if start_time > end_time:
