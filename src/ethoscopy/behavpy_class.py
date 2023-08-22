@@ -2145,7 +2145,7 @@ class behavpy(pd.DataFrame):
 
         return fig, stats_df
 
-    def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', x_position = 'x', t_column = 't'):
+    def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', x_position = 'x', t_column = 't', check = False):
         """ A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food
         Params:
         @food_postion = string, must be either "outside" or "inside". This signifies the postion of the food in relation to the center of the arena
@@ -2179,8 +2179,8 @@ class behavpy(pd.DataFrame):
                 return d
             
             # ignore the first hour in case tracking is wonky and get x min and max
-            t_diff = d[t_column].iloc[1] - d[t_column].iloc[0]
-            if t_column is not False:
+            if check == True:
+                t_diff = d[t_column].iloc[1] - d[t_column].iloc[0]
                 t_ignore = int(3600 / t_diff)
                 tdf = d.iloc[t_ignore:]
             else:
@@ -2192,7 +2192,7 @@ class behavpy(pd.DataFrame):
             if food_position == 'outside':
                 d['feeding'] = np.where((d[x_position] < x_min+dist_from_food) & (d[micro_mov] == True), True, False)
             elif food_position == 'inside':
-                d['feeding'] = np.where((d[x_position] > x_max-dist_from_foodo) & (d[micro_mov] == True), True, False)
+                d['feeding'] = np.where((d[x_position] > x_max-dist_from_food) & (d[micro_mov] == True), True, False)
             return d
             
         ds.reset_index(inplace = True)   
@@ -2245,6 +2245,80 @@ class behavpy(pd.DataFrame):
         else:
             remove_ids = gb[gb['Percent Asleep'] > remove].index.tolist()
             return df.remove('id', remove_ids)
+
+    @staticmethod
+    def _time_alive(df, name, repeat = False):
+        """ Method to call to the function that finds the amount of time a specimen has survived.
+        If repeat is True then the function will look for a column in the metadata called 'repeat'
+        and use it to sub filter the dataframe. 
+        """
+
+        def _wrapped_time_alive(df, name):
+            """ The wrapped method called by _time_alive. This function finds the max and min time per specimen and creates an aranged list
+            per hour. These are then stacked and divided by the max to find the percentage alive at a given hour.
+            The returned data frame is formatted for use with dataframe plotters such as Seaborne and Plotly express.
+            """
+            gb = df.groupby(df.index).agg(**{
+                'tmin' : ('t', 'min'),
+                'tmax' : ('t', 'max')
+                })
+            gb['time_alive'] = round(((gb['tmax'] - gb['tmin']) / 86400) * 24)
+            gb.drop(columns = ['tmax', 'tmin'], inplace = True)   
+            
+            m = int(gb['time_alive'].max())
+            cols = []
+            for k, v in gb.to_dict()['time_alive'].items():
+                y = np.repeat(1, v)
+                cols.append(np.pad(y, (0, m - len(y))))
+
+            col = np.vstack(cols).sum(axis = 0)
+            col = (col / np.max(col)) * 100
+            return pd.DataFrame(data = {'hour' : range(0, len(col)), 'survived' : col, 'label' : [name] * len(col)})
+
+        if repeat is False:
+            return wrapped_time_alive(df, name)
+        else:
+            tmp = pd.DataFrame()
+            for rep in set(df.meta[repeat].tolist()):
+                tdf = df.xmv(repeat, rep)
+                tmp = pd.concat([tmp, _wrapped_time_alive(tdf, name)])
+            return tmp
+
+    def survival_plot(self, facet_col = None, facet_arg = None, facet_labels = None, repeat = False, title = ''):
+        """
+        Currently only returns a data frame that can be used with seaborn to plot whilst we go through the changes
+        Args:
+            facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. Default is None.
+            facet_labels (list, optional): The labels to use for faceting. Default is None.
+            repeat (bool/str, optional): If False the function won't look for a repeat column. If wanted the user should change the argument to the column in the metadata that contains repeat information. Default is False
+            title (str, optional): The title of the plot. Default is an empty string.
+        
+        returns:
+            A Pandas DataFrame with columns hour, survived, and label. It is formatted to fit a Seaborn plot
+
+        """
+
+        if repeat is True:
+            if repeat not in self.meta.columns:
+                raise KeyError(f'Column "{facet_tile}" is not a metadata column, please check and add if you want repeat data')
+
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+
+        sur = pd.DataFrame()
+        for data, name in zip(d_list, facet_labels):
+            sur = pd.concat([sur, self._time_alive(data, name, repeat = repeat)])
+
+        return sur
 
     def make_tile(self, facet_tile, plot_fun, rows = None, cols = None):
         """ A wrapper to take any behavpy plot and create a tile plot
