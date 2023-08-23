@@ -41,20 +41,26 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
     """
     if split != False:
         if max_y > 0.2:
-            y_size1 = -max_y/20
+            y_size1 = -(max_y/20)
             y_size2 = 0
+            offset = -0.75
+
         if max_y <= 0.2:
             y_size1 = 0
             y_size2 = max_y/15   
+            offset = 0.001
+
     else:
         if max_y > 0.2:
-            y_size1 = -max_y/40
-            y_size2 = 0
+            y_size1 = -(max_y/40)
             split = 1
+            offset = -0.15
         elif max_y <= 0.2:
             y_size1 = 0
             y_size2 = max_y/10   
             split = 1
+            offset = 0.005
+
 
     if lights_off < 1 or lights_off > day_length:
         warnings.warn(f"The argument for lights_off must be between 1 and {day_length}")
@@ -69,7 +75,10 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
         used_range = fancy_range(t_min, t_max, (lights_off, day_length-lights_off))
 
     if canvas == 'seaborn':
-        return used_range
+        size = y_size1 * -1
+        if y_size1 == 0:
+            size = y_size2 / 8
+        return used_range, size, offset
 
     for i, bars in enumerate(used_range):
         for c in range(split):

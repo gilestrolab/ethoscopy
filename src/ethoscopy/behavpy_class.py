@@ -107,6 +107,40 @@ class behavpy_draw(behavpy_core):
 
         return start_colours, end_colours
 
+    @staticmethod
+    def _time_alive(df, facet_col, repeat = False, t_column = 't'):
+        """ Method to call to the function that finds the amount of time a specimen has survived.
+        If repeat is True then the function will look for a column in the metadata called 'repeat'
+        and use it to sub filter the dataframe. 
+        """
+
+        def _wrapped_time_alive(df, name, t_column = 't'):
+            """ The wrapped method called by _time_alive. This function finds the max and min time per specimen and creates an aranged list
+            per hour. These are then stacked and divided by the max to find the percentage alive at a given hour.
+            The returned data frame is formatted for use with dataframe plotters such as Seaborne and Plotly express.
+            """
+            gb = df.groupby(df.index).agg(**{
+                'tmin' : (t_column, 'min'),
+                'tmax' : (t_column, 'max')
+                })
+            gb['time_alive'] = round(((gb['tmax'] - gb['tmin']) / 86400) * 24)
+            gb.drop(columns = ['tmax', 'tmin'], inplace = True)   
+            
+            m = int(gb['time_alive'].max())
+            cols = []
+            for k, v in gb.to_dict()['time_alive'].items():
+                y = np.repeat(1, v)
+                cols.append(np.pad(y, (0, m - len(y))))
+
+            col = np.vstack(cols).sum(axis = 0)
+            col = (col / np.max(col)) * 100
+            return pd.DataFrame(data = {'hour' : range(0, len(col)), 'survived' : col, 'label' : [name] * len(col)})
+        name = df[facet_col].tolist()[0]
+        if repeat is False:
+            return _wrapped_time_alive(df, name)
+        else:
+            return df.groupby(repeat).apply(partial(_wrapped_time_alive, name = name))
+
 
 class behavpy_seaborn(behavpy_draw):
 
@@ -168,7 +202,7 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig
 
-    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't', figsize = (0,0)):
+    def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, facet_tile = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't', figsize = (0,0)):
         """
         Plots a line hypnogram using seaborn, displaying rolling averages of a chosen variable over time.
         Optionally, the plot can be wrapped and faceted.
@@ -204,8 +238,10 @@ class behavpy_seaborn(behavpy_draw):
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
         # takes subset of data if requested
+        if facet_col and facet_arg and facet_tile:
+            data = self.xmv(facet_col, facet_arg).merge(self.meta[[facet_col, facet_tile]], left_index=True, right_index=True)
         if facet_col and facet_arg:
-            data = self.xmv(facet_col, facet_arg).merge(self.meta, left_index=True, right_index=True)
+            data = self.xmv(facet_col, facet_arg).merge(self.meta[[facet_col]], left_index=True, right_index=True)
         else:
             data = self.copy(deep=True)
 
@@ -233,12 +269,15 @@ class behavpy_seaborn(behavpy_draw):
         fig, ax = plt.subplots(figsize=figsize)
 
         sns.lineplot(data, x='t', y='rolling', errorbar=self.error, hue=facet_col, hue_order=facet_arg, ax=ax, palette=self.palette)
+        # sns.relplot(data, x='t', y='rolling', errorbar=self.error, hue=facet_col, hue_order=facet_arg, palette=self.palette, kind = 'line', row = facet_tile)
 
         #Customise legend values
         handles, _ = ax.get_legend_handles_labels()
         ax.legend(handles=handles, labels=facet_labels)
 
-        plt.ylim(0, 1)
+        yr, dt =  self._check_boolean(data[variable].tolist())
+        if yr == [-0.025, 1.01]:
+            plt.ylim(0, 1.01)
         plt.xlim(t_min, t_max)
 
         plt.xticks(ticks=x_ticks, labels=x_ticks, rotation=0)
@@ -250,10 +289,9 @@ class behavpy_seaborn(behavpy_draw):
         if grids:
             plt.grid(axis='y')
 
-        thickness = -0.04
-        offset = -0.15 #negative means below the figure
         # For every 24 hours, draw a rectangle from 0-12 (daytime) and another from 12-24 (nighttime)
-        for i in circadian_bars(t_min, t_max, max_y = 0, day_length = day_length, lights_off = lights_off, canvas = 'seaborn'):
+        bar_range, thickness, offset = circadian_bars(t_min, t_max, max_y = data[variable].max(), day_length = day_length, lights_off = lights_off, canvas = 'seaborn')
+        for i in bar_range:
             # Daytime patch
             if i % day_length == 0:
                 ax.add_patch(mpatches.Rectangle((i, offset), lights_off, thickness, color='black', alpha=0.4, clip_on=False, fill=None))
@@ -296,7 +334,7 @@ class behavpy_seaborn(behavpy_draw):
 
         data_summary = {}
         for var in variable:
-            data_summary .update( {
+            data_summary.update( {
                 "%s_mean" % var : (var, 'mean'),
                 "%s_std" % var : (var, 'std')
                 } )
@@ -310,19 +348,18 @@ class behavpy_seaborn(behavpy_draw):
             # apply the specified operation and add the specified columns from metadata
             #data = data.pivot(column = variable, function = fun).merge(data.meta.loc[:,facet_col], left_index=True, right_index=True)
             # we use the following line instead of the builtin pivot method because it allows us to calculate multiple functions
-            data = self.groupby(self.index).agg(**data_summary).merge(self.meta.loc[:,facet_col], left_index=True, right_index=True)
+            grouped_data = data.groupby(data.index).agg(**data_summary).merge(data.meta[[facet_col]], left_index=True, right_index=True)
         
-        # this possibility is actually never true because of the self._check_lists output that creates a facet_arg if facet_col exists
-        elif facet_col and not facet_arg:
-            data = self.groupby(self.index).agg(**data_summary).merge(self.meta.loc[:,facet_col], left_index=True, right_index=True)
+        # # this possibility is actually never true because of the self._check_lists output that creates a facet_arg if facet_col exists
+        # elif facet_col and not facet_arg:
+        #     data = self.groupby(self.index).agg(**data_summary).merge(self.meta.loc[:,facet_col], left_index=True, right_index=True)
 
         # this applies in case we want to apply the specified information to ALL the data
         else:
             #no need to merge with metadata if facet_col is not specified
             #data = self.copy(deep=True).pivot(column = variable, function = fun)
-            data = self.copy(deep=True).groupby(self.index).agg(**data_summary)
+            grouped_data = self.copy(deep=True).groupby(self.index).agg(**data_summary)
         
-
         # BOXPLOT
         fig_rows = len(variable)
         fig_cols = 1
@@ -333,6 +370,10 @@ class behavpy_seaborn(behavpy_draw):
 
         fig, axes = plt.subplots(fig_rows, fig_cols, figsize=figsize)
         
+        # map the users labels onto he old facet_arg strings
+        map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
+        grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
+
         # axes is
         #  matplotlib.axes._axes.Axes if only one subplot
         #  numpy.ndarray if multiple subplots
@@ -351,31 +392,91 @@ class behavpy_seaborn(behavpy_draw):
             if y_range: 
                 ax.set_ylim(y_range)
             #else:
-             #   plt.ylim((0,12))
+            #   plt.ylim((0,12))
 
-            sns.boxplot(data=data, x=facet_col, y=plot_column, ax=ax, palette=self.palette)
-            sns.swarmplot(data=data, x=facet_col, y=plot_column, ax=ax, size=8, hue=facet_col, alpha=0.5, edgecolor='black', linewidth=1, palette=self.palette)
+            sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, ax=ax, palette=self.palette)
+            sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, ax=ax, size=5, hue=facet_col, alpha=0.5, edgecolor='black', linewidth=1, palette=self.palette)
 
-            ax.set_xticklabels(sorted(facet_labels))
+            ax.set_xticklabels(facet_labels)
 
         #Customise legend values
-        #handles, _ = ax.get_legend_handles_labels()
-        #ax.legend(handles=handles, labels=facet_labels)
+        handles, _ = ax.get_legend_handles_labels()
+        ax.legend(handles=handles, labels=facet_labels)
 
         if grids: plt.grid(axis='y')
         plt.title(title)
         plt.tight_layout()
 
         # reorder dataframe for stats output
-        if facet_col: data = data.sort_values(facet_col)
+        if facet_col: 
+            grouped_data = grouped_data.sort_values(facet_col)
 
-        return fig, data
+        return fig, grouped_data
 
     def plot_compare_variables(variables, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False, figsize = (0,0)):
         """
         Just an alias for plot_quantify that we use for retrocompatibility with the plotly class
         """
         return self.plot_quanitfy(variables, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False, figsize = (0,0))
+
+    def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize = (0,0)):
+        """
+        """
+        if response_col not in self.columns.tolist():
+            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with puff_mago')
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        plot_column = f'{response_col}_mean'
+
+        data_summary = {
+            "%s_mean" % response_col : (response_col, 'mean'),
+            "%s_std" % response_col : (response_col, 'std'),
+            }
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            # takes subselection of df that contains the specified facet columns
+            data = self.xmv(facet_col, facet_arg)
+            # apply the specified operation and add the specified columns from metadata
+            grouped_data = data.groupby([data.index, 'has_interacted']).agg(**data_summary).reset_index(level = 1).merge(self.meta[[facet_col]], left_index=True, right_index=True)
+            grouped_data[facet_col] = grouped_data[facet_col].astype('category')
+
+        # this applies in case we want to apply the specified information to ALL the data
+        else:
+            grouped_data = self.groupby([self.index, 'has_interacted']).agg(**data_summary).copy(deep=True)
+
+        # BOXPLOT
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = (3*len(facet_arg), 4)
+
+        fig, ax = plt.subplots(figsize=figsize)
+
+        plt.ylim(0, 1.03)
+        map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov'}
+        grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
+
+        sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'])
+        sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'], dodge = True)
+
+        ax.set_xticklabels(facet_labels)
+
+        #Customise legend values
+        handles, _ = ax.get_legend_handles_labels()
+        ax.legend(handles=handles, labels=["Spon. Mov", "True Stimulus"])
+
+        plt.title(title)
+        if grids: plt.grid(axis='y')
+
+        # reorder dataframe for stats output
+        if facet_col: 
+            grouped_data = grouped_data.sort_values(facet_col)
+
+        return fig, grouped_data
+
+
+        return data
 
     def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, figsize=(0,0)):
         """
@@ -413,38 +514,40 @@ class behavpy_seaborn(behavpy_draw):
         data.add_day_phase(day_length = day_length, lights_off = lights_off)
 
         # Do the groupby operation on the entire dataframe and calculate mean and std on the given variable
-        grouped_data = data.groupby([data.index, 'phase']).agg(**data_summary)
+        # grouped_data = data.groupby([data.index, 'phase']).agg(**data_summary)
 
         # Reset the index to bring 'phase' back as a column
-        grouped_data = grouped_data.reset_index()
+        # grouped_data = grouped_data.reset_index()
 
-        # Ensure 'phase' column is categorical for efficient memory usage
-        grouped_data['phase'] = grouped_data['phase'].astype('category')
+        # Ensure 'phase' column is categorical for efficient memory usage - It already is categorical from the method
+        # grouped_data['phase'] = grouped_data['phase'].astype('category')
 
         # takes subset of data if requested
         if facet_col and facet_arg:
             # Add the specified columns from metadata
-            data = grouped_data.merge(data.meta.loc[:,facet_col], left_on='id', right_index=True)
+            data = data.xmv(facet_col, facet_arg)
+            grouped_data = data.groupby([data.index, 'phase']).agg(**data_summary).reset_index(level = 1).merge(data.meta[[facet_col]], left_index=True, right_index=True).reset_index()
         else:
-            data = grouped_data
-
+            grouped_data = data.groupby([data.index, 'phase']).agg(**data_summary).reset_index()
+        # ^^ for some reason to make the swarm plot work you have to have no personalised index
 
         # BOXPLOT
         # (0,0) means automatic size
         if figsize == (0,0):
-            figsize = (2*len(facet_arg), 4)
+            figsize = (4*len(facet_arg), 4)
 
         fig, ax = plt.subplots(figsize=figsize)
 
         y_range, dtick = self._check_boolean(list(self[variable]))
         plt.ylim(y_range)
 
-        sns.boxplot(data=data, x="phase", y=plot_column, hue=facet_col, hue_order=facet_arg, ax=ax, palette="Paired", order=["light", "dark"])
-        #sns.swarmplot(data=data, x="phase", y=plot_column, hue=facet_col, ax=ax, size=8, alpha=0.5, edgecolor='black', linewidth=1, palette=self.palette)
+        map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
+        grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
 
-        #ax.set_xticklabels(sorted(facet_labels))
+        sns.boxplot(data=grouped_data, x="phase", y=plot_column, hue=facet_col, hue_order=facet_labels, ax=ax, palette="Paired")
+        sns.swarmplot(data=grouped_data, x="phase", y=plot_column, hue=facet_col, hue_order=facet_labels, ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette="Paired", dodge = True)
 
-        #Customise legend values
+        # Customise legend values
         handles, _ = ax.get_legend_handles_labels()
         ax.legend(handles=handles, labels=facet_labels)
 
@@ -452,7 +555,8 @@ class behavpy_seaborn(behavpy_draw):
         if grids: plt.grid(axis='y')
 
         # reorder dataframe for stats output
-        if facet_col: data = data.sort_values(facet_col)
+        if facet_col: 
+            grouped_data = grouped_data.sort_values(facet_col)
 
         return fig, data
 
@@ -589,6 +693,85 @@ class behavpy_seaborn(behavpy_draw):
         else:
 
             return _plot_single_actogram(data, figsize, days, title, day_length)
+
+    def survival_plot(self, facet_col = None, facet_arg = None, facet_labels = None, repeat = False, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't', figsize=(0,0)):
+        """
+        Currently only returns a data frame that can be used with seaborn to plot whilst we go through the changes
+        Args:
+            facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. Default is None.
+            facet_labels (list, optional): The labels to use for faceting. Default is None.
+            repeat (bool/str, optional): If False the function won't look for a repeat column. If wanted the user should change the argument to the column in the metadata that contains repeat information. Default is False
+            day_length (int, optional): The length of the day in hours for wrapping. Default is 24.
+            lights_off (int, optional): The time of "lights off" in hours. Default is 12.
+            title (str, optional): The title of the plot. Default is an empty string.
+            grids (bool, optional): If True, horizontal grid lines will be displayed on the plot. Default is False.
+            t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
+            figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+        
+        returns:
+            A Pandas DataFrame with columns hour, survived, and label. It is formatted to fit a Seaborn plot
+
+        """
+
+        if repeat is True:
+            if repeat not in self.meta.columns:
+                raise KeyError(f'Column "{repeat}" is not a metadata column, please check and add if you want repeat data')
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg and repeat:
+            data = self.xmv(facet_col, facet_arg).merge(self.meta[[facet_col, repeat]], left_index=True, right_index=True)
+        elif facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg).merge(self.meta[[facet_col]], left_index=True, right_index=True)
+        else:
+            data = self.copy(deep=True)
+
+        sur_df = data.groupby(facet_col, group_keys = False).apply(partial(self._time_alive, facet_col = facet_col, repeat = repeat, t_column = t_column))
+
+        x_ticks = np.arange(0, sur_df['hour'].max() + day_length, day_length)
+
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = ( 6 + 1/4 * len(x_ticks), 
+                        4 + 1/32 * len(x_ticks) 
+                        )
+
+        fig, ax = plt.subplots(figsize=figsize)
+
+        # sns.set_style("ticks")
+        sns.lineplot(data = sur_df, x = "hour", y = "survived", errorbar = self.error, hue = 'label', hue_order = facet_arg, ax=ax, palette = self.palette) # add a style option too to differentiate multiple controls from exp
+
+
+        # x_major_locator=MultipleLocator(day_length) 
+        # ax=plt.gca() #ax is an instance of two coordinate axes
+        # ax.xaxis.set_major_locator(x_major_locator) #Set the main scale of the x-axis to a multiple of 1
+
+        plt.ylim(0, 105)
+        plt.xlim(np.min(x_ticks), np.max(x_ticks))
+        plt.xticks(ticks=x_ticks, labels=x_ticks, rotation=0)
+
+        plt.ylabel("Survival (%)")
+        plt.xlabel("ZT (Hours)")
+
+        plt.title(title)
+
+        if grids:
+            plt.grid(axis='y')
+
+        thickness = 1.8
+        offset = -2.5 #negative means below the figure
+        # For every 24 hours, draw a rectangle from 0-12 (daytime) and another from 12-24 (nighttime)
+        for i in circadian_bars(0, sur_df['hour'].max(), max_y = 0, day_length = day_length, lights_off = lights_off, canvas = 'seaborn'):
+            # Daytime patch
+            if i % day_length == 0:
+                ax.add_patch(mpatches.Rectangle((i, offset), lights_off, thickness, color='black', alpha=0.4, clip_on=False, fill=None))
+            else:
+                # Nighttime patch
+                ax.add_patch(mpatches.Rectangle((i, offset), day_length-lights_off, thickness, color='black', alpha=0.8, clip_on=False))
+
+        return fig
 
     def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, figsize=(0,0)):
         """
@@ -1874,7 +2057,7 @@ class behavpy_plotly(behavpy_draw):
         @response_col = string, the name of the column in the data with the response per interaction, column data should be in boolean form
         @facet_col = string, the name of the column in the metadata you wish to filter the data by
         @facet_arg = list, if not None then a list of items from the column given in facet_col that you wish to be plotted
-        @facet_arg = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items are used
+        @facet_labels = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items names are used
 
         returns a plotly figure object
         """
@@ -1936,7 +2119,7 @@ class behavpy_plotly(behavpy_draw):
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
         return fig, stats_df
-        
+
     def make_tile(self, facet_tile, plot_fun, rows = None, cols = None):
         """ A wrapper to take any behavpy plot and create a tile plot
         Params:

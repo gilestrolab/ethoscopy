@@ -148,7 +148,7 @@ class behavpy_core(pd.DataFrame):
     @staticmethod
     def _check_boolean(lst):
         if np.nanmax(lst) == 1 and np.nanmin(lst) == 0:
-            y_range = [-0.025, 1.01]
+            y_range = [-0.025, 1.03]
             dtick = 0.2
         else:
             y_range = False
