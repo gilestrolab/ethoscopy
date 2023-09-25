@@ -44,6 +44,7 @@ def max_velocity_detector(data,
 
     dt['deltaT'] = dt.t.diff()
     dt['dist'] = 10 ** (dt.xy_dist_log10x1000 / 1000)
+    # in rethomics it was v = dist / deltaT and then vc = v * (deltaT / vcoef), subrating in the first equation ablates the deltaT leavinf vc = dist / vcoef
     dt['velocity'] = dt.dist / velocity_correction_coef
 
     dt['beam_cross'] = abs(np.sign(0.5 - dt['x']).diff())
