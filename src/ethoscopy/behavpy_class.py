@@ -2129,16 +2129,16 @@ class behavpy(pd.DataFrame):
                 stats_dict[f'{name}_{q}'] = zlist
 
                 if q == 1:
-                    col = col
+                    qcol = col
                     lab = name
-                else:
-                    col = 'grey'
+                elif q == 2:
+                    qcol = 'grey'
                     lab = f'{name} Spon. Mov'
 
                 fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
-                x = [lab], colour =  col, showlegend = False, name = lab, xaxis = 'x'))
+                x = [lab], colour =  qcol, showlegend = False, name = lab, xaxis = 'x'))
 
-                fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [lab], colour = col, 
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [lab], colour = qcol, 
                 showlegend = False, name = lab, xaxis = 'x'))
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
