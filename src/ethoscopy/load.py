@@ -8,7 +8,7 @@ import errno
 import time 
 import sqlite3
 from sys import exit
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PurePath
 from functools import partial
 from urllib.parse import urlparse
 
@@ -215,8 +215,8 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
             t = stop - start
             times.append(t)
 
-def link_meta_index(metadata, remote_dir, local_dir):
-    """ A function to alter the provided metadata file with the path locations of downloaded .db files from the Ethscope experimental system. The function will check all unique machines against the orginal ftp server 
+def link_meta_index(metadata, local_dir):
+    """ A function to alter the provided metadata file with the path locations of downloaded .db files from the Ethoscope experimental system. The function will check all unique machines against the orginal ftp server 
         for any errors. Errors will be ommitted from the returned metadata table without warning
 
         Params:
@@ -240,7 +240,7 @@ def link_meta_index(metadata, remote_dir, local_dir):
 
     if len(meta_df[meta_df.isna().any(axis=1)]) >= 1:
         print(meta_df[meta_df.isna().any(axis=1)])
-        warnings.warn("When the metadata is read it contains NaN values (empty cells in the csv file can cause this!), please replace with an alterative")
+        warnings.warn("When the metadata is read it contained NaN values (empty cells in the csv file can cause this!), please replace with an alterative")
         exit()
 
     # check and tidy df, removing un-needed columns and duplicated machine names
@@ -253,7 +253,7 @@ def link_meta_index(metadata, remote_dir, local_dir):
     # will correct to YYYY-MM-DD in a select few cases
     meta_df = validate_datetime(meta_df)
 
-    meta_df_original = meta_df.copy()
+    meta_df_original = meta_df.copy(deep = True)
 
     if 'time' in meta_df.columns.tolist():
         meta_df['check'] = meta_df['machine_name'] + meta_df['date'] + meta_df['time']
@@ -266,80 +266,56 @@ def link_meta_index(metadata, remote_dir, local_dir):
     date_list = meta_df['date'].tolist()
 
     if 'time' in meta_df.columns.tolist():
-        time_list = pd.Series(meta_df['time'].tolist())
-        bool_list = time_list.isna().tolist()
+        time_list = meta_df['time'].tolist()
     else:
         nan_list = [np.nan] * len(meta_df['date'])
-        time_list = pd.Series(nan_list)
-        bool_list = time_list.isna().tolist()
-
-    parse = urlparse(remote_dir)
-    ftp = ftplib.FTP(parse.netloc)
-    ftp.login()
-    ftp.cwd(parse.path)
-    files = ftp.nlst()
+        time_list = nan_list
 
     paths = []
-    check_list = []
-
-    for dir in files:
-        temp_path = parse.path / PurePosixPath(dir)
+    sizes = []
+    for name, date, time in zip(ethoscope_list, date_list, time_list):
         try:
-            ftp.cwd(str(temp_path))
-            directories_2 = ftp.nlst()
-            for c, name in enumerate(ethoscope_list):
-                if name in directories_2:
-                    temp_path_2 = temp_path / PurePosixPath(name)
-                    ftp.cwd(str(temp_path_2))
-                    directories_3 = ftp.nlst()
-                    for exp in directories_3:
-                        date_time = exp.split('_')
-                        if date_time[0] == date_list[c]:
-                            if bool_list[c] is False:
-                                if date_time[1] == time_list[c]:
-                                    temp_path_3 = temp_path_2 / PurePosixPath(exp)
-                                    ftp.cwd(str(temp_path_3))
-                                    directories_4 = ftp.nlst()
-                                    for db in directories_4:
-                                        if db.endswith('.db'):
-                                            size = ftp.size(db)
-                                            final_path = f'{dir}/{name}/{exp}/{db}'
-                                            path_size_list = [final_path, size]
-                                            paths.append(path_size_list)
-                                            check_list.append([name, date_time[0]])
+            if np.isnan(time):
+                regex = PurePath('*') / name / f'{date}_*' / '*.db'
+                path_lst = local_dir.glob(str(regex))
+                if len(list(path_lst)) >= 1:
+                    for p in local_dir.glob(str(regex)):
+                        paths.append(p)
+                        sizes.append(p.stat().st_size)
+                else:
+                    print(f'{name}_{date} has not been found')
+            else:
+                regex = PurePath('*') / name / f'{date}_{time}' / '*.db'
+                path_lst = local_dir.glob(str(regex))
+                if len(list(path_lst)) >= 1:
+                    for p in local_dir.glob(str(regex)):
+                        paths.append(p)
+                        sizes.append(p.stat().st_size)
 
-                            else:
-                                temp_path_3 = temp_path_2 / PurePosixPath(exp)
-                                ftp.cwd(str(temp_path_3))
-                                directories_4 = ftp.nlst()
-                                for db in directories_4:
-                                    if db.endswith('.db'):
-                                        size = ftp.size(db)
-                                        final_path = f'{dir}/{name}/{exp}/{db}'
-                                        path_size_list = [final_path, size]
-                                        paths.append(path_size_list)
-                                        check_list.append([name, date_time[0]])
-                                    
-        except:
-            continue
+                else:
+                    print(f'{name}_{date} has not been found')
+        except TypeError:
+            regex = PurePath('*') / name / f'{date}_{time}' / '*.db'
+            path_lst = local_dir.glob(str(regex))
+            if len(list(path_lst)) >= 1:
+                for p in local_dir.glob(str(regex)):
+                    paths.append(p)
+                    sizes.append(p.stat().st_size)
+            else:
+                print(f'{name}_{date} has not been found')
 
     if len(paths) == 0:
         warnings.warn("No Ethoscope data could be found, please check the metatadata file")
         exit()
-    
-    for i in zip(ethoscope_list, date_list):
-        if list(i) in check_list:
-            continue
-        else:
-            print(f'{i[0]}_{i[1]} has not been found')
 
     # split path into parts
     split_df = pd.DataFrame()
-    for path in paths:  
-        split_path = path[0].split('/')
+    for path, size in zip(paths, sizes):  
+        split_path = str(path).replace(str(local_dir), '').split(os.sep)[1:]
         split_series = pd.DataFrame(data = split_path).T 
         split_series.columns = ['machine_id', 'machine_name', 'date_time', 'file_name']
-        split_series['file_size'] = path[1]
+        split_series['path'] = str(path)
+        split_series['file_size'] = size
         split_df = pd.concat([split_df, split_series], ignore_index = True)
 
     #split the date_time column and add back to df
@@ -356,36 +332,21 @@ def link_meta_index(metadata, remote_dir, local_dir):
         drop_df = drop_df.drop_duplicates(['machine_name', 'date'])
         droplog = split_df[split_df.duplicated(subset=['machine_name', 'date'])]
         drop_list = droplog['machine_name'].tolist()
-        if len(drop_list) > 0:
+        if len(drop_list) >= 1:
             warnings.warn(f'Ethoscopes {*drop_list,} have multiple files for their day, the largest file has been kept. If you want all files for that day please add a time column')
         merge_df = meta_df_original.merge(drop_df, how = 'outer', on = ['machine_name', 'date'])
         merge_df.dropna(inplace = True)
 
-    # convert df to list and cross-reference to 'index' csv/txt to find stored paths
-    path_name = merge_df['file_name'].values.tolist()
-    
-    # intialise path_list and populate with paths from previous
-    path_list = []
-    for path in path_name:
-        for i in paths:
-            if path in i[0]:
-                path_list.append(i[0])
-
-    #join the db path name with the users directory 
-    full_path_list = []
-    parse = urlparse(remote_dir)
-
-    for j in path_list:
-        win_path = Path(j)
-        full_path = local_dir / win_path
-        full_path_list.append(str(full_path))
-    
-    #create a unique id for each row, consists of first 25 char of file_name and region_id, inserted at index 0
-    merge_df.insert(0, 'path', full_path_list)
-    merge_df['region_id'] = merge_df['region_id'].astype(int)
-    merge_df.insert(0, 'id', merge_df['file_name'].str.slice(0,26,1) + '|' + merge_df['region_id'].map('{:02d}'.format))
+    # make the id for each row
+    merge_df.insert(0, 'id', merge_df['file_name'].str.slice(0,26,1) + '|' + merge_df['region_id'].astype(int).map('{:02d}'.format))
     
     return merge_df
+
+if  __name__ == "__main__":
+    meta = '/home/lab/Desktop/ethoscopy/test/test_csv.csv' 
+    remote = 'ftp://turing.lab.gilest.ro/auto_generated_data/ethoscope_results'
+    local = '/home/lab/Desktop/data/ethoscope_results'
+    print(link_meta_index(meta, local))
 
 def load_ethoscope(metadata, min_time = 0 , max_time = float('inf'), reference_hour = None, cache = None, FUN = None, verbose = True):
     """
