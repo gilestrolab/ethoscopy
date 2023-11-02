@@ -389,7 +389,7 @@ class behavpy(pd.DataFrame):
             exit()
 
     @staticmethod
-    def _adjust_colours(colour_list):
+    def _adjust_colours(colour_list, rgb = False):
 
         def adjust_color_lighten(r,g,b, factor):
             return [round(255 - (255-r)*(1-factor)), round(255 - (255-g)*(1-factor)), round(255 - (255-b)*(1-factor))]
@@ -397,7 +397,10 @@ class behavpy(pd.DataFrame):
         start_colours = []
         end_colours = []
         for col in colour_list:
-            c = Color(col)
+            if rgb is True:
+                c = Color(rgb=col)
+            else:
+                c = Color(col)
             c_hex = c.hex
             end_colours.append(c_hex)
             r, g, b = c.rgb
@@ -1972,7 +1975,7 @@ class behavpy(pd.DataFrame):
 
         if facet_col is not None:
             
-            if activity_choice == 'both':
+            if activity == 'both':
                 start_colours, end_colours = self._adjust_colours([col[0] for col in col_list])
                 col_list = []
                 colours_dict = {'start' : start_colours, 'end' : end_colours}
@@ -1983,8 +1986,8 @@ class behavpy(pd.DataFrame):
                     col_list.append([x.hex for x in list(Color(start_color).range_to(Color(end_color), N))])
             
             else:
-                col_list = [[col] for col in self._get_colours(facet_arg)]
-                end_colours, start_colours = self._adjust_colours([col[0] for col in col_list])
+                col_list = [tuple(np.array(eval(col[3:])) / 255) for col in self._get_colours(facet_arg)]
+                end_colours, start_colours = self._adjust_colours(col_list, rgb = True)
                 col_list = [start_colours, end_colours]
 
         fig = go.Figure() 
@@ -2082,9 +2085,11 @@ class behavpy(pd.DataFrame):
         @response_col = string, the name of the column in the data with the response per interaction, column data should be in boolean form
         @facet_col = string, the name of the column in the metadata you wish to filter the data by
         @facet_arg = list, if not None then a list of items from the column given in facet_col that you wish to be plotted
-        @facet_arg = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items are used
+        @facet_labels = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items are used
+        @title = string, a title for the plotted figure
+        @grids = bool, true/false whether the resulting figure should have grids
 
-        returns a plotly figure object
+        returns a plotly figure object and a pandas Dataframe with the plotted data
         """
 
         if response_col not in self.columns.tolist():
@@ -2126,7 +2131,6 @@ class behavpy(pd.DataFrame):
                 filtered = filtered.dropna(subset = [response_col])
                 gdf = filtered.pivot(column = response_col, function = 'mean')
                 median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{response_col}_mean'].to_numpy())
-                stats_dict[f'{name}_{q}'] = zlist
 
                 if q == 1:
                     qcol = col
@@ -2134,6 +2138,8 @@ class behavpy(pd.DataFrame):
                 elif q == 2:
                     qcol = 'grey'
                     lab = f'{name} Spon. Mov'
+
+                stats_dict[lab] = zlist
 
                 fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
                 x = [lab], colour =  qcol, showlegend = False, name = lab, xaxis = 'x'))
@@ -2203,8 +2209,8 @@ class behavpy(pd.DataFrame):
     def remove_sleep_deprived(self, start_time, end_time, remove = False, sleep_column = 'asleep', t_column = 't'):
         """ Removes specimens that during a period of sleep deprivation are asleep a certain percentage of the period
         Params:
-        @start_time = int, the time in seconds that the period of sleep deprivation begins
-        @end_time = int, the time in seconds that the period of sleep deprivation ends
+        @start_time = int, the time in hours that the period of sleep deprivation begins
+        @end_time = int, the time in hours that the period of sleep deprivation ends
         @remove = int or bool, an int >= 0 or < 1 that is the percentage of sleep allowed during the period without being removed.
         The default is False, which will return a new groupby pandas df with the asleep percentages per specimen
         @sleep_column = string, the name of the column that contains the data of whether the specimen is asleep or not
@@ -2244,7 +2250,7 @@ class behavpy(pd.DataFrame):
             return gb
         else:
             remove_ids = gb[gb['Percent Asleep'] > remove].index.tolist()
-            return df.remove('id', remove_ids)
+            return gb.remove('id', remove_ids)
 
     @staticmethod
     def _time_alive(df, name, repeat = False):
