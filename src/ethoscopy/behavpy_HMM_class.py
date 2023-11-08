@@ -933,7 +933,7 @@ class behavpy_HMM(behavpy):
     def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, bin = 60, mago_df = None, func = 'max', title = ''):
         """ plots the raw dedoded hmm model per fly (total = num_plots) 
             If hmm is a list of hmm objects, the number of plots will equal the length of that list. Use this to compare hmm models.
-            If hmm_compare is True the same specimens data will be used for each plot with a different hmm """
+            """
 
         if colours is None:
             if isinstance(hmm, list):

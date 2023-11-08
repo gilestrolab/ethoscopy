@@ -144,6 +144,9 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _check_boolean(lst):
+        """
+        Checks to see if a column of data max and min is 1 and 0, so as to make a appropriately scaled y-axis
+        """
         if np.nanmax(lst) == 1 and np.nanmin(lst) == 0:
             y_range = [-0.025, 1.01]
             dtick = 0.2
@@ -256,7 +259,9 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _zscore_bootstrap(array, second_array = None, min_max = False):
-        """ calculate the z score of a given array, remove any values +- 3 SD"""
+        """ calculate the z score of a given array, remove any values +- 3 SD and then perform bootstrapping on the remaining
+        returns the mean and then several lists with the confidence intervals and z-scored values
+        """
         try:
             if len(array) == 1 or all(array == array[0]):
                 median = q3 = q1 = array[0]
@@ -1285,13 +1290,30 @@ class behavpy(pd.DataFrame):
         return upper, trace, lower, maxV, t_min, t_max
 
     def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't'):
+        """
+        A plot to view a variable of choice over an experiment of experimental day. The variable must be within the data. White and black boxes are generated to signify when lights are on and off and can be augmented.
+        Args:
+            variable (str): The name of the column you wish to plot from your data. 
+            wrapped (bool, optional): If true the data is augmented to represent one day, combining data of the same time on consequtive days.
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+            avg_window (int, optional): The number that is applied to the rolling smoothing function. The default is 180 which works best with time difference of 10 seconds between rows.
+            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+            lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+            title (str, optional): The title of the plot. Default is an empty string.
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+
+        
+        returns:
+            returns a plotly figure object
+        """
         assert isinstance(wrapped, bool)
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-        d_list = []
         if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
@@ -1336,161 +1358,26 @@ class behavpy(pd.DataFrame):
 
         return fig
 
-    def plot_overtime_tile(self, variable, facet_tile, wrapped = False, facet_col = None, facet_arg = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't'):
-        """ """
-        assert isinstance(wrapped, bool)
-
-        if facet_tile not in self.meta.columns:
-            raise KeyError(f'Column "{facet_tile}" is not a metadata column')
-
-        facet_labels = None
-
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
-        # find the unique column variables and use to split df into tiled parts
-        tile_list = list(set(self.meta[facet_tile].tolist()))
-
-        tile_df = []
-        for tile in tile_list:
-            tile_df.append(self.xmv(facet_tile, tile))
-
-        # split the tiled dfs into their facet counterparts, save their constituent parts as a nested list
-        d_list = []
-        name_list = []
-        if facet_col is not None:
-            for i, n in zip(tile_df, tile_list):
-                small_list = []
-                small_names = []
-                for arg in facet_arg:
-                    small_list.append(i.xmv(facet_col, arg))
-                    small_names.append(f'{n}-{arg}')
-                d_list.append(small_list)
-                name_list.append(small_names)
-        else:
-            d_list = tile_df
-            name_list = [str(n) for n in tile_list]
-
-        col_list = self._get_colours(d_list)
-
-        # genertate a subplot figure with a single column
-        fig = make_subplots(rows=len(tile_list), cols=1, shared_xaxes = True, subplot_titles = tile_list)
-
-        max_var = []
-        y_range, dtick = self._check_boolean(list(self[variable]))
-        if y_range is not False:
-            max_var.append(1)
-
-        min_t = []
-        max_t = []
-
-        for c, (plot, tile_name, master_col) in enumerate(zip(d_list, name_list, col_list)):
-            c = c+1
-            if facet_col is not None:
-                for facet_plot, facet_name in zip(plot, tile_name):
-                    upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = facet_plot, name = facet_name, col = master_col, 
-                                                                        var = variable, avg_win = avg_window, wrap = wrapped, 
-                                                                        day_len = day_length, light_off = lights_off, t_col = t_column)
-                    if upper is None:
-                        continue
-                    else:
-                        fig.append_trace(upper, row = c, col = 1)
-                        fig.append_trace(trace, row = c, col = 1)
-                        fig.append_trace(lower, row = c, col = 1)
-                        
-                        min_t.append(t_min)
-                        max_t.append(t_max)
-                        max_var.append(maxV)
-
-            else:
-                upper, trace, lower, maxV, t_min, t_max = self._generate_overtime_plot(data = plot, name = tile_name, col = master_col, 
-                                                                    var = variable, avg_win = avg_window, wrap = wrapped, 
-                                                                    day_len = day_length, light_off = lights_off, t_col = t_column)
-                if upper is None:
-                    continue
-                else:
-                    fig.append_trace(upper, row = c, col = 1)
-                    fig.append_trace(trace, row = c, col = 1)
-                    fig.append_trace(lower, row = c, col = 1)
-
-                    min_t.append(t_min)
-                    max_t.append(t_max)
-                    max_var.append(maxV)
-
-        fig.update_xaxes(
-            zeroline = False,
-            color = 'black',
-            linecolor = 'black',
-            gridcolor = 'black',
-            range = [np.nanmin(min_t), np.nanmax(max_t)],
-            tick0 = 0,
-            dtick = day_length/4,
-            ticks = 'outside',
-            tickwidth = 2,
-            tickfont = dict(
-                size = 18
-            ),
-            showgrid = False,
-            linewidth = 2
-        )
-
-        fig.update_yaxes(
-            zeroline = False,
-            color = 'black',
-            linecolor = 'black',
-            gridcolor = 'black',
-            tick0 = 0,
-            dtick = dtick,
-            ticks = 'outside',
-            tickwidth = 2,
-            showgrid = grids,
-            linewidth = 2
-        )
-
-        fig.add_annotation(
-                    font = {'size': 18, 'color' : 'black'},
-                    showarrow = False,
-                    text = 'ZT Time (Hours)',
-                    x = 0.5,
-                    xanchor = 'center',
-                    xref = 'paper',
-                    y = 0,
-                    yanchor = 'top',
-                    yref = 'paper',
-                    yshift = -30
-                )
-        fig.add_annotation(
-                    font = {'size': 18, 'color' : 'black'},
-                    showarrow = False,
-                    text = variable,
-                    x = 0,
-                    xanchor = 'left',
-                    xref = 'paper',
-                    y = 0.5,
-                    yanchor = 'middle',
-                    yref = 'paper',
-                    xshift =  -85,
-                    textangle =  -90
-        )
-
-        # Light-Dark annotaion bars
-        bar_shapes, min_bar = circadian_bars(np.nanmin(min_t), np.nanmax(max_t), max_y = np.nanmax(max_var), day_length = day_length, lights_off = lights_off, split = len(tile_list))
-        fig.update_layout(shapes=list(bar_shapes.values()))
-
-        fig.update_annotations(font_size=18)
-        fig['layout']['title'] = title
-        fig['layout']['plot_bgcolor'] = 'white'
-        if min_bar < 0:
-            fig.update_yaxes(range = [min_bar, np.nanmax(max_var)+0.01])
-        return fig
-
     def plot_quantify(self, variable, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False):
+        """
+        A plot that finds the average (default mean) for a given variable per specimen. The plots will show each specimens average and a box representing the mean and 95% confidence intervals.
+        Addtionally, a pandas dataframe is generated that contains the averages per specimen per group for users to perform statistics with.
+        Args:
+            variable (str): The name of the column you wish to plot from your data. 
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+            fun (str, optional): The average function that is applied to the data. Must be one of 'mean', 'median', 'count'.
+            title (str, optional): The title of the plot. Default is an empty string.
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
 
+        returns:
+            returns a plotly figure object and a pandas DataFrame
+        """
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-        d_list = []
         if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
@@ -1531,14 +1418,28 @@ class behavpy(pd.DataFrame):
 
         return fig, stats_df
 
-    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False):
+    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', day_length = 24, lights_off = 12, title = '', grids = False):
+        """
+        A plot that shows the average of a varaible split between the day (lights on) and night (lights off).
+        Addtionally, a pandas dataframe is generated that contains the averages per specimen per group for users to perform statistics with.
+        Args:
+            variable (str): The name of the column you wish to plot from your data. 
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+            fun (str, optional): The average function that is applied to the data. Must be one of 'mean', 'median', 'count'.
+            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+            lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+            title (str, optional): The title of the plot. Default is an empty string.
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
 
+        returns:
+            returns a plotly figure object and a pandas DataFrame
+        """
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-        d_list = []
         if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
@@ -1560,7 +1461,7 @@ class behavpy(pd.DataFrame):
             for c, phase in enumerate(['light', 'dark']):
                 
                 d = data[data['phase'] == phase]
-                t_gb = d.pivot(column = variable, function = 'mean')
+                t_gb = d.pivot(column = variable, function = fun)
                 median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{variable}_mean'].to_numpy())
                 stats_dict[f'{name}_{phase}'] = zlist
 
@@ -1590,10 +1491,8 @@ class behavpy(pd.DataFrame):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
         
-        d_list = []
         if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
@@ -1654,10 +1553,8 @@ class behavpy(pd.DataFrame):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-        d_list = []
         if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
@@ -1932,8 +1829,9 @@ class behavpy(pd.DataFrame):
         previous_mov = np.insert(previous_mov, 0, np.nan)
         return {'id': id, 't' : time, 'moving' : mov, 'previous_moving' : previous_mov, 'activity_count' : count_list, 'previous_activity_count' : previous_count_list}
 
-    def plot_response_overtime(self, response_df, activity = 'inactive', mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', t_column = 't', grids = False):
-        """ plot function to measure the response rate of flies to a puff of odour from a mAGO or AGO experiment over the consecutive minutes active or inactive
+    def plot_response_over_bouts(self, response_df, activity = 'inactive', mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', t_column = 't', grids = False):
+        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function puff_mago.
+        Plot function to measure the response rate of flies to a puff of odour from a mAGO or AGO experiment over the consecutive minutes active or inactive
 
         Params:
         @response_df = behavpy, behapy dataframe intially analysed by the puff_mago loading function
@@ -1952,10 +1850,8 @@ class behavpy(pd.DataFrame):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-        d_list = []
         if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
@@ -2079,7 +1975,8 @@ class behavpy(pd.DataFrame):
         return fig
 
     def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False): 
-        """ A augmented version of plot_quanitfy that looks for true and false (spontaneous movement) interactions 
+        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function puff_mago.
+        A augmented version of plot_quanitfy that looks for true and false (spontaneous movement) interactions.
         
         Params:
         @response_col = string, the name of the column in the data with the response per interaction, column data should be in boolean form
@@ -2097,10 +1994,8 @@ class behavpy(pd.DataFrame):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-        d_list = []
         if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
@@ -2114,23 +2009,18 @@ class behavpy(pd.DataFrame):
 
         stats_dict = {}
 
+        if len(set(self.has_interacted)) == 1:
+            loop_itr = list(set(self.has_interacted))
+        else:
+            loop_itr = [2, 1]
+
         for data, name, col in zip(d_list, facet_labels, col_list):
             
             if len(data) == 0:
                 print(f'Group {name} has no values and cannot be plotted')
                 continue
-            
-            if len(list(set(data.has_interacted))) == 1:
-                loop_itr = [1]
-            else:
-                loop_itr = [2, 1]
 
             for q in loop_itr:
-
-                filtered = data[data['has_interacted'] == q]
-                filtered = filtered.dropna(subset = [response_col])
-                gdf = filtered.pivot(column = response_col, function = 'mean')
-                median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{response_col}_mean'].to_numpy())
 
                 if q == 1:
                     qcol = col
@@ -2138,6 +2028,17 @@ class behavpy(pd.DataFrame):
                 elif q == 2:
                     qcol = 'grey'
                     lab = f'{name} Spon. Mov'
+
+                filtered = data[data['has_interacted'] == q]
+
+                if len(filtered) == 0:
+                    print(f'Group {lab} has no values and cannot be plotted')
+                    continue
+
+                filtered = filtered.dropna(subset = [response_col])
+                gdf = filtered.pivot(column = response_col, function = 'mean')
+                median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{response_col}_mean'].to_numpy())
+
 
                 stats_dict[lab] = zlist
 
@@ -2312,10 +2213,8 @@ class behavpy(pd.DataFrame):
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-        d_list = []
         if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
@@ -2344,9 +2243,7 @@ class behavpy(pd.DataFrame):
         # find the unique column variables and use to split df into tiled parts
         tile_list = list(set(self.meta[facet_tile].tolist()))
 
-        tile_df = []
-        for tile in tile_list:
-            tile_df.append(self.xmv(facet_tile, tile))
+        tile_df = [self.xmv(facet_tile, tile) for tile in tile_list]
 
         if rows is None:
             nrows = len(tile_list)
@@ -2414,4 +2311,283 @@ class behavpy(pd.DataFrame):
             yref = 'paper',
             yshift = -30
         )
+        return fig
+    
+    def plot_habituation(self, plot_type, bin_time = 1, num_dtick = 10, response_col =  'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, secondary = True, title = '', t_column = 't', grids = False):
+        """
+        A plotting function for AGO or mAGO datasets that have been loaded with the analysing function puff_mago. 
+        A plot to view the response rate to a puff of odour over either the hours (as binned) post the first puff or the consecutive puffs post the first puff.
+        This plot is mostly used to understand if the specimen is becoming habituated to the stimulus, it is agnostic of the time of day of the puff or the activity of the specimen.
+        Args:
+            plot_type (str): Must be either 'time' or 'number'. If time then a plot of the response rate post first puff, if number then the response rate per puff as numbered post first puff.
+            bin_time (int, optional): Only needed if plot_type is 'time'. The number of hours you want to bin the response rate to, default is 1 (hour).
+            num_dtick (int, optional): The dtick for the x-axis (the number spacing) for when plot_type 'number is chosen. Default is 10.
+            response_col (str, optional): The name of the column that contains the boolean response data.
+            int_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+            sceondary (bool, optional): If true then a secondary y-axis is added that contains either the puff cound for 'time' or percentage of flies recieving the puff in 'number'. Default is True
+            title (str, optional): The title of the plot. Default is an empty string.
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+        
+        returns:
+            returns a plotly figure objec
+        """
+
+        plot_types = ['time', 'number']
+        if plot_type not in plot_types:
+            raise KeyError(f'plot_type argument must be one of {*plot_types,}')
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        if facet_col is not None:
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+
+        if plot_type == 'time':
+            yname = 'Puff Count'
+            xname = 'Hours post first puff'
+            filtname = 'bin_time'
+        else:
+            yname = 'Percentage revieving puff'
+            xname = 'Puff number post first puff'
+            filtname = 'puff_count'
+
+        if secondary is False:
+            fig = go.Figure() 
+        else:
+            fig = make_subplots(specs=[[{ "secondary_y" : True}]])
+            self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = False, ylabel = yname, title = title, secondary = True, xdomain = 'x1', grid = grids)
+
+        y_range, dtick = self._check_boolean(list(self[response_col]))
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Response Rate', title = title, secondary = False, grid = grids)
+
+        col_list = self._get_colours(d_list)
+        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = 1, xlabel = xname)
+
+        def get_response(data, ptype, time_window_length):
+            if ptype == 'time':
+                time_window_length = time_window_length * 60 * 60
+                data['bin_time'] = data[t_column].map(lambda t: time_window_length * floor(t / time_window_length)) 
+                min_hour = data['bin_time'].min()
+                data['bin_time'] = (data['bin_time'] - min_hour) / time_window_length
+                gb = data.groupby('bin_time').agg(**{
+                            'has_responded' : (response_col, 'mean'),
+                            'puff_count' : (response_col, 'count')
+                })
+                return gb
+            elif ptype == 'number':
+                tdf = data.sort_values(t_column)
+                tdf['puff_count'] = list(range(1, len(tdf)+1))
+                return tdf[['puff_count', 'has_responded']]
+
+        max_x = []
+
+        for data, name, col in zip(d_list, facet_labels, col_list):
+
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
+            
+            if len(set(data[int_id_col])) == 1:
+                loop_itr = list(set(data[int_id_col]))
+            else:
+                loop_itr = [2, 1]
+
+            for q in loop_itr:
+
+                if q == 1:
+                    qcol = col
+                    lab = name
+                elif q == 2:
+                    qcol = 'grey'
+                    lab = f'{name} Spon. Mov'
+
+                tdf = data[data[int_id_col] == q].reset_index()
+
+                if plot_type == 'time':
+                    rdf = tdf.groupby('id', group_keys = False).apply(partial(get_response, ptype = plot_type, time_window_length = bin_time))
+                    filt_gb = rdf.groupby(filtname).agg(**{
+                            'mean' : (response_col, 'mean'),
+                            'count' : ('puff_count', 'sum'),
+                            'ci' : (response_col, bootstrap)
+                    })
+                elif plot_type == 'number':
+                    rdf = tdf.groupby('id', group_keys = False).apply(partial(get_response, ptype = plot_type, time_window_length = bin_time))
+                    filt_gb = rdf.groupby(filtname).agg(**{
+                            'mean' : (response_col, 'mean'),
+                            'count' : (response_col, 'count'),
+                            'ci' : (response_col, bootstrap)
+                    })
+
+                max_x.append(np.nanmax(filt_gb.index))
+
+                filt_gb[['y_max', 'y_min']] = pd.DataFrame(filt_gb['ci'].tolist(), index =  filt_gb.index)
+                filt_gb.drop('ci', axis = 1, inplace = True)
+                filt_gb.reset_index(inplace = True)
+                upper, trace, lower, _ = self._plot_line(df = filt_gb, x_col = filtname, name = lab, marker_col = qcol)
+                fig.add_trace(upper)
+                fig.add_trace(trace) 
+                fig.add_trace(lower)
+
+                if secondary is True:
+                    if plot_type == 'number':
+                        filt_gb['count'] = (filt_gb['count'] / np.max(filt_gb['count'])) * 100
+
+                    fig.add_trace(
+                    go.Scatter(
+                        legendgroup = lab,
+                        x = filt_gb[filtname],
+                        y = filt_gb['count'],
+                        mode = 'lines',
+                        name = f'{lab} count',
+                        line = dict(
+                            dash = 'longdashdot',
+                            shape = 'spline',
+                            color = qcol
+                            ),
+                        ),
+                    secondary_y = True
+                    )
+
+        fig['layout']['xaxis']['range'] = [0, np.nanmax(max_x)]
+        if plot_type == 'number':
+            fig['layout']['xaxis']['dtick'] = 10
+
+        return fig
+
+    def plot_response_overtime(self, bin_time = 1, wrapped = False, response_col = 'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, title = '', day_length = 24, lights_off = 12, secondary = True, t_column = 't', grids = False):
+        """
+        A plotting function for AGO or mAGO datasets that have been loaded with the analysing function puff_mago. 
+        A plot to view the response rate to a puff over the time of day. Interactions will be binned to a users input (default is 1 hour) and plotted over a ZT hours x-axis. The plot can be the full length of an experiment or wrapped to a singular day, 
+        Args:
+            bin_time (int, optional): The number of hours you want to bin the response rate to, default is 1 (hour).
+            wrapped (bool, optional): If true the data is augmented to represent one day, combining data of the same time on consequtive days.
+            num_dtick (int, optional): The dtick for the x-axis (the number spacing) for when plot_type 'number is chosen. Default is 10.
+            response_col (str, optional): The name of the column that contains the boolean response data.
+            int_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+            title (str, optional): The title of the plot. Default is an empty string.
+            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+            lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+            sceondary (bool, optional): If true then a secondary y-axis is added that contains either the puff cound for 'time' or percentage of flies recieving the puff in 'number'. Default is True
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+        
+        returns:
+            returns a plotly figure objec
+        """
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        if facet_col is not None:
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+
+        fig = make_subplots(specs=[[{ "secondary_y" : True}]])
+
+        max_var = []
+        y_range, dtick = self._check_boolean(list(self[response_col]))
+        if y_range is not False:
+            max_var.append(1)
+
+        if secondary is False:
+            fig = go.Figure() 
+        else:
+            fig = make_subplots(specs=[[{ "secondary_y" : True}]])
+            self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = False, ylabel = 'Puff Count', title = title, secondary = True, xdomain = 'x1', grid = grids)
+
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Response Rate', title = title, secondary = False, grid = grids)
+
+        col_list = self._get_colours(d_list)
+        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = day_length/4, xlabel = 'ZT (Hours)')
+
+        def get_hourly_response(data, time_window_length):
+            data['bin_time'] = data[t_column].map(lambda t: time_window_length * floor(t / time_window_length)) 
+            gb = data.groupby(['bin_time', 'has_interacted']).agg(**{
+                        'response_rate' : (response_col, 'mean'),
+                        'puff_count' : (response_col, 'count')
+
+            })
+            return gb
+
+        max_x = []
+        min_t = []
+        max_t = []
+
+        for data, name, col in zip(d_list, facet_labels, col_list):
+
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
+
+            if wrapped is True:
+                data[t_column] = data[t_column] % (60*60*day_length)
+            data[t_column] = data[t_column] / (60*60)
+                
+            min_t.append(int(lights_off * floor(data[t_column].min() / lights_off)))
+            max_t.append(int(12 * ceil(data[t_column].max() / 12)) )
+
+            if len(list(set(data.has_interacted))) == 1:
+                loop_itr = list(set(data.has_interacted))
+            else:
+                loop_itr = [2, 1]
+
+            for q in loop_itr:
+
+                if q == 1:
+                    qcol = col
+                    lab = name
+                elif q == 2:
+                    qcol = 'grey'
+                    lab = f'{name} Spon. Mov'
+                
+                tdf = data[data[int_id_col] == q].reset_index()
+                rdf = tdf.groupby('id', group_keys = False).apply(partial(get_hourly_response, time_window_length = bin_time))
+
+                filt_gb = rdf.groupby('bin_time').agg(**{
+                            'mean' : ('response_rate', 'mean'),
+                            'count' : ('puff_count', 'sum'),
+                            'ci' : ('response_rate', bootstrap)
+                })
+                filt_gb[['y_max', 'y_min']] = pd.DataFrame(filt_gb['ci'].tolist(), index =  filt_gb.index)
+                filt_gb.drop('ci', axis = 1, inplace = True)
+                filt_gb.reset_index(inplace = True)
+
+                max_x.append(np.nanmax(filt_gb['bin_time']))
+
+                upper, trace, lower, _ = self._plot_line(df = filt_gb, x_col = 'bin_time', name = lab, marker_col = qcol)
+                fig.add_trace(upper)
+                fig.add_trace(trace) 
+                fig.add_trace(lower)
+
+                if secondary is True:
+                    fig.add_trace(
+                    go.Scatter(
+                        legendgroup = lab,
+                        x = filt_gb['bin_time'],
+                        y = filt_gb['count'],
+                        mode = 'lines',
+                        name = f'{lab} count',
+                        line = dict(
+                            dash = 'longdashdot',
+                            shape = 'spline',
+                            color = qcol
+                            ),
+                        ),
+                    secondary_y = True
+                    )
+        # Light-Dark annotaion bars
+        bar_shapes, min_bar = circadian_bars(np.nanmin(min_t), np.nanmax(max_t), max_y = np.nanmax(max_var), day_length = day_length, lights_off = lights_off)
+        fig.update_layout(shapes=list(bar_shapes.values()))
+        fig['layout']['xaxis']['range'] = [1, np.nanmax(max_t)]
+
         return fig

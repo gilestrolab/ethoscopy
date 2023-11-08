@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ethoscopy"
-version = "1.2.24"
+version = "1.2.25"
 description = "A python based toolkit to download and anlyse data from the Ethoscope hardware system."
 authors = ["Blackhurst Laurence <l.blackhurst19@imperial.ac.uk>"]
 license = "GNU GPLv3"
