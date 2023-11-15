@@ -1,22 +1,17 @@
 import ftplib
 import os
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
 import pandas as pd 
 import numpy as np
 import errno
 import time 
 import sqlite3
-from sys import exit
 from pathlib import Path, PurePosixPath, PurePath
 from functools import partial
 from urllib.parse import urlparse
 
 from ethoscopy.misc.validate_datetime import validate_datetime
-from ethoscopy.misc.format_warning import format_warning
 
 pd.options.mode.chained_assignment = None
-warnings.formatwarning = format_warning
 
 def download_from_remote_dir(meta, remote_dir, local_dir):
     """ 
@@ -24,12 +19,12 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
     remote FTP server and saved as .db files, see the Ethoscope manual for how to setup a node correctly
     https://www.notion.so/giorgiogilestro/Ethoscope-User-Manual-a9739373ae9f4840aa45b277f2f0e3a7
     
-    Params:
-    @meta = csv file containing coloumns with machine_name, date, and time if multiple files on the same day
-    @remote_dir = string, containing the location of the ftp server up to the folder contain the machine id's, server must not have a username or password
-    e.g. 'ftp://YOUR_SERVER//auto_generated_data//ethoscope_results'
-    @local_dir = path of the local directory to save .db files to, files will be saved using the structure of the ftp server
-    e.g. 'C:\\Users\\YOUR_NAME\\Documents\\ethoscope_databases'
+    Args:
+        meta (str): The path to a csv file containing columns with machine_name, date, and time if multiple files on the same day
+        remote_dir (str): The url containing the location of the ftp server up to the folder contain the machine id's, server must not have a username or password
+            e.g. 'ftp://YOUR_SERVER//auto_generated_data//ethoscope_results'
+        local_dir (str): The path of the local directory to save .db files to, files will be saved using the structure of the ftp server
+            e.g. 'C:\\Users\\YOUR_NAME\\Documents\\ethoscope_databases'
 
     returns None
     """
@@ -129,8 +124,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir):
             continue
 
     if len(paths) == 0:
-        warnings.warn("No Ethoscope data could be found, please check the metadata file")
-        exit()
+        raise RuntimeError("No Ethoscope data could be found, please check the metadata file")
 
     for i in zip(ethoscope_list, date_list):
         if list(i) in check_list:
@@ -240,8 +234,7 @@ def link_meta_index(metadata, local_dir):
 
     if len(meta_df[meta_df.isna().any(axis=1)]) >= 1:
         print(meta_df[meta_df.isna().any(axis=1)])
-        warnings.warn("When the metadata is read it contained NaN values (empty cells in the csv file can cause this!), please replace with an alterative")
-        exit()
+        raise ValueError("When the metadata is read it contained NaN values (empty cells in the csv file can cause this!), please replace with an alterative")
 
     # check and tidy df, removing un-needed columns and duplicated machine names
     if 'machine_name' not in meta_df.columns or 'date' not in meta_df.columns:
@@ -305,8 +298,7 @@ def link_meta_index(metadata, local_dir):
                 print(f'{name}_{date} has not been found')
 
     if len(paths) == 0:
-        warnings.warn("No Ethoscope data could be found, please check the metatadata file")
-        exit()
+        raise RuntimeError("No Ethoscope data could be found, please check the metatadata file")
 
     # split path into parts
     split_df = pd.DataFrame()
@@ -412,7 +404,7 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
     """
 
     if min_time > max_time:
-        exit('Error: min_time is larger than max_time')
+        raise ValueError('Error: min_time is larger than max_time')
 
     if cache is not None:
         cache_name = 'cached_{}_{}_{}.pkl'.format(file['machine_id'], file['region_id'], file['date'])

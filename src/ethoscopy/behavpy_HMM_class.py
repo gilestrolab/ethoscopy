@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np 
-import warnings
 import plotly.graph_objs as go 
 from plotly.subplots import make_subplots
 import pickle
@@ -8,14 +7,12 @@ import pickle
 from tabulate import tabulate
 from hmmlearn import hmm
 from math import floor, ceil
-from sys import exit
 from colour import Color
 from scipy.stats import zscore
 from functools import partial
 
 from ethoscopy.behavpy_class import behavpy
 from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
-# from ethoscopy.misc.bootstrap_CI import bootstrap
 from ethoscopy.misc.circadian_bars import circadian_bars
 
 class behavpy_HMM(behavpy):
@@ -26,7 +23,7 @@ class behavpy_HMM(behavpy):
 
     """
 
-    def __init__(self, data, meta, check = False, index= None, columns=None, dtype=None, copy=True):
+    def __init__(self, data, meta, colour = 'Safe', long_colour = 'Dark24', check = False, index= None, columns=None, dtype=None, copy=True):
         super(behavpy, self).__init__(data=data,
                                         index=index,
                                         columns=columns,
@@ -37,6 +34,7 @@ class behavpy_HMM(behavpy):
         
         if check is True:
             self._check_conform(self)
+        self.attrs = {'short_col' : colour, 'long_col' : long_colour}
 
     _colours_four = ['darkblue', 'dodgerblue', 'red', 'darkred']
     _hmm_labels = ['Deep sleep', 'Light sleep', 'Quiet awake', 'Active awake']
@@ -99,18 +97,15 @@ class behavpy_HMM(behavpy):
             _colours = self._colours_four
         elif hm.transmat_.shape[0] != 4:
             if col is None or lab is None:
-                warnings.warn('Your trained HMM is not 4 states, please provide the lables and colours for this hmm. See doc string for more info')
-                exit()
+                raise RuntimeError('Your trained HMM is not 4 states, please provide the lables and colours for this hmm. See doc string for more info')
             elif len(col) != len(lab):
-                warnings.warn('You have more or less states than colours, please rectify so the lists are equal in length')
-                exit()
+                raise RuntimeError('You have more or less states than colours, please rectify so the lists are equal in length')
         else:
             _labels = lab
             _colours = col
 
         if len(_labels) != len(_colours):
-            warnings.warn('You have more or less states than colours, please rectify so they are equal in length')
-            exit()
+            raise RuntimeError('You have more or less states than colours, please rectify so they are equal in length')
         
         return _labels, _colours
 
@@ -122,8 +117,7 @@ class behavpy_HMM(behavpy):
         if isinstance(h, list):
             assert isinstance(b, list)
             if len(h) != len(f_arg) or len(b) != len(f_arg):
-                warnings.warn('There are not enough hmm models or bin intergers for the different groups or vice versa')
-                exit()
+                raise RuntimeError('There are not enough hmm models or bin intergers for the different groups or vice versa')
             else:
                 h_list = h
                 b_list = b
@@ -135,12 +129,11 @@ class behavpy_HMM(behavpy):
                     string_args = []
                     for i in f_arg:
                         if i not in self.meta[f_col].tolist():
-                            warnings.warn(f'Argument "{i}" is not in the meta column {f_col}')
-                            exit()
+                            raise KeyError(f'Argument "{i}" is not in the meta column {f_col}')
                         string_args.append(str(i))
                     f_lab = string_args
                 elif len(f_arg) != len(f_lab):
-                    warnings.warn("The facet labels don't match the length of the variables in the column. Using column variables instead")
+                    print("The facet labels don't match the length of the variables in the column. Using column variables instead")
                     f_lab = f_arg
             else:
                 if f_lab is None:
@@ -149,7 +142,7 @@ class behavpy_HMM(behavpy):
                         string_args.append(str(i))
                     f_lab = string_args
                 elif len(f_arg) != len(f_lab):
-                    warnings.warn("The facet labels don't match the entered facet arguments in length. Using column variables instead")
+                    print("The facet labels don't match the entered facet arguments in length. Using column variables instead")
                     f_lab = f_arg
         else:
             f_arg = [None]
@@ -214,8 +207,7 @@ class behavpy_HMM(behavpy):
         """
         
         if file_name.endswith('.pkl') is False:
-            warnings.warn('enter a file name and type (.pkl) for the hmm object to be saved under')
-            exit()
+            raise TypeError('enter a file name and type (.pkl) for the hmm object to be saved under')
 
         n_states = len(states)
         n_obs = len(observables)
@@ -337,8 +329,7 @@ class behavpy_HMM(behavpy):
         """
 
         if sleep_column not in self.columns:
-            warnings.warn(f'Column heading "{sleep_column}", is not in the data table')
-            exit()
+            raise KeyError(f'Column heading "{sleep_column}", is not in the data table')
 
         tdf = self.reset_index().copy(deep = True)
         return behavpy_HMM(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
@@ -356,12 +347,10 @@ class behavpy_HMM(behavpy):
         """
 
         if t_column not in self.columns.tolist():
-            warnings.warn('Variable name entered, {}, for t_column is not a column heading!'.format(t_column))
-            exit()
+            raise KeyError('Variable name entered, {}, for t_column is not a column heading!'.format(t_column))
         
         if mov_column not in self.columns.tolist():
-            warnings.warn('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
-            exit()
+            raise KeyError('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
 
         tdf = self.reset_index().copy(deep=True)
         return behavpy_HMM(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_curate_dead_animals,
@@ -372,14 +361,23 @@ class behavpy_HMM(behavpy):
                                                                                                             resolution = resolution
         )), tdf.meta, check = True)
 
-    def bin_time(self, column, bin_secs, t_column = 't', function = 'mean'):
+    def bin_time(self, variable, bin_secs, function = 'mean', t_column = 't'):
         """
-        Behavpy_HMM version wrapped from behavpy, see behavpy_class for doc string
+        *** Behapy_HMM version of the standard behavpy class ***
+        A method bin the time series data into a user desired sized bin and further applying a function to a single column of choice across the new bins.
+        
+        Args:
+            variable (str): The column in the data that you want to the function to be applied to post pivot
+            bin_secs (int): The amount of time (in seconds) you want in each bin in seconds, e.g. 60 would be bins for every minutes
+            function (str or user defined function): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+
+        Returns:
+            returns a behavpy object with a single data column        
         """
 
         if column not in self.columns:
-            warnings.warn('Column heading "{}", is not in the data table'.format(column))
-            exit()
+            raise KeyError('Column heading "{}", is not in the data table'.format(column))
 
         tdf = self.reset_index().copy(deep=True)
         return behavpy_HMM(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bin_data,
@@ -396,8 +394,7 @@ class behavpy_HMM(behavpy):
 
         if optional_columns is not None:
             if optional_columns not in self.columns:
-                warnings.warn('Column heading "{}", is not in the data table'.format(optional_columns))
-                exit()
+                raise KeyError('Column heading "{}", is not in the data table'.format(optional_columns))
 
         tdf = self.reset_index().copy(deep=True)
         return  behavpy_HMM(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_motion_detector,
@@ -417,11 +414,9 @@ class behavpy_HMM(behavpy):
         returns a behavpy object with added columns like 'moving' and 'asleep'
         """
         if mov_column not in self.columns.tolist():
-            warnings.warn(f'The movement column {mov_column} is not in the dataset')
-            exit()
+            raise KeyError(f'The movement column {mov_column} is not in the dataset')
         if t_column not in self.columns.tolist():
-            warnings.warn(f'The time column {t_column} is not in the dataset')
-            exit()  
+            raise KeyError(f'The time column {t_column} is not in the dataset')
 
         tdf = self.reset_index().copy(deep = True)
         return behavpy_HMM(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_sleep_contiguous,
@@ -944,8 +939,7 @@ class behavpy_HMM(behavpy):
             if states == 4:
                 colours = self._colours_four
             else:
-                warnings.warn(f'Your trained HMM is not 4 states, please provide the {h.transmat_.shape[0]} colours for this hmm. See doc string for more info')
-                exit() 
+                raise RuntimeError(f'Your trained HMM is not 4 states, please provide the {h.transmat_.shape[0]} colours for this hmm. See doc string for more info')
 
         colours_index = {c : col for c, col in enumerate(colours)}
 

@@ -35,6 +35,7 @@ def hmm_mean_length(state_array, delta_t = 60, raw = False):
     params:
     @state_array =  1D numpy array produced from a HMM decoder
     @delta_t = the time difference between each element of the array
+    @raw = If true then length of all runs of each stae are returned, rather than the mean
     """
     assert(isinstance(raw, bool))
     delta_t_mins = delta_t / 60

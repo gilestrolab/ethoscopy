@@ -1,9 +1,4 @@
 from datetime import datetime
-from sys import exit
-
-import warnings
-from ethoscopy.misc.format_warning import format_warning
-warnings.formatwarning = format_warning
 
 def validate_datetime(data):
     """ 
@@ -28,8 +23,8 @@ def validate_datetime(data):
                             date = datetime.strptime(date, '%d/%m/%Y').strftime('%Y-%m-%d')
                             new_date_list.append(date)
                     except ValueError:
-                        warnings.warn("Incorrect data format, should be YYYY-MM-DD for row: " + str(i+1))
-                        exit()
+                        raise ValueError("Incorrect data format, should be YYYY-MM-DD for row: " + str(i+1))
+
     if len(new_date_list) == 0:
         return data
     else:

@@ -1,18 +1,15 @@
 import pandas as pd
 import numpy as np 
-import warnings
 
 import plotly.graph_objs as go 
 from plotly.subplots import make_subplots
 from plotly.express.colors import qualitative
 
 from math import floor, ceil, sqrt
-from sys import exit
 from scipy.stats import zscore
 from functools import partial, update_wrapper
 from scipy.interpolate import interp1d
 from colour import Color
-from ethoscopy.misc.format_warning import format_warning
 from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
@@ -28,17 +25,18 @@ class behavpy(pd.DataFrame):
     print(df) will only print the data df, to see both use the .display() method
 
     Initialisation Parameters:
-    @data = pandas DataFrame, the experimental recorded data usually loaded by the load_ethoscope function. Must contain an id column with unique IDs per speciemn
-    and a time series column called 't' with time per recording in seconds 
-    @meta = pandas Dataframe, the metadata i.e. conditions, genotypes ect of the experiment. There should be a unique row per ID in the data. 
-    Usually generated from a csv file and link_meta_index function.
-    @check = bool, when True this will check the ids in the data are in the metadata. If not an error will be raised. It also removes some columns that are no longer
-    needed that are generated in link_meta_index.
+        data (pandas DataFrame): The experimental recorded data usually loaded by the load_ethoscope function. Must contain an id column with unique IDs per speciemn
+        and a time series column called 't' with time per recording in seconds 
+        meta (pandas Dataframe): The metadata i.e. conditions, genotypes ect of the experiment. There should be a unique row per ID in the data. 
+        Usually generated from a csv file and link_meta_index function.
+        colour (str, optional): The name of a palette you want to use for plotly. See https://plotly.com/python/discrete-color/ for the types. Default is 'Safe'
+        long_colour (str, optional): The name of a palette for use when you have more than 11 groups to plot, i.e. Dark24, Light24, Alphabet. Default is 'Dark24'
+        check (bool, optional): when True this will check the ids in the data are in the metadata. If not an error will be raised. It also removes some columns that are no longer
+        needed that are generated in link_meta_index.
 
     returns a behavpy object with methods to manipulate, analyse, and plot time series behavioural data
 
     """
-    warnings.formatwarning = format_warning
 
     @property
     def _constructor(self):
@@ -55,7 +53,7 @@ class behavpy(pd.DataFrame):
         def _from_axes(self, *args, **kwargs):
             return self.cls._from_axes(*args, **kwargs)
 
-    def __init__(self, data, meta, check = False, index= None, columns=None, dtype=None, copy=True):
+    def __init__(self, data, meta, colour = 'Safe', long_colour = 'Dark24', check = False, index= None, columns=None, dtype=None, copy=True):
         super(behavpy, self).__init__(data=data,
                                         index=index,
                                         columns=columns,
@@ -63,9 +61,12 @@ class behavpy(pd.DataFrame):
                                         copy=copy)
 
         self.meta = meta   
-
         if check is True:
             self._check_conform(self)
+        self.attrs = {'short_col' : colour, 'long_col' : long_colour}
+
+    # set meta as permenant attribute
+    _metadata = ['meta']
 
     @staticmethod
     def _check_conform(dataframe):
@@ -75,12 +76,8 @@ class behavpy(pd.DataFrame):
         metadata match those in the data
         """
         
-        # formats warming method to not double print and allow string formatting
-        warnings.formatwarning = format_warning
-
         if isinstance(dataframe.meta, pd.DataFrame) is not True:
-            warnings.warn('Metadata input is not a pandas dataframe')
-            exit()
+            raise TypeError('Metadata input is not a pandas dataframe')
 
         drop_col_names = ['path', 'file_name', 'file_size', 'machine_id']
         dataframe.meta = dataframe.meta.drop(columns=[col for col in dataframe.meta if col in drop_col_names])
@@ -89,15 +86,13 @@ class behavpy(pd.DataFrame):
             try:
                 dataframe.set_index('id', inplace = True)
             except:
-                warnings.warn("There is no 'id' as a column or index in the data'")
-                exit()
+                raise KeyError("There is no 'id' as a column or index in the data'")
 
         if dataframe.meta.index.name != 'id':
             try:
                 dataframe.meta.set_index('id', inplace = True)
             except:
-                warnings.warn("There is no 'id' as a column or index in the metadata'")
-                exit()
+                raise KeyError("There is no 'id' as a column or index in the metadata'")
 
         # checks if all id's of data are in the metadata dataframe
         check_data = all(elem in set(dataframe.meta.index.tolist()) for elem in set(dataframe.index.tolist()))
@@ -111,8 +106,7 @@ class behavpy(pd.DataFrame):
 
         if f_col is not None:
             if f_col not in self.meta.columns:
-                warnings.warn(f'Column "{f_col}" is not a metadata column')
-                exit()
+                raise KeyError(f'Column "{f_col}" is not a metadata column')
             if f_arg is None:
                 f_arg = list(set(self.meta[f_col].tolist()))
                 string_args = []
@@ -121,19 +115,18 @@ class behavpy(pd.DataFrame):
                 if f_lab is None:
                     f_lab = string_args
                 elif len(f_arg) != len(f_lab):
-                    warnings.warn("The facet labels don't match the length of the variables in the column. Using column variables instead")
+                    raise ValueError("The facet labels don't match the length of the variables in the column. Using column variables instead")
                     f_lab = string_args
             else:
                 string_args = []
                 for i in f_arg:
                     if i not in self.meta[f_col].tolist():
-                        warnings.warn(f'Argument "{i}" is not in the meta column {f_col}')
-                        exit()
+                        raise KeyError(f'Argument "{i}" is not in the meta column {f_col}')
                     string_args.append(str(i))
                 if f_lab is None:
                     f_lab = string_args
                 elif len(f_arg) != len(f_lab):
-                    warnings.warn("The facet labels don't match the entered facet arguments in length. Using column variables instead")
+                    raise ValueError("The facet labels don't match the entered facet arguments in length. Using column variables instead")
                     f_lab = string_args
         else:
             f_arg = [None]
@@ -145,7 +138,7 @@ class behavpy(pd.DataFrame):
     @staticmethod
     def _check_boolean(lst):
         """
-        Checks to see if a column of data max and min is 1 and 0, so as to make a appropriately scaled y-axis
+        Checks to see if a column of data (as a list) max and min is 1 and 0, so as to make a appropriately scaled y-axis
         """
         if np.nanmax(lst) == 1 and np.nanmin(lst) == 0:
             y_range = [-0.025, 1.01]
@@ -259,7 +252,7 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _zscore_bootstrap(array, second_array = None, min_max = False):
-        """ calculate the z score of a given array, remove any values +- 3 SD and then perform bootstrapping on the remaining
+        """ Calculate the z score of a given array, remove any values +- 3 SD and then perform bootstrapping on the remaining
         returns the mean and then several lists with the confidence intervals and z-scored values
         """
         try:
@@ -290,6 +283,8 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _plot_meanbox(median, q3, q1, x, colour, showlegend, name, xaxis):
+        """ For quantify plots, creates a box with a mean line and then extensions showing the confidence intervals 
+        """
         trace_box = go.Box(
             showlegend = showlegend,
             median = median,
@@ -311,6 +306,8 @@ class behavpy(pd.DataFrame):
     
     @staticmethod
     def _plot_boxpoints(y, x, colour, showlegend, name, xaxis, marker_size = None):
+        """ Accompanies _plot_meanbox. Use this method to plot the data points as dots over the meanbox
+        """
         trace_box = go.Box(
             showlegend = showlegend,
             y = y, 
@@ -383,29 +380,36 @@ class behavpy(pd.DataFrame):
         return upper_bound, trace, lower_bound, max_var
 
     @staticmethod
-    def _get_colours(plot_list):
-        """ returns a colour palette from plotly for plotly"""
+    def _check_rgb(lst):
+        """ checks if the colour list is RGB plotly colours, if it is it changes it to its hex code """
+        try:
+            return [Color(rgb = tuple(np.array(eval(col[3:])) / 255)) for col in lst]
+        except:
+            return lst
+
+    def _get_colours(self, plot_list):
+        """ returns a colour palette from plotly for plotly """
         if len(plot_list) <= 11:
-            return qualitative.Safe
+            return getattr(qualitative, self.attrs['short_col'])
         elif len(plot_list) < 24:
-            return qualitative.Dark24
+            return getattr(qualitative, self.attrs['long_col'])
         else:
-            warnings.warn('Too many sub groups to plot with the current colour palette')
-            exit()
+            return qualitative.Dark24 + qualitative.Light24
+            # raise IndexError('Too many sub groups to plot with the current colour palette')
 
-    @staticmethod
-    def _adjust_colours(colour_list, rgb = False):
-
+    def _adjust_colours(self, colour_list):
+        """ Takes a list of colours written names or hex codes.
+        Returns two lists of hex colour codes. The first is a lighter version of the second which is the original.
+        """
         def adjust_color_lighten(r,g,b, factor):
             return [round(255 - (255-r)*(1-factor)), round(255 - (255-g)*(1-factor)), round(255 - (255-b)*(1-factor))]
+
+        colour_list = self._check_rgb(colour_list)
 
         start_colours = []
         end_colours = []
         for col in colour_list:
-            if rgb is True:
-                c = Color(rgb=col)
-            else:
-                c = Color(col)
+            c = Color(col)
             c_hex = c.hex
             end_colours.append(c_hex)
             r, g, b = c.rgb
@@ -414,9 +418,6 @@ class behavpy(pd.DataFrame):
             start_colours.append(start_hex)
 
         return start_colours, end_colours
-            
-    # set meta as permenant attribute
-    _metadata = ['meta']
 
     def display(self):
         """
@@ -428,11 +429,11 @@ class behavpy(pd.DataFrame):
 
     def xmv(self, column, *args):
         """
-        Expand metavariable from the behavpy object
+        Filter your data and metadata by a column and groups from the metadata.
 
-        Params:
-        @column = string, column heading from the metadata of the behavpy object
-        @*args = string, arguments corresponding to groups from the column given
+        Args:
+            column (str): Column heading from the metadata of the behavpy object
+            *args (pandas cell input): Arguments corresponding to groups from the column given, can be given as a list or several args, but not a mix.
 
         returns a behavpy object with filtered data and metadata
         """
@@ -444,8 +445,7 @@ class behavpy(pd.DataFrame):
             index_list = []
             for m in args:
                 if m not in self.meta.index.tolist():
-                    warnings.warn(f'Metavariable "{m}" is not in the id column')
-                    exit()
+                    raise KeyError(f'Metavariable "{m}" is not in the id column')
                 else:
                     small_list = self.meta[self.meta.index == m].index.values
                     index_list.extend(small_list)
@@ -458,14 +458,12 @@ class behavpy(pd.DataFrame):
             return self
 
         if column not in self.meta.columns:
-            warnings.warn(f'Column heading "{column}" is not in the metadata table')
-            exit()
+            raise KeyError(f'Column heading "{column}" is not in the metadata table')
         
         index_list = []
         for m in args:
             if m not in self.meta[column].tolist():
-                warnings.warn('Metavariable "{}" is not in the column'.format(m))
-                exit()
+                raise KeyError('Metavariable "{}" is not in the column'.format(m))
             else:
                 small_list = self.meta[self.meta[column] == m].index.values
                 index_list.extend(small_list)
@@ -477,65 +475,59 @@ class behavpy(pd.DataFrame):
         self.meta = self.meta[self.meta.index.isin(new_index_list)]
         return self
 
-    def t_filter(self, end_time = None, start_time = 0, t_column = 't'):
+    def t_filter(self, start_time = 0, end_time = np.inf, t_column = 't'):
         """
         Filters the data to only be inbetween the provided start and end points
-        argument is given in hours and converted to seconds
+        argument is given in hours and converted to seconds.
 
-        Params:
-        @end_time / start_time = integer. the time in hours you want to filter the behavpy object by
-        @t_column = string. the column containing the timestamps, is 't' unless changed
+        Args:
+            start_time (int, optional): In hours the start time you wish to filter by.
+            end_time (int, optional): In hours the end time you wish to filter by/
+            t_column (str, optional): The column containing the timestamps in seconds. Default is 't'
 
         returns a filtered behapvy object
         """
-        s_t = start_time * 60 * 60
+        if start_time > end_time:
+            raise ValueError('Error: end_time is larger than start_time')
 
-        if end_time is not None:
-            e_t = end_time * 60 * 60
-            t_filter_df = self[(self[t_column] >= (s_t)) & (self[t_column] < (e_t))]
-        else:
-            t_filter_df = self[self[t_column] >= (s_t)]
-
-        return t_filter_df
+        return self[(self[t_column] >= (start_time * 60 * 60)) & (self[t_column] < (end_time * 60 * 60))]
 
     def rejoin(self, new_column, check = True):
         """
-        Joins a new column to the metadata
+        Joins a new column to the metadata. 
 
-        Params:
-        @new_column = pandas dataframe. The column to be added, must contain an index called 'id' to match original metadata
-        @check = bool. Whether or not to check if the ids in the data match the new column, default is True
+        Args:
+            new_column (pd DataFrame). The column to be added, must contain an index called 'id' to match original metadata
+            check (Bool, optional): Whether or not to check if the ids in the data match the new column, default is True
 
-        augments the metadata in place
+        No return, the behavpy object is augmented inplace
         """
 
         if check is True:
             check_data = all(elem in new_column.index.tolist() for elem in set(self.index.tolist()))
             if check_data is not True:
-                warnings.warn("There are ID's in the data that are not in the metadata, please check. You can skip this process by changing the parameter skip to False")
-                exit()
+                raise KeyError("There are ID's in the data that are not in the metadata, please check. You can skip this process by changing the parameter skip to False")
 
         m = self.meta.join(new_column, on = 'id')
         self.meta = m
 
     def concat(self, *args):
         """
-        Wrapper for pd.concat that also concats metadata
+        Wrapper for pd.concat that also concats metadata of multiple behavpy objects
 
-        params:
-        @*args = behavpy object. Behavpy tables to be concatenated to the original behavpy table
+        Args:
+            args (behvapy): Behavpy tables to be concatenated to the original behavpy table, each behavpy object should be entered as its own argument and not a list.
 
         returns a new instance of a combined behavpy object
         """
 
         meta_list = [self.meta]
         data_list = [self]
-
+        col_dict = self.attrs
         for df in args:
 
             if isinstance(df, type(self)) is not True or isinstance(df, behavpy) is not True:
-                warnings.warn('Object(s) to concat is(are) not a Behavpy object')
-                exit()
+                raise TypeError('Object(s) to concat is(are) not a Behavpy object')
 
             meta_list.append(df.meta)
             data_list.append(df)
@@ -544,26 +536,29 @@ class behavpy(pd.DataFrame):
         new = pd.concat(data_list)
 
         new.meta = meta
+        new.attrs = col_dict
 
         return new
 
-    def pivot(self, column, function):
+    def analyse_column(self, column, function):
         """ 
         Wrapper for the groupby pandas method to split by groups in a column and apply a function to said groups
 
-        params:
-        @column = string. The name of the column in the data to pivot by
-        @function = string or user defined function. The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
+        Args:
+            column (str). The name of the column in the data to pivot by
+            function (str or user defined function): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
 
-        returns a pandas dataframe with the transformed grouped data
+        returns a pandas dataframe with the transformed grouped data with an index
         """
 
         if column not in self.columns:
-            warnings.warn(f'Column heading, "{column}", is not in the data table')
-            exit()
+            raise KeyError(f'Column heading, "{column}", is not in the data table')
             
-        parse_name = f'{column}_{function}' # create new column name
-        
+        try:
+            parse_name = f'{column}_{function.__name__}' # create new column name if the function is a users own function
+        except AttributeError:
+            parse_name = f'{column}_{function}' # create new column name with string defined function
+
         pivot = self.groupby(self.index).agg(**{
             parse_name : (column, function)    
         })
@@ -572,7 +567,7 @@ class behavpy(pd.DataFrame):
 
     @staticmethod
     def _wrapped_bout_analysis(data, var_name, as_hist, bin_size, max_bins, time_immobile, asleep, t_column = 't'):
-        """ Finds runs of bouts of immobility or moving and sorts into a historgram per unqiue specimen in a behavpy dataframe"""
+        """ Finds runs of bouts of immobility or moving and sorts into a historgram per unqiue specimen if as_hist is True. """
 
         index_name = data['id'].iloc[0]
         bin_width = bin_size*60
@@ -620,26 +615,29 @@ class behavpy(pd.DataFrame):
         else:
             return bout_times
 
-    def sleep_bout_analysis(self, sleep_column = 'asleep', as_hist = False, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True):
+    def sleep_bout_analysis(self, sleep_column = 'asleep', as_hist = False, bin_size = 1, max_bins = 60, time_immobile = 5, asleep = True, t_column = 't'):
         """ 
-        Augments a behavpy objects sleep column to have duration and start of the sleep bouts, must contain a column with boolean values for sleep
+        Augments a behavpy objects sleep column to have duration and start of the sleep bouts, must contain a column with boolean values for sleep.
+        If as_hist is True then the a dataframe containing the data needed to make a histogram of the data is created. Use plot_sleep_bouts to automatically
+        plot this histogram.
 
-        params:
-        @sleep_column = string, default 'asleep'. Name of column in the data containing sleep data as a boolean
-        @as_hist = bool, default False. If true the data will be augmented further into data appropriate for a histogram 
-        Subsequent params only apply if as_hist is True
-        @max_bins = integer, default 30. The number of bins for the data to be sorted into for the histogram, each bin is 1 minute
-        @asleep = bool, default True. If True the histogram represents sleep bouts, if false bouts of awake
+        Args:
+            sleep_column (str, optional): Name of column in the data containing sleep data as boolean values. Default is 'asleep'
+            as_hist (bool, optional). If true the data will be augmented further into data appropriate for a histogram 
+            Subsequent params only apply if as_hist is True
+            bin_size (int, optional): The size of the histogram bins that will be plotted. Default is 1
+            max_bins (int, optional): The maximum number of bins you want the data sorted into. Default is 60
+            @asleep = bool, default True. If True the histogram represents sleep bouts, if false bouts of awake
 
-        returns a behavpy object with duration and time start of both awake and asleep
+        returns:
+            returns a behavpy object with duration and time start of both awake and asleep
 
-        if as_hist is True:
-        returns a behavpy object with bins, count, and prob as columns
+            if as_hist is True:
+            returns a behavpy object with bins, count, and prob as columns
         """
 
         if sleep_column not in self.columns:
-            warnings.warn(f'Column heading "{sleep_column}", is not in the data table')
-            exit()
+            raise KeyError(f'Column heading "{sleep_column}", is not in the data table')
 
         tdf = self.reset_index().copy(deep = True)
         return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
@@ -648,17 +646,35 @@ class behavpy(pd.DataFrame):
                                                                                                 bin_size = bin_size, 
                                                                                                 max_bins = max_bins, 
                                                                                                 time_immobile = time_immobile, 
-                                                                                                asleep = asleep
-            )), tdf.meta, check = True)
+                                                                                                asleep = asleep,
+                                                                                                t_column = t_column
+            )), tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True)
 
-    def plot_sleep_bouts(self, sleep_column = 'asleep', facet_col = None, facet_arg = None, facet_labels = None, bin_size = 1, max_bins = 30, time_immobile = 5, asleep = True, title = '', grids = False):
-        """ Plot with faceting the sleep bouts analysis function"""
+    def plot_sleep_bouts(self, sleep_column = 'asleep', facet_col = None, facet_arg = None, facet_labels = None, bin_size = 1, max_bins = 60, time_immobile = 5, asleep = True, title = '', t_column = 't', grids = False):
+        """ 
+        Generates a plotly histogram that shows the distribution of bouts (can be either sleep bouts or wake bouts).
+        This method uses the sleep_bout_analysis method to generate the data for the plot.
+
+        Args:
+            sleep_column (str, optional): The name of the column that contains the sleep data which should be in a boolean format (True for alseep and vice versa). Default is 'asleep'.
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+            bin_size (int, optional): The size of the histogram bins that will be plotted. Default is 1
+            max_bins (int, optional): The maximum number of bins you want the data sorted into. Default is 60
+            time_immobile (int, optional): The minimum time in minutes that you want to classify your sleep or wake bout. Default is 5 (as per 5 minute sleep rule for Drosophila)
+            asleep (bool, optional): If true then only sleep bouts will be plotted, if false then wake bouts. Default is True.
+            title (str, optional): The title of the plot. Default is an empty string.
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+
+        returns:
+            returns a plotly figure object
+        """
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-        d_list = []
         if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arf]
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
@@ -676,7 +692,8 @@ class behavpy(pd.DataFrame):
             bin_size = bin_size, 
             max_bins = max_bins, 
             time_immobile = time_immobile, 
-            asleep = asleep))
+            asleep = asleep,
+            t_column = t_column))
 
             plot_gb = bouts.groupby('bins').agg(**{
                     'mean' : ('prob', 'mean'),
@@ -740,23 +757,22 @@ class behavpy(pd.DataFrame):
         """ 
         This function detects when individuals have died based on their first (very) long bout of immobility and removes that and subsequent data
 
-        Params:
-        @t_column = string, column heading for the data frames time stamp column (default is 't')
-        @mov_column = string, logical variable in `data` used to define the moving (alive) state (default is `moving`)
-        @time_window = int, window during which to define death 
-        @prop_immobile = float, proportion of immobility that counts as "dead" during time_window 
-        @resolution = int, how much scanning windows overlap. Expressed as a factor. 
+        Args:
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+            mov_column (str, optional): Name of column in the data containing movemment data as boolean values. Default is 'moving'
+            time_window (int, optioanl): The size of the moving window (in hours) during which to define death. Default is 24.
+            prop_immobile (float, optional): Proportion of immobility that counts as "dead" during time_window. Default is 0.01 (1%)
+            resolution (int, optional): How much scanning windows overlap. Expressed as a factor. Default is 24.
 
-        Returns a behavpy object
+        Returns:
+            Returns a behavpy object
         """
 
         if t_column not in self.columns.tolist():
-            warnings.warn('Variable name entered, {}, for t_column is not a column heading!'.format(t_column))
-            exit()
+            raise KeyError('Variable name entered, {}, for t_column is not a column heading!'.format(t_column))
         
         if mov_column not in self.columns.tolist():
-            warnings.warn('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
-            exit()
+            raise KeyError('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
 
         tdf = self.reset_index().copy(deep=True)
         return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_curate_dead_animals,
@@ -765,34 +781,33 @@ class behavpy(pd.DataFrame):
                                                                                                             time_window = time_window, 
                                                                                                             prop_immobile = prop_immobile,
                                                                                                             resolution = resolution
-        )), tdf.meta, check = True)
+        )), tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True)
 
     def curate_dead_animals_interactions(self, mov_df, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
         """ 
-        A variation of curate dead animals to remove responses after an animal is presumed to have died
+        A variation of curate dead animals to remove responses after an animal is presumed to have died.
         
-        Params:
-        @mov_df = behavpy, a behavpy dataframe that has the full time series data for each specimen in the response dataframe
-        @t_column = string, column heading for the data frames time stamp column (default is 't')
-        @mov_column = string, logical variable in `data` used to define the moving (alive) state (default is `moving`)
-        @time_window = int, window during which to define death 
-        @prop_immobile = float, proportion of immobility that counts as "dead" during time_window 
-        @resolution = int, how much scanning windows overlap. Expressed as a factor. 
+        Args:
+            mov_df (behavpy): A behavpy dataframe that has the full time series data for each specimen in the response dataframe
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+            mov_column (str, optional): Name of column in the data containing movemment data as boolean values. Default is 'moving'
+            time_window (int, optioanl): The size of the moving window (in hours) during which to define death. Default is 24.
+            prop_immobile (float, optional): Proportion of immobility that counts as "dead" during time_window. Default is 0.01 (1%)
+            resolution (int, optional): How much scanning windows overlap. Expressed as a factor. Default is 24.
         
-        Returns two modified behavpy object, the 1st the interaction behavpy dataframe that had the method called on it and the
-        2nd the movment df with all the data points. Both filted to remove specimens where presumed dead
+        Returns:
+            returns two modified behavpy object, the 1st the interaction behavpy dataframe that had the method called on it and the
+            2nd the movment df with all the data points. Both filted to remove specimens where presumed dead.
         """
 
         def curate_filter(df, dict):
             return df[df[t_column].between(dict[df['id'].iloc[0]][0], dict[df['id'].iloc[0]][1])]
 
         if t_column not in self.columns.tolist() or t_column not in mov_df.columns.tolist():
-            warnings.warn('Variable name entered, {}, for t_column is not a column heading!'.format(t_column))
-            exit()
+            raise KeyError('Variable name entered, {}, for t_column is not a column heading!'.format(t_column))
         
         if mov_column not in mov_df.columns.tolist():
-            warnings.warn('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
-            exit()
+            raise KeyError('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
 
         tdf = self.reset_index().copy(deep=True)
         tdf2 = mov_df.reset_index().copy(deep=True)
@@ -806,12 +821,12 @@ class behavpy(pd.DataFrame):
                                                                                                             time_dict = time_dict
         ))
         curated_puff = tdf.groupby('id', group_keys = False, sort = False).apply(partial(curate_filter, dict = time_dict))
-        return behavpy(curated_puff, tdf.meta, check = True), behavpy(curated_df, tdf2.meta, check = True), 
+        return behavpy(curated_puff, tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True), behavpy(curated_df, tdf2.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True), 
         
 
     @staticmethod
     def _wrapped_bin_data(data, column, bin_column, function, bin_secs):
-
+        """ a method that will bin all data poits to a larger time bin and then summarise a column """
         index_name = data['id'].iloc[0]
 
         data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
@@ -841,53 +856,59 @@ class behavpy(pd.DataFrame):
         return  pd.DataFrame(data = {'id' : id, t_col : sample_seq, var : f(sample_seq)})
 
     def interpolate(self, variable, step_size, t_column = 't'):
-        """ A wrapped for wrapped_interpolate so work on multiple specimens
-        params:
-        @varibale = string, the column name of the variable of interest
-        @step_size = int, the amount of time in seconds the new time series should progress by. I.e. 60 = [0, 60, 120, 180...]
-        @t_column = string, string, column name for the time series data in your dataframe
+        """ A method to interpolate data from a given dataset according to a new time step size.
+            The data must by etiher a int, float, or bool.
+
+        Args:
+            varibale (str): The column name of the variable you wish to interpolate.
+            step_size (int): The amount of time in seconds the new time series should progress by. I.e. 60 = [0, 60, 120, 180...]
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
         
-        returns a behavpy object with a single data column with interpolated data per specimen"""
+        Returns;
+            returns a behavpy object with a single data column with interpolated data per specimen 
+        """
 
         data = self.copy(deep = True)
-        data = data.bin_time(column = variable, t_column = t_column, bin_secs = step_size)
+        data = data.bin_time(variable = variable, t_column = t_column, bin_secs = step_size)
         data = data.rename(columns = {f'{t_column}_bin' : t_column, f'{variable}_mean' : variable})
         data = data.reset_index()
-        return  behavpy(data.groupby('id', group_keys = False).apply(partial(self._wrapped_interpolate, var = variable, step = step_size)), data.meta, check = True)
+        return  behavpy(data.groupby('id', group_keys = False).apply(partial(self._wrapped_interpolate, var = variable, step = step_size)), data.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True)
 
-    def bin_time(self, column, bin_secs, t_column = 't', function = 'mean'):
+    def bin_time(self, variable, bin_secs, function = 'mean', t_column = 't'):
         """
-        Bin the time series data into entered groups, pivot by the time series column and apply a function to the selected columns.
+        A method bin the time series data into a user desired sized bin and further applying a function to a single column of choice across the new bins.
         
-        Params:
-        @column = string, column in the data that you want to the function to be applied to post pivot
-        @bin_secs = float, the amount of time you want in each bin in seconds, e.g. 60 would be bins for every minutes
-        @t_column = string, column name for the time series data that you want to group and pivot by
-        @function = string or user defined function. The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
+        Args:
+            variable (str): The column in the data that you want to the function to be applied to post pivot
+            bin_secs (int): The amount of time (in seconds) you want in each bin in seconds, e.g. 60 would be bins for every minutes
+            function (str or user defined function): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+
         
-        returns a behavpy object with a single data column
+        Returns:
+            returns a behavpy object with a single data column
         """
 
-        if column not in self.columns:
-            warnings.warn('Column heading "{}", is not in the data table'.format(column))
-            exit()
+        if variable not in self.columns:
+            raise KeyError('Column heading "{}", is not in the data table'.format(column))
 
         tdf = self.reset_index().copy(deep=True)
         return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bin_data,
-                                                                                                column = column, 
+                                                                                                column = variable, 
                                                                                                 bin_column = t_column,
                                                                                                 function = function, 
                                                                                                 bin_secs = bin_secs
-        )), tdf.meta, check = True)
+        )), tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True)
 
     def summary(self, detailed = False, t_column = 't'):
         """ 
         Prints a table with summary statistics of metadata and data counts.
             
-        Params:
-        @detailed = bool , if detailed is True count and range of data points will be broken down per 'id' 
+        Args:
+            detailed (bool, optional): If detailed is True count and range of data points will be broken down per 'id'. Default is False.
             
-        returns None
+        Returns:
+            no return
         """
 
         def print_table(table):
@@ -980,17 +1001,15 @@ class behavpy(pd.DataFrame):
 
         if optional_columns is not None:
             if optional_columns not in self.columns:
-                warnings.warn('Column heading "{}", is not in the data table'.format(optional_columns))
-                exit()
+                raise KeyError(f'Column heading {optional_columns}, is not in the data table')
 
         tdf = self.reset_index().copy(deep=True)
-        m = tdf.meta
         return  behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_motion_detector,
                                                                                                         time_window_length = time_window_length,
                                                                                                         velocity_correction_coef = velocity_correction_coef,
                                                                                                         masking_duration = masking_duration,
                                                                                                         optional_columns = optional_columns
-        )), m, check = True)
+        )), tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True)
 
     @staticmethod
     def _wrapped_sleep_contiguous(d_small, mov_column, t_column, time_window_length, min_time_immobile):
@@ -1042,20 +1061,17 @@ class behavpy(pd.DataFrame):
         returns a behavpy object with added columns like 'moving' and 'asleep'
         """
         if mov_column not in self.columns.tolist():
-            warnings.warn(f'The movement column {mov_column} is not in the dataset')
-            exit()
+            raise KeyError(f'The movement column {mov_column} is not in the dataset')
         if t_column not in self.columns.tolist():
-            warnings.warn(f'The time column {t_column} is not in the dataset')
-            exit()  
+            raise KeyError(f'The time column {t_column} is not in the dataset')
 
         tdf = self.reset_index().copy(deep = True)
-        m = tdf.meta
         return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_sleep_contiguous,
                                                                                                         mov_column = mov_column,
                                                                                                         t_column = t_column,
                                                                                                         time_window_length = time_window_length,
                                                                                                         min_time_immobile = min_time_immobile
-        )), m, check = True)
+        )), tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True)
 
     def wrap_time(self, wrap_time = 24, time_column = 't', inplace = False):
         """
@@ -1088,8 +1104,7 @@ class behavpy(pd.DataFrame):
         """
 
         if column not in self.meta.columns:
-            warnings.warn('Baseline days column: "{}", is not in the metadata table'.format(column))
-            exit()
+            raise KeyError('Baseline days column: "{}", is not in the metadata table'.format(column))
 
         day_dict = self.meta[column].to_dict()
 
@@ -1117,7 +1132,7 @@ class behavpy(pd.DataFrame):
         if variable == 'moving':
             heatmap_df[variable] = np.where(heatmap_df[variable] == True, 1, 0)
 
-        heatmap_df = heatmap_df.bin_time(column = variable, bin_secs = 1800, t_column = t_column)
+        heatmap_df = heatmap_df.bin_time(variable = variable, bin_secs = 1800, t_column = t_column)
         heatmap_df['t_bin'] = heatmap_df['t_bin'] / (60*60)
         # create an array starting with the earliest half hour bin and the last with 0.5 intervals
         start = heatmap_df['t_bin'].min().astype(int)
@@ -1190,8 +1205,8 @@ class behavpy(pd.DataFrame):
         if column == 'id':
             for m in args:
                 if m not in self.meta.index.tolist():
-                    warnings.warn('Metavariable "{}" is not in the id column'.format(m))
-                    exit()
+                    raise KeyError('Metavariable "{}" is not in the id column'.format(m))
+
             index_list = [x for x in self.meta.index.tolist() if x not in args]
             # find interection of meta and data id incase metadata contains more id's than in data
             data_id = list(set(self.index.values))
@@ -1201,15 +1216,13 @@ class behavpy(pd.DataFrame):
             return self
         else:
             if column not in self.meta.columns:
-                warnings.warn('Column heading "{}" is not in the metadata table'.format(column))
-                exit()
+                raise KeyError('Column heading "{}" is not in the metadata table'.format(column))
             column_varaibles = list(set(self.meta[column].tolist()))
 
             index_list = []
             for m in args:
                 if m not in self.meta[column].tolist():
-                    warnings.warn('Metavariable "{}" is not in the column'.format(m))
-                    exit()
+                    raise KeyError('Metavariable "{}" is not in the column'.format(m))
                 else:
                     column_varaibles.remove(m)
             for v in column_varaibles:
@@ -1362,6 +1375,7 @@ class behavpy(pd.DataFrame):
         """
         A plot that finds the average (default mean) for a given variable per specimen. The plots will show each specimens average and a box representing the mean and 95% confidence intervals.
         Addtionally, a pandas dataframe is generated that contains the averages per specimen per group for users to perform statistics with.
+
         Args:
             variable (str): The name of the column you wish to plot from your data. 
             facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
@@ -1371,7 +1385,7 @@ class behavpy(pd.DataFrame):
             title (str, optional): The title of the plot. Default is an empty string.
             grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
 
-        returns:
+        Returns:
             returns a plotly figure object and a pandas DataFrame
         """
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
@@ -1401,7 +1415,7 @@ class behavpy(pd.DataFrame):
                 col = 'grey'
 
             data = data.dropna(subset = [variable])
-            gdf = data.pivot(column = variable, function = fun)
+            gdf = data.analyse_column(column = variable, function = fun)
             median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{variable}_{fun}'].to_numpy())
             stats_dict[name] = zlist
 
@@ -1461,7 +1475,7 @@ class behavpy(pd.DataFrame):
             for c, phase in enumerate(['light', 'dark']):
                 
                 d = data[data['phase'] == phase]
-                t_gb = d.pivot(column = variable, function = fun)
+                t_gb = d.analyse_column(column = variable, function = fun)
                 median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{variable}_mean'].to_numpy())
                 stats_dict[f'{name}_{phase}'] = zlist
 
@@ -1514,7 +1528,7 @@ class behavpy(pd.DataFrame):
 
             for c2, (var, secondary) in enumerate(zip(variables, bool_list)):
 
-                t_gb = data.pivot(column = var, function = 'mean')
+                t_gb = data.analyse_column(column = var, function = 'mean')
                 median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{var}_mean'].to_numpy())
                 stats_dict[f'{name}_{var}'] = zlist
 
@@ -1588,7 +1602,7 @@ class behavpy(pd.DataFrame):
                 d = d.dropna(subset = [mov_variable])
                 d.wrap_time(inplace = True)
                 d = d.t_filter(start_time = start[0], end_time = end)
-                total = d.pivot(column = mov_variable, function = 'sum')
+                total = d.analyse_column(column = mov_variable, function = 'sum')
                 d = d.t_filter(start_time = start[1], end_time = end)
                 small = d.groupby(d.index).agg(**{
                         'moving_small' : (mov_variable, 'sum')
@@ -2036,7 +2050,7 @@ class behavpy(pd.DataFrame):
                     continue
 
                 filtered = filtered.dropna(subset = [response_col])
-                gdf = filtered.pivot(column = response_col, function = 'mean')
+                gdf = filtered.analyse_column(column = response_col, function = 'mean')
                 median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{response_col}_mean'].to_numpy())
 
 
@@ -2054,15 +2068,17 @@ class behavpy(pd.DataFrame):
 
     def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', x_position = 'x', t_column = 't', check = False):
         """ A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food
-        Params:
-        @food_postion = string, must be either "outside" or "inside". This signifies the postion of the food in relation to the center of the arena
-        @dist_from_food = float, the distance measured between 0-1, as the x coordinate in the ethoscope, that you classify as being near the food, default 0.05
-        @micro_mov = string, the name of the column that contains the data for whether micromovements occurs, True/False
-        @x_position = string, the name of the column that contains the x postion
-        @t_column = string, the name of the column that contains the time. This is so the first hour can be ignored for when the ethoscope is 
-        calcuting it's tracking. If set to False it will ignore this filter
 
-        returns an augmented behavpy object with an addtional column 'feeding' with boolean variables
+        Args:
+            food_postion (str): Must be either "outside" or "inside". This signifies the postion of the food in relation to the center of the arena.
+            dist_from_food (float, optional): The distance measured between 0-1, as the x coordinate in the ethoscope, that you classify as being near the food. Default 0.05
+            micro_mov (str, optional): The name of the column that contains the data for whether micromovements occurs as boolean values. Default is 'mirco'.
+            x_position = string, the name of the column that contains the x postion
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+            check (bool, optional): A check in place to remove the first hours worth of data, as often the tracking is still being honed in at the start. If set to False it will ignore this filter. Default is True.
+
+        Returns:
+            returns an augmented behavpy object with an addtional column 'feeding' with boolean variables where True equals predicted feeding.
         """
         if food_position != 'outside' and food_position != 'inside':
             raise ValueError("Argument for food_position must be 'outside' or 'inside'")
@@ -2156,8 +2172,7 @@ class behavpy(pd.DataFrame):
     @staticmethod
     def _time_alive(df, name, repeat = False):
         """ Method to call to the function that finds the amount of time a specimen has survived.
-        If repeat is True then the function will look for a column in the metadata called 'repeat'
-        and use it to sub filter the dataframe. 
+        If repeat is True then the function will look for a column in the metadata called 'repeat' and use it to sub filter the dataframe. 
         """
 
         def _wrapped_time_alive(df, name):
@@ -2194,6 +2209,7 @@ class behavpy(pd.DataFrame):
     def survival_plot(self, facet_col = None, facet_arg = None, facet_labels = None, repeat = False, title = ''):
         """
         Currently only returns a data frame that can be used with seaborn to plot whilst we go through the changes
+
         Args:
             facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
             facet_arg (list, optional): The arguments to use for faceting. Default is None.
@@ -2201,7 +2217,7 @@ class behavpy(pd.DataFrame):
             repeat (bool/str, optional): If False the function won't look for a repeat column. If wanted the user should change the argument to the column in the metadata that contains repeat information. Default is False
             title (str, optional): The title of the plot. Default is an empty string.
         
-        returns:
+        Returns:
             A Pandas DataFrame with columns hour, survived, and label. It is formatted to fit a Seaborn plot
 
         """
@@ -2318,6 +2334,7 @@ class behavpy(pd.DataFrame):
         A plotting function for AGO or mAGO datasets that have been loaded with the analysing function puff_mago. 
         A plot to view the response rate to a puff of odour over either the hours (as binned) post the first puff or the consecutive puffs post the first puff.
         This plot is mostly used to understand if the specimen is becoming habituated to the stimulus, it is agnostic of the time of day of the puff or the activity of the specimen.
+
         Args:
             plot_type (str): Must be either 'time' or 'number'. If time then a plot of the response rate post first puff, if number then the response rate per puff as numbered post first puff.
             bin_time (int, optional): Only needed if plot_type is 'time'. The number of hours you want to bin the response rate to, default is 1 (hour).
@@ -2332,7 +2349,7 @@ class behavpy(pd.DataFrame):
             t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
             grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
         
-        returns:
+        Returns:
             returns a plotly figure objec
         """
 
@@ -2463,7 +2480,8 @@ class behavpy(pd.DataFrame):
     def plot_response_overtime(self, bin_time = 1, wrapped = False, response_col = 'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, title = '', day_length = 24, lights_off = 12, secondary = True, t_column = 't', grids = False):
         """
         A plotting function for AGO or mAGO datasets that have been loaded with the analysing function puff_mago. 
-        A plot to view the response rate to a puff over the time of day. Interactions will be binned to a users input (default is 1 hour) and plotted over a ZT hours x-axis. The plot can be the full length of an experiment or wrapped to a singular day, 
+        A plot to view the response rate to a puff over the time of day. Interactions will be binned to a users input (default is 1 hour) and plotted over a ZT hours x-axis. The plot can be the full length of an experiment or wrapped to a singular day.
+
         Args:
             bin_time (int, optional): The number of hours you want to bin the response rate to, default is 1 (hour).
             wrapped (bool, optional): If true the data is augmented to represent one day, combining data of the same time on consequtive days.
@@ -2480,8 +2498,8 @@ class behavpy(pd.DataFrame):
             t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
             grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
         
-        returns:
-            returns a plotly figure objec
+        Returns:
+            returns a plotly figure object
         """
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
