@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np 
-import warnings
 import plotly.graph_objs as go 
 from plotly.subplots import make_subplots
 import pickle
@@ -28,6 +27,7 @@ class behavpy_periodogram(behavpy):
     """
 
     def __init__(self, data, meta,
+                colour = 'Safe', long_colour = 'Dark24',
                 check = False, 
                 index= None, columns=None, dtype=None, copy=True):
 
@@ -41,6 +41,7 @@ class behavpy_periodogram(behavpy):
 
         if check is True:
             self._check_conform(self)
+        self.attrs = {'short_col' : colour, 'long_col' : long_colour}
 
     def _validate(self):
         """ Validator to check further periodogram methods if the data is produced from the periodogram method """
@@ -95,7 +96,7 @@ class behavpy_periodogram(behavpy):
         data = self.copy(deep = True)
         sampled_data = data.interpolate(variable = mov_variable, step_size = 1 / sampling_rate)
         sampled_data = sampled_data.reset_index()
-        return  behavpy_periodogram(sampled_data.groupby('id', group_keys = False)[[t_col, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_col, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, check = True)
+        return  type(self)(sampled_data.groupby('id', group_keys = False)[[t_col, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_col, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
 
     @staticmethod
     def wavelet_types():
@@ -173,9 +174,9 @@ class behavpy_periodogram(behavpy):
         data = self.copy(deep=True)
         data = data.reset_index()
         if 'sig_threshold' in data.columns.tolist():
-            return  behavpy_periodogram(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, check = True)
+            return  type(self)(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
         else:
-            return  behavpy_periodogram(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, check = True)
+            return  type(self)(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
 
     def plot_periodogram_tile(self, labels = None, find_peaks = False, title = '', grids = False):
         """ Create a tile plot of all the periodograms in a periodogram dataframe"""
@@ -391,12 +392,3 @@ class behavpy_periodogram(behavpy):
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
         return fig, stats_df
-
-if __name__ == '__main__':
-    data = pd.read_csv('./ethoscopy/src/ethoscopy/misc/tutorial_data/circadian_data.pkl')
-    meta = pd.read_pickle('./ethoscopy/src/ethoscopy/misc/tutorial_data/circadian_data.pkl')
-
-    df = behavpy_periodogram(data, meta, check = True)
-
-    per = df.periodogram(mov_variable = 'moving', periodogram = 'lomb_scargle')
-    print(per)

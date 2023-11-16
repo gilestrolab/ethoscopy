@@ -389,13 +389,14 @@ class behavpy(pd.DataFrame):
 
     def _get_colours(self, plot_list):
         """ returns a colour palette from plotly for plotly """
-        if len(plot_list) <= 11:
+        if len(plot_list) <= len(getattr(qualitative, self.attrs['short_col'])):
             return getattr(qualitative, self.attrs['short_col'])
-        elif len(plot_list) < 24:
+        elif len(plot_list) <= len(getattr(qualitative, self.attrs['long_col'])):
             return getattr(qualitative, self.attrs['long_col'])
-        else:
+        elif len(plot_list) <= 48:
             return qualitative.Dark24 + qualitative.Light24
-            # raise IndexError('Too many sub groups to plot with the current colour palette')
+        else:
+            raise IndexError('Too many sub groups to plot with the current colour palette (max is 48)')
 
     def _adjust_colours(self, colour_list):
         """ Takes a list of colours written names or hex codes.
@@ -518,7 +519,8 @@ class behavpy(pd.DataFrame):
         Args:
             args (behvapy): Behavpy tables to be concatenated to the original behavpy table, each behavpy object should be entered as its own argument and not a list.
 
-        returns a new instance of a combined behavpy object
+        returns:
+            A new instance of a combined behavpy object
         """
 
         meta_list = [self.meta]
@@ -545,10 +547,11 @@ class behavpy(pd.DataFrame):
         Wrapper for the groupby pandas method to split by groups in a column and apply a function to said groups
 
         Args:
-            column (str). The name of the column in the data to pivot by
+            column (str): The name of the column in the data to pivot by
             function (str or user defined function): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
 
-        returns a pandas dataframe with the transformed grouped data with an index
+        returns:
+            A pandas dataframe with the transformed grouped data with an index
         """
 
         if column not in self.columns:
@@ -640,7 +643,7 @@ class behavpy(pd.DataFrame):
             raise KeyError(f'Column heading "{sleep_column}", is not in the data table')
 
         tdf = self.reset_index().copy(deep = True)
-        return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
+        return type(self)(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
                                                                                                 var_name = sleep_column, 
                                                                                                 as_hist = as_hist, 
                                                                                                 bin_size = bin_size, 
@@ -765,7 +768,7 @@ class behavpy(pd.DataFrame):
             resolution (int, optional): How much scanning windows overlap. Expressed as a factor. Default is 24.
 
         Returns:
-            Returns a behavpy object
+            Returns a behavpy object with filtered rows
         """
 
         if t_column not in self.columns.tolist():
@@ -775,7 +778,7 @@ class behavpy(pd.DataFrame):
             raise KeyError('Variable name entered, {}, for mov_column is not a column heading!'.format(mov_column))
 
         tdf = self.reset_index().copy(deep=True)
-        return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_curate_dead_animals,
+        return type(self)(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_curate_dead_animals,
                                                                                                             time_var = t_column,
                                                                                                             moving_var = mov_column,
                                                                                                             time_window = time_window, 
@@ -821,7 +824,7 @@ class behavpy(pd.DataFrame):
                                                                                                             time_dict = time_dict
         ))
         curated_puff = tdf.groupby('id', group_keys = False, sort = False).apply(partial(curate_filter, dict = time_dict))
-        return behavpy(curated_puff, tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True), behavpy(curated_df, tdf2.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True), 
+        return type(self)(curated_puff, tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True), type(self)(curated_df, tdf2.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True), 
         
 
     @staticmethod
@@ -872,7 +875,7 @@ class behavpy(pd.DataFrame):
         data = data.bin_time(variable = variable, t_column = t_column, bin_secs = step_size)
         data = data.rename(columns = {f'{t_column}_bin' : t_column, f'{variable}_mean' : variable})
         data = data.reset_index()
-        return  behavpy(data.groupby('id', group_keys = False).apply(partial(self._wrapped_interpolate, var = variable, step = step_size)), data.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True)
+        return  type(self)(data.groupby('id', group_keys = False).apply(partial(self._wrapped_interpolate, var = variable, step = step_size)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
 
     def bin_time(self, variable, bin_secs, function = 'mean', t_column = 't'):
         """
@@ -881,7 +884,7 @@ class behavpy(pd.DataFrame):
         Args:
             variable (str): The column in the data that you want to the function to be applied to post pivot
             bin_secs (int): The amount of time (in seconds) you want in each bin in seconds, e.g. 60 would be bins for every minutes
-            function (str or user defined function): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
+            function (str or user defined function, optional): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
             t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
 
         
@@ -893,12 +896,12 @@ class behavpy(pd.DataFrame):
             raise KeyError('Column heading "{}", is not in the data table'.format(column))
 
         tdf = self.reset_index().copy(deep=True)
-        return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bin_data,
+        return type(self)(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bin_data,
                                                                                                 column = variable, 
                                                                                                 bin_column = t_column,
                                                                                                 function = function, 
                                                                                                 bin_secs = bin_secs
-        )), tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True)
+        )), tdf.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
 
     def summary(self, detailed = False, t_column = 't'):
         """ 
@@ -950,10 +953,13 @@ class behavpy(pd.DataFrame):
     def add_day_phase(self, time_column = 't', day_length = 24, lights_off = 12, inplace = True):
         """ 
         Adds a column called 'phase' with either light or dark as catergories according to its time compared to the reference hour
-        Adds a column with the day the row in, starting with 1 as day zero and increasing sequentially.
+        Adds a column with the day the row is in, starting with 1 as the first day and increasing sequentially.
 
-        Params:
-        @circadian_night = int, the ZT hour when the conditions shift to dark
+        Args:
+            time_column (str): The name of column containing the timing data (in seconds). Default is 't'.
+            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+            lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+            inplace (bool, optional): 
             
         returns a new df is inplace is False, else nothing
         """
@@ -1004,12 +1010,12 @@ class behavpy(pd.DataFrame):
                 raise KeyError(f'Column heading {optional_columns}, is not in the data table')
 
         tdf = self.reset_index().copy(deep=True)
-        return  behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_motion_detector,
+        return  type(self)(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_motion_detector,
                                                                                                         time_window_length = time_window_length,
                                                                                                         velocity_correction_coef = velocity_correction_coef,
                                                                                                         masking_duration = masking_duration,
                                                                                                         optional_columns = optional_columns
-        )), tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True)
+        )), tdf.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
 
     @staticmethod
     def _wrapped_sleep_contiguous(d_small, mov_column, t_column, time_window_length, min_time_immobile):
@@ -1066,12 +1072,12 @@ class behavpy(pd.DataFrame):
             raise KeyError(f'The time column {t_column} is not in the dataset')
 
         tdf = self.reset_index().copy(deep = True)
-        return behavpy(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_sleep_contiguous,
+        return type(self)(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_sleep_contiguous,
                                                                                                         mov_column = mov_column,
                                                                                                         t_column = t_column,
                                                                                                         time_window_length = time_window_length,
                                                                                                         min_time_immobile = min_time_immobile
-        )), tdf.meta, colour = tdf.attrs['short_col'], long_colour = tdf.attrs['long_col'], check = True)
+        )), tdf.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
 
     def wrap_time(self, wrap_time = 24, time_column = 't', inplace = False):
         """
@@ -1844,11 +1850,11 @@ class behavpy(pd.DataFrame):
         return {'id': id, 't' : time, 'moving' : mov, 'previous_moving' : previous_mov, 'activity_count' : count_list, 'previous_activity_count' : previous_count_list}
 
     def plot_response_over_bouts(self, response_df, activity = 'inactive', mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', t_column = 't', grids = False):
-        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function puff_mago.
-        Plot function to measure the response rate of flies to a puff of odour from a mAGO or AGO experiment over the consecutive minutes active or inactive
+        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
+        Plot function to measure the response rate of flies to a stimulus from a mAGO or AGO experiment over the consecutive minutes active or inactive
 
         Params:
-        @response_df = behavpy, behapy dataframe intially analysed by the puff_mago loading function
+        @response_df = behavpy, behapy dataframe intially analysed by the stimulus_response loading function
         @activity = string, the choice to display reponse rate for continuous bounts of inactivity, activity, or both. Choice one of ['inactive', 'active', 'both']
         @mov_variable = string, the name of the column that contains the response per each interaction, should be boolean values
         @bin = int, the value in seconds time should be binned to and then count consecutive bouts
@@ -1989,7 +1995,7 @@ class behavpy(pd.DataFrame):
         return fig
 
     def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False): 
-        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function puff_mago.
+        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
         A augmented version of plot_quanitfy that looks for true and false (spontaneous movement) interactions.
         
         Params:
@@ -2004,7 +2010,7 @@ class behavpy(pd.DataFrame):
         """
 
         if response_col not in self.columns.tolist():
-            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with puff_mago')
+            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with stimlus_response')
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -2120,7 +2126,7 @@ class behavpy(pd.DataFrame):
             
         ds.reset_index(inplace = True)   
         ds_meta = ds.meta
-        return behavpy(ds.groupby('id', group_keys = False).apply(find_feed).set_index('id'), ds_meta)
+        return type(self)(ds.groupby('id', group_keys = False).apply(find_feed).set_index('id'), ds_meta)
 
 
     def remove_sleep_deprived(self, start_time, end_time, remove = False, sleep_column = 'asleep', t_column = 't'):
@@ -2331,7 +2337,7 @@ class behavpy(pd.DataFrame):
     
     def plot_habituation(self, plot_type, bin_time = 1, num_dtick = 10, response_col =  'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, secondary = True, title = '', t_column = 't', grids = False):
         """
-        A plotting function for AGO or mAGO datasets that have been loaded with the analysing function puff_mago. 
+        A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response. 
         A plot to view the response rate to a puff of odour over either the hours (as binned) post the first puff or the consecutive puffs post the first puff.
         This plot is mostly used to understand if the specimen is becoming habituated to the stimulus, it is agnostic of the time of day of the puff or the activity of the specimen.
 
@@ -2479,7 +2485,7 @@ class behavpy(pd.DataFrame):
 
     def plot_response_overtime(self, bin_time = 1, wrapped = False, response_col = 'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, title = '', day_length = 24, lights_off = 12, secondary = True, t_column = 't', grids = False):
         """
-        A plotting function for AGO or mAGO datasets that have been loaded with the analysing function puff_mago. 
+        A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response. 
         A plot to view the response rate to a puff over the time of day. Interactions will be binned to a users input (default is 1 hour) and plotted over a ZT hours x-axis. The plot can be the full length of an experiment or wrapped to a singular day.
 
         Args:

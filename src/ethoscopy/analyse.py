@@ -14,22 +14,23 @@ def max_velocity_detector(data,
                         time_window_length,
                         velocity_correction_coef = 3e-3,
                         masking_duration = 6,
-                        optional_columns = 'has_interacted'
+                        optional_columns = 'has_interacted'                        
                         ):
     """ 
     Max_velocity_detector is the default movement classification for real-time ethoscope experiments.
     It is benchmarked against human-generated ground truth.
 
-    Params:
-    @data = pandas dataframe, containing behavioural variables of a single animal (no id)    
-    @time_window_length = int, the period of time the data is binned and sampled to 
-    @velocity_correction_coef = float, a coefficient to correct the velocity data (change for different length tubes), default is 3e-3
-    @masking_duration = int, number of seconds during which any movement is ignored (velocity is set to 0) after a stimulus is delivered (a.k.a. interaction), 
-    for beam_cross column, default is 6
-    @optional_columns = string, columns other than ['t', 'x', 'velocity'] that you want included post analysis, default is 'has_interacted'
-    @raw = bool, if True the returned datafram will contain mean values per window length for all variables from the ethoscope
+        Args:
+            data (pd.DataFrame): A dataframe containing behavioural variables of a single animal (no id)    
+            time_window_length (int, optional): The period of time the data is binned and sampled to, i.e. if 60 the timestep will per row will be 60 seconds.
+            velocity_correction_coef (float, optional):  A coefficient to correct the velocity data (change for different length tubes). For 'small' tubes (20 per ethoscope) =
+                3e-3, for 'long' tubes (10 per ethoscope) = 15e-4. Default is 3e-3.
+            masking_duration (int, optional): The number of seconds during which any movement is ignored (velocity is set to 0) after a stimulus is delivered (a.k.a. interaction).
+                If using the AGO set to 0. Default is 6.
+            optional_columns (str, optional): The columns other than ['t', 'x', 'velocity'] that you want included post analysis. Default is 'has_interacted'.
 
-    returns a pandas dataframe object with columns such as 'moving' and 'beam_cross'
+    returns:
+        A pandas dataframe object with columns such as 't', 'moving', 'max_velocity', 'mean_velocity' and 'beam_cross'
     """
 
     if len(data.index) < 100:
@@ -90,13 +91,14 @@ def prep_data_motion_detector(data,
     This function bins all points of the time series column into a specified window.
     Also checks optional columns provided in max_velocity_detector are present.
     
-    Params:
-    @data = pandas dataframe, dataframe as entered into the max_velocity_detector function
-    @needed_columns = string, columns to be kept and the function enacted upon
-    @time_window_length = int, the period of time the data is binned and sampled to, default is 10
-    @optional_columns = string, columns other than ['t', 'x', 'xy_dist_log10x1000'] that you want included post analysis, default is None
+        Args:
+            data (pandas dataframe): The dataframe as entered into the max_velocity_detector function
+            needed_columns (str): Columns to be kept and the function enacted upon
+            time_window_length (int): The period of time the data is binned and sampled to, default is 10
+            optional_columns (str): Columns other than ['t', 'x', 'xy_dist_log10x1000'] that you want included post analysis, default is None
     
-    returns the same object as entered into the function
+    returns:
+        The same object as entered into the function
     """
     
     if all(elem in data.columns.values for elem in needed_columns) is not True:
@@ -146,21 +148,24 @@ def sleep_annotation(data,
                     min_time_immobile = 300,
                     motion_detector_FUN = max_velocity_detector,
                     masking_duration = 6,
-                    velocity_correction_coef = 3e-3,
+                    velocity_correction_coef = 3e-3
                     ):
     """ 
     This function first uses a motion classifier to decide whether an animal is moving during a given time window.
     Then, it defines sleep as contiguous immobility for a minimum duration.
     
-    Params:
-    @data = pandas dataframe, dataframe containing behavioural variable from many or one multiple animals
-    @time_window_length = int, the period of time the data is binned and sampled to, default is 10
-    @min_time_immobile = int, immobility bouts longer or equal to this value are considered as asleep, default is 300 (i.e 5 mins)
-    @motion_detector_FUN = function, the function to curate raw ethoscope data into velocity measurements, default is max_velocity_detector
-    @masking_duration, int, number of seconds during which any movement is ignored (velocity is set to 0) after a stimulus is delivered (a.k.a. interaction),
-    @velocity_correction_coef = float, a coefficient to correct the velocity data (change for different length tubes), default is 3e-3
-    for beam_cross column, default is 6
-    returns a pandas dataframe containing columns 'moving' and 'asleep'
+        Args:
+            data (pandas dataframe): The dataframe containing behavioural variables from one animals.
+            time_window_length (int, optional): The period of time the data is binned and sampled to. Default is 10
+            min_time_immobile (int, optional): Immobility bouts longer or equal to this value are considered as asleep. Default is 300 (i.e 5 mins)
+            motion_detector_FUN (function, optional): The function to curate raw ethoscope data into velocity measurements. Default is max_velocity_detector.
+            masking_duration (int, optional): The number of seconds during which any movement is ignored (velocity is set to 0) after a stimulus is delivered (a.k.a. interaction). 
+                If using the AGO set to 0. Default is 6.
+            velocity_correction_coef (float, optional): A coefficient to correct the velocity data (change for different length tubes). For 'small' tubes (20 per ethoscope) =
+                3e-3, for 'long' tubes (10 per ethoscope) = 15e-4. Default is 3e-3.
+            
+    returns: 
+        A pandas dataframe containing columns 'moving' and 'asleep'
     """
 
     if len(data.index) < 100:
@@ -206,18 +211,20 @@ def sleep_annotation(data,
     
     return d_small
 
-def puff_mago(data, start_response_window = 0, response_window_length = 10, add_false = False, velocity_correction_coef = 3e-3):
+def stimulus_response(data, start_response_window = 0, response_window_length = 10, add_false = False, velocity_correction_coef = 3e-3):
     """
-    Puff_mago finds interaction times from raw ethoscope data to detect responses in a given window.
+    Stimulus_response finds interaction times from raw ethoscope data to detect responses in a given window.
     This function will only return data from around interaction times and not whole movement data from the experiment.
 
-    Params:
-    @data = pandas dataframe, dataframe containing behavioural variable from many or one multiple animals 
-    @response_window = int, the period of time (seconds) after stimulus to check for a response (movement), default is 10 seconds
-    @add_false = bool / int, If not False then an int which is the percentage of the total of which to add false interactions, recommended is 10
-    @velocity_correction_coef = float, a coefficient to correct the velocity data (change for different length tubes), default is 3e-3
+        Args:
+            data (pd.DataFrame): The dataframe containing behavioural variable from many or one multiple animals 
+            response_window (int, optional): The period of time (seconds) after the stimulus to check for a response (movement). Default is 10 seconds
+            add_false (bool / int, optional): If not False then an int which is the percentage of the total of which to add false interactions, recommended is 10.
+                This is for use with old datasets with no false interactions so you can observe spontaneous movement with a HMM. Default is False
+            velocity_correction_coef (float, optional): A coefficient to correct the velocity data (change for different length tubes). Default is 3e-3.
     
-    returns  a pandas dataframe object with columns such as 'interaction_t' and 'has_responded'
+    returns  
+        A pandas dataframe object with columns such as 'interaction_t' and 'has_responded'
     """
 
     if start_response_window == response_window_length or start_response_window > response_window_length:
@@ -274,7 +281,7 @@ def puff_mago(data, start_response_window = 0, response_window_length = 10, add_
     df = pd.concat([data[(data['t'] >= i) & (data['t'] < q)] for i, q in zip(starts, ends)])
     df = df.join(interaction_dt, rsuffix = '_int').fillna(method = 'ffill')
 
-    # find relative time to interaction and check for movement
+    # find relative time to interaction and check for movemokonomiyaki flourent
     df['t_rel'] = df.t - df.t_int
     df = df[(df['t_rel'] > start_response_window) | (df['t_rel'] == 0)]
     df.rename(columns = {'t_int' : 'interaction_t'}, inplace = True)
@@ -300,19 +307,21 @@ def puff_mago(data, start_response_window = 0, response_window_length = 10, add_
 
     return pd.DataFrame(response_rows)
 
-def find_motifs(data, window = 300, response_window = 10, velocity_correction_coef = 3e-3):
+def stimulus_prior(data, window = 300, response_window_length = 10, velocity_correction_coef = 3e-3):
     """
-    Find_motifs is a modification of puff_mago. It only takes data with a populated has_interacted column.
+    Stimulus_prior is a modification of stimulus_response. It only takes data with a populated has_interacted column.
     The function will take a response window (in seconds) to find the variables recorded by the ethoscope in this window prior to an 
     interaction taking place. Each run is given a unique ID per fly, however it is not unique to other flies. To do so, combine the 
     fly ID with run ID after.
 
-    Params:
-    @data = pandas dataframe, dataframe containing behavioural variable from many or one multiple animals 
-    @window = int, the period of time (seconds) prior to the stimulus you want data retrieved for, default is 300
-    @velocity_correction_coef = float, a coefficient to correct the velocity data (change for different length tubes), default is 3e-3
+    Args:
+        data (pd.DataFrame): A dataframe containing behavioural variable from many or one multiple animals 
+        window (int, optional): The period of time (seconds) prior to the stimulus you want data retrieved for. Default is 300.
+        response_window_length (int, optional): The period of time (seconds) after the stimulus to check for a response (movement). Default is 10 seconds.
+        velocity_correction_coef (float, optional): A coefficient to correct the velocity data (change for different length tubes), default is 3e-3
     
-    returns  a pandas dataframe object with columns such as 't_count' and 'has_responded'
+    returns:  
+        a pandas dataframe object with columns such as 't_count' and 'has_responded'
     """
 
     # check for has_interaction column, will be moved in prior download if all interactions are false
@@ -407,127 +416,129 @@ def find_motifs(data, window = 300, response_window = 10, velocity_correction_co
 
     return response_df
 
-def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_correction_coef = 3e-3):
-    """
-    Isolate activity lengths is a loading function that will find consecutive runs of inactivity or activity and segment them into same sized windows
-    at intervals stated by the user. This function
+# The below function needs to be re-written and also i'm not entirely sure what it does so removing it for now.
 
-    Params:
-    @data = pandas dataframe, a dataframe object as provided from the read_single_roi fucntion with a column of time 't' in seconds
-    @intervals = list of ints, a list with the timestamps you want the window to work back from, must be in minutes
-    @window = int, the time frame you want to work back from each interval
-    @inactive = bool, whether to search for runs of activity or inactivity
-    @velocity_correction_coef - float, coeffient to find the velocity over time
+# def isolate_activity_lengths(data, intervals, window, inactive = True, velocity_correction_coef = 3e-3):
+#     """
+#     Isolate activity lengths is a loading function for use with interaction datasets. THe function will find consecutive runs of inactivity or activity and segment them into same sized windows
+#     at intervals stated by the user. This function
 
-    returns a pandas dataframe with every run according the the requirements and all data values
-    """
-    assert(isinstance(intervals, list))
-    assert(all(isinstance(item, int) for item in intervals))
+#     Params:
+#     @data = pandas dataframe, a dataframe object as provided from the read_single_roi fucntion with a column of time 't' in seconds
+#     @intervals = list of ints, a list with the timestamps you want the window to work back from, must be in minutes
+#     @window = int, the time frame you want to work back from each interval
+#     @inactive = bool, whether to search for runs of activity or inactivity
+#     @velocity_correction_coef - float, coeffient to find the velocity over time
 
-    if len(data.index) < 100:
-        return None
+#     returns a pandas dataframe with every run according the the requirements and all data values
+#     """
+#     assert(isinstance(intervals, list))
+#     assert(all(isinstance(item, int) for item in intervals))
 
-    window = window * 60
+#     if len(data.index) < 100:
+#         return None
 
-    data['deltaT'] = data.t.diff()
-    data['dist'] = 10 ** (data.xy_dist_log10x1000 / 1000)
-    data['velocity'] = data.dist / velocity_correction_coef
-    data.drop(columns = ['deltaT', 'dist'], inplace = True)
-    data['t'] = np.floor(data['t'])
-    data = data.groupby('t').agg(**{
-                'x' : ('x', 'mean'),
-                'y' : ('y', 'mean'),
-                'w' : ('w', 'mean'),
-                'h' : ('h', 'mean'),
-                'phi' : ('phi', 'mean'),
-                'xy_dist_log10x1000' : ('xy_dist_log10x1000', 'max'),
-                'velocity' : ('velocity', 'max')
-        })
-    data.reset_index(inplace = True)
-    data['moving'] = np.where(data['velocity'] > 1, 1, 0)
+#     window = window * 60
 
-    def norm_1_0(data, var):
-        v_min = data[var].min()
-        v_max = data[var].max()
-        data[var] = data[var].map(lambda v: (v - v_min) / (v_max - v_min))
-        return data
+#     data['deltaT'] = data.t.diff()
+#     data['dist'] = 10 ** (data.xy_dist_log10x1000 / 1000)
+#     data['velocity'] = data.dist / velocity_correction_coef
+#     data.drop(columns = ['deltaT', 'dist'], inplace = True)
+#     data['t'] = np.floor(data['t'])
+#     data = data.groupby('t').agg(**{
+#                 'x' : ('x', 'mean'),
+#                 'y' : ('y', 'mean'),
+#                 'w' : ('w', 'mean'),
+#                 'h' : ('h', 'mean'),
+#                 'phi' : ('phi', 'mean'),
+#                 'xy_dist_log10x1000' : ('xy_dist_log10x1000', 'max'),
+#                 'velocity' : ('velocity', 'max')
+#         })
+#     data.reset_index(inplace = True)
+#     data['moving'] = np.where(data['velocity'] > 1, 1, 0)
+
+#     def norm_1_0(data, var):
+#         v_min = data[var].min()
+#         v_max = data[var].max()
+#         data[var] = data[var].map(lambda v: (v - v_min) / (v_max - v_min))
+#         return data
     
-    data = norm_1_0(data, var = 'x')
+#     data = norm_1_0(data, var = 'x')
 
-    for i in ['w', 'h']:
-        data[f'{i}_z'] = np.abs(zscore(data[i].to_numpy())) < 3
-        data[i] = np.where(data[f'{i}_z'] == True, data[i], np.nan)
-        data[i] = data[i].fillna(method = 'ffill')
-        data[i] = data[i].fillna(method = 'bfill')
-        data.drop(columns = [f'{i}_z'], inplace = True)
-        data = norm_1_0(data, var = i)
+#     for i in ['w', 'h']:
+#         data[f'{i}_z'] = np.abs(zscore(data[i].to_numpy())) < 3
+#         data[i] = np.where(data[f'{i}_z'] == True, data[i], np.nan)
+#         data[i] = data[i].fillna(method = 'ffill')
+#         data[i] = data[i].fillna(method = 'bfill')
+#         data.drop(columns = [f'{i}_z'], inplace = True)
+#         data = norm_1_0(data, var = i)
 
-    def find_inactivity(data, inactive = inactive):
-                if inactive == True:
-                    elem = 0
-                else:
-                    elem = 1
-                inactive_count = []
-                data_list = []
-                counter = 1
-                for c, q in enumerate(data):
-                    if c == 0 and q != elem:
-                        inactive_count.append(np.NaN)
-                        data_list.append(q)
+#     def find_inactivity(data, inactive = inactive):
+#                 if inactive == True:
+#                     elem = 0
+#                 else:
+#                     elem = 1
+#                 inactive_count = []
+#                 data_list = []
+#                 counter = 1
+#                 for c, q in enumerate(data):
+#                     if c == 0 and q != elem:
+#                         inactive_count.append(np.NaN)
+#                         data_list.append(q)
 
-                    elif c == 0 and q == elem:
-                        inactive_count.append(counter)
-                        data_list.append(q)
-                        counter += 1
+#                     elif c == 0 and q == elem:
+#                         inactive_count.append(counter)
+#                         data_list.append(q)
+#                         counter += 1
 
-                    else:
-                        if q == elem:
-                            inactive_count.append(counter)
-                            data_list.append(q)
-                            counter += 1
+#                     else:
+#                         if q == elem:
+#                             inactive_count.append(counter)
+#                             data_list.append(q)
+#                             counter += 1
 
-                        else:
-                            inactive_count.append(np.NaN)
-                            data_list.append(q)
-                            counter = 1
+#                         else:
+#                             inactive_count.append(np.NaN)
+#                             data_list.append(q)
+#                             counter = 1
 
-                return inactive_count
+#                 return inactive_count
     
-    data['inactive_count'] =  find_inactivity(data['moving'].to_numpy())
-    data = data[data['inactive_count'] <= max(intervals) * 60]
+#     data['inactive_count'] =  find_inactivity(data['moving'].to_numpy())
+#     data = data[data['inactive_count'] <= max(intervals) * 60]
 
-    inactivity_df = pd.DataFrame()
+#     inactivity_df = pd.DataFrame()
 
-    for interval in intervals:
-        #isolate interaction times
-        interval = interval * 60
-        interaction_dt = data['t'][data['inactive_count'] == interval].to_frame()
-        interaction_dt.rename(columns = {'t' : 'int_t'}, inplace = True)
+#     for interval in intervals:
+#         #isolate interaction times
+#         interval = interval * 60
+#         interaction_dt = data['t'][data['inactive_count'] == interval].to_frame()
+#         interaction_dt.rename(columns = {'t' : 'int_t'}, inplace = True)
 
-        #check some interactions took place, return none if empty
-        if len(interaction_dt.index) < 1:
-            return None
+#         #check some interactions took place, return none if empty
+#         if len(interaction_dt.index) < 1:
+#             return None
 
-        interaction_dt['start'] = interaction_dt.int_t - (window-1)
-        interaction_dt['end'] = interaction_dt.int_t
+#         interaction_dt['start'] = interaction_dt.int_t - (window-1)
+#         interaction_dt['end'] = interaction_dt.int_t
         
-        ints = data.t.values
-        starts = interaction_dt.start.values 
-        ends = interaction_dt.end.values  
+#         ints = data.t.values
+#         starts = interaction_dt.start.values 
+#         ends = interaction_dt.end.values  
 
-        i, j = np.where((ints[:, None] >= starts) & (ints[:, None] <= ends))
+#         i, j = np.where((ints[:, None] >= starts) & (ints[:, None] <= ends))
         
-        df = pd.DataFrame(
-            np.column_stack([data.values[i], interaction_dt.values[j]]),
-            columns = data.columns.append(interaction_dt.columns)
-        )
-        df.drop(columns = ['end', 'int_t', 'inactive_count'], inplace = True)
+#         df = pd.DataFrame(
+#             np.column_stack([data.values[i], interaction_dt.values[j]]),
+#             columns = data.columns.append(interaction_dt.columns)
+#         )
+#         df.drop(columns = ['end', 'int_t', 'inactive_count'], inplace = True)
 
-        gb = df.groupby('start').size()
-        filt_gb = gb[gb == window]
-        filt_df = df[df['start'].isin(filt_gb.index.tolist())]
-        filt_df['t_rel'] = list(range(interval - window, interval)) * len(filt_gb.index)
-        inactivity_df = pd.concat([inactivity_df, filt_df], ignore_index = False)
+#         gb = df.groupby('start').size()
+#         filt_gb = gb[gb == window]
+#         filt_df = df[df['start'].isin(filt_gb.index.tolist())]
+#         filt_df['t_rel'] = list(range(interval - window, interval)) * len(filt_gb.index)
+#         inactivity_df = pd.concat([inactivity_df, filt_df], ignore_index = False)
                 
 
-    return inactivity_df
+#     return inactivity_df
