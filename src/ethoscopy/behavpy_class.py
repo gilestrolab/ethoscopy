@@ -542,6 +542,52 @@ class behavpy(pd.DataFrame):
 
         return new
 
+    def stitch_consecutive(self, machine_name_col = 'machine_name', region_id_col = 'region_id', date_col = 'date'):
+        """ 
+        A method to stitch the data together for ROIs of the same machine in the dataframe. Use this for when you needed to stop and restart an experiment with the same specimens in it.
+        The method selectes all the unique machine names and ROI numbers and merges those that match, taking the start date of the experiment to calculate how much to modify the time.
+        THe method will also only retain the metadata for the earliest experiment and change the id in the date to match the first running, 
+        this is so later methods aren't confused. So make sure all information for all is in the the first set.
+        Make sure the dataframe only contains experiments of the same machines you want to stitch together!
+
+        Args:
+            machine_name_col (str): The name of the column which contains the name of each machine, .e.g 'ETHOSCOPE_030'. Default is 'machine_name'.
+            region_id_col (str): The name of the column which contains the name of the ROI per machine. Default is 'region_id'.
+            date_col (str): The name of the column which contains the name of the date column for the experiment. Default is 'date'.
+
+        returns:
+            A pandas dataframe with the metadata and data transformed to be a single experiment per machine/roi
+        """
+        mach_list = set(self.meta[machine_name_col].tolist())
+        roi_list = set(self.meta[region_id_col].tolist())
+
+        def augment_time(d):
+            d.meta['day_diff'] = (pd.to_datetime(d.meta['date']) - pd.to_datetime(d.meta['date'].min())).dt.days
+            indx_map = d.meta[['day_diff']].to_dict()['day_diff']
+            d['day'] = indx_map
+            d['t'] = (d['day'] * 86400) + d['t']
+            d['id'] = [list(indx_map.keys())[list(indx_map.values()).index(0)]] * len(d)
+            d = d.set_index('id')
+            d.meta = d.meta[d.meta['day_diff'] == 0]
+            d.meta.drop(['day_diff'], axis = 1, inplace = True)
+            d.drop(['day'], axis = 1, inplace = True)
+            return d
+
+        df_list = []
+
+        for i in mach_list:
+            mdf = self.xmv(machine_name_col, i)
+            for q in roi_list:
+                try:
+                    rdf = mdf.xmv(region_id_col, q)
+                    ndf = augment_time(rdf)
+                    df_list.append(ndf)
+                except KeyError:
+                    continue
+
+        return df_list[0].concat(*df_list[1:])
+
+
     def analyse_column(self, column, function):
         """ 
         Wrapper for the groupby pandas method to split by groups in a column and apply a function to said groups
@@ -1101,10 +1147,10 @@ class behavpy(pd.DataFrame):
         """
         A function to add days to the time series data per animal so align interaction times per user discretion
 
-        Params:
-        @column = string, name of column containing the number of days to add, must in integers, 0 = no days added
-        @t_column = string name of column containing the time series data to be modified, default is 't'
-        @inplace = bool, if True the method changes the behavpy object inplace, if False returns a behavpy object
+            Args:
+                @column = string, name of column containing the number of days to add, must in integers, 0 = no days added
+                @t_column = string name of column containing the time series data to be modified, default is 't'
+                @inplace = bool, if True the method changes the behavpy object inplace, if False returns a behavpy object
         
         returns a behavpy table with modifed time series columns
         """
@@ -1128,9 +1174,11 @@ class behavpy(pd.DataFrame):
         """
         Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
         
-        Params:
-        @variable = string, name for the column containing the variable of interest, the default is moving
-        
+            Args:
+                variable (str, optional): The name for the column containing the variable of interest. Default is moving
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                title (str, optional): The title of the plot. Default is an empty string.
+
         returns None
         """
         heatmap_df = self.copy(deep = True)
@@ -1198,11 +1246,12 @@ class behavpy(pd.DataFrame):
         """ 
         A variation of xmv to remove all rows from a data table whose ID matches those specified from the metadata
 
-        Params:
-        @column = string. column heading from the metadata of the behavpy object
-        @*args = string, arguments corresponding to groups from the column given
+            Args:
+                column (str): The column heading from the metadata of the behavpy object that you wish to filter by
+                *args (string/int/float): Arguments corresponding to groups from the column given
 
-        returns a behavpy object with filtered data and metadata
+        returns:
+            A behavpy object with filtered data and metadata
         """
 
         if type(args[0]) == list:
@@ -2216,12 +2265,12 @@ class behavpy(pd.DataFrame):
         """
         Currently only returns a data frame that can be used with seaborn to plot whilst we go through the changes
 
-        Args:
-            facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
-            facet_arg (list, optional): The arguments to use for faceting. Default is None.
-            facet_labels (list, optional): The labels to use for faceting. Default is None.
-            repeat (bool/str, optional): If False the function won't look for a repeat column. If wanted the user should change the argument to the column in the metadata that contains repeat information. Default is False
-            title (str, optional): The title of the plot. Default is an empty string.
+            Args:
+                facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. Default is None.
+                facet_labels (list, optional): The labels to use for faceting. Default is None.
+                repeat (bool/str, optional): If False the function won't look for a repeat column. If wanted the user should change the argument to the column in the metadata that contains repeat information. Default is False
+                title (str, optional): The title of the plot. Default is an empty string.
         
         Returns:
             A Pandas DataFrame with columns hour, survived, and label. It is formatted to fit a Seaborn plot
@@ -2335,25 +2384,26 @@ class behavpy(pd.DataFrame):
         )
         return fig
     
-    def plot_habituation(self, plot_type, bin_time = 1, num_dtick = 10, response_col =  'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, secondary = True, title = '', t_column = 't', grids = False):
+    def plot_habituation(self, plot_type, bin_time = 1, num_dtick = 10, response_col =  'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, display = 'continuous', secondary = True, title = '', t_column = 't', grids = False):
         """
         A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response. 
         A plot to view the response rate to a puff of odour over either the hours (as binned) post the first puff or the consecutive puffs post the first puff.
         This plot is mostly used to understand if the specimen is becoming habituated to the stimulus, it is agnostic of the time of day of the puff or the activity of the specimen.
 
-        Args:
-            plot_type (str): Must be either 'time' or 'number'. If time then a plot of the response rate post first puff, if number then the response rate per puff as numbered post first puff.
-            bin_time (int, optional): Only needed if plot_type is 'time'. The number of hours you want to bin the response rate to, default is 1 (hour).
-            num_dtick (int, optional): The dtick for the x-axis (the number spacing) for when plot_type 'number is chosen. Default is 10.
-            response_col (str, optional): The name of the column that contains the boolean response data.
-            int_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
-            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
-            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
-            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
-            sceondary (bool, optional): If true then a secondary y-axis is added that contains either the puff cound for 'time' or percentage of flies recieving the puff in 'number'. Default is True
-            title (str, optional): The title of the plot. Default is an empty string.
-            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
-            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+            Args:
+                plot_type (str): Must be either 'time' or 'number'. If time then a plot of the response rate post first puff, if number then the response rate per puff as numbered post first puff.
+                bin_time (int, optional): Only needed if plot_type is 'time'. The number of hours you want to bin the response rate to, default is 1 (hour).
+                num_dtick (int, optional): The dtick for the x-axis (the number spacing) for when plot_type 'number is chosen. Default is 10.
+                response_col (str, optional): The name of the column that contains the boolean response data.
+                int_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                display (str, optional): Choose between two options to display the data, 'continuous' (default) that is a continuous splined line along the x-axis with 95% CI, 'boxplots' is the same data but boxplots with the mean and 95 CI. Default is 'continuous'.
+                secondary (bool, optional): If true then a secondary y-axis is added that contains either the puff cound for 'time' or percentage of flies recieving the puff in 'number'. Default is True
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
         
         Returns:
             returns a plotly figure objec
@@ -2362,6 +2412,10 @@ class behavpy(pd.DataFrame):
         plot_types = ['time', 'number']
         if plot_type not in plot_types:
             raise KeyError(f'plot_type argument must be one of {*plot_types,}')
+
+        group_types = ['continuous', 'boxplots']
+        if display not in group_types:
+            raise KeyError(f'display argument must be one of {*group_types,}')
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -2452,10 +2506,22 @@ class behavpy(pd.DataFrame):
                 filt_gb[['y_max', 'y_min']] = pd.DataFrame(filt_gb['ci'].tolist(), index =  filt_gb.index)
                 filt_gb.drop('ci', axis = 1, inplace = True)
                 filt_gb.reset_index(inplace = True)
-                upper, trace, lower, _ = self._plot_line(df = filt_gb, x_col = filtname, name = lab, marker_col = qcol)
-                fig.add_trace(upper)
-                fig.add_trace(trace) 
-                fig.add_trace(lower)
+
+                if display == 'continuous':
+
+                    upper, trace, lower, _ = self._plot_line(df = filt_gb, x_col = filtname, name = lab, marker_col = qcol)
+                    fig.add_trace(upper)
+                    fig.add_trace(trace) 
+                    fig.add_trace(lower)
+
+
+                elif display == 'boxplots':
+
+                    for c in range(len(filt_gb)):
+
+                        fig.add_trace(self._plot_meanbox(median = [filt_gb['mean'].iloc[c]], q3 = [filt_gb['y_min'].iloc[c]], q1 = [filt_gb['y_max'].iloc[c]], 
+                        x = [filt_gb[filtname].iloc[c]], colour =  qcol, showlegend = False, name = filt_gb[filtname].iloc[c].astype(str), xaxis = 'x'))
+
 
                 if secondary is True:
                     if plot_type == 'number':
@@ -2479,7 +2545,9 @@ class behavpy(pd.DataFrame):
 
         fig['layout']['xaxis']['range'] = [0, np.nanmax(max_x)]
         if plot_type == 'number':
-            fig['layout']['xaxis']['dtick'] = 10
+            fig['layout']['xaxis']['range'] = [1, np.nanmax(max_x)]
+            if np.nanmax(max_x) > 30:
+                fig['layout']['xaxis']['dtick'] = 10
 
         return fig
 
@@ -2488,21 +2556,21 @@ class behavpy(pd.DataFrame):
         A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response. 
         A plot to view the response rate to a puff over the time of day. Interactions will be binned to a users input (default is 1 hour) and plotted over a ZT hours x-axis. The plot can be the full length of an experiment or wrapped to a singular day.
 
-        Args:
-            bin_time (int, optional): The number of hours you want to bin the response rate to, default is 1 (hour).
-            wrapped (bool, optional): If true the data is augmented to represent one day, combining data of the same time on consequtive days.
-            num_dtick (int, optional): The dtick for the x-axis (the number spacing) for when plot_type 'number is chosen. Default is 10.
-            response_col (str, optional): The name of the column that contains the boolean response data.
-            int_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
-            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
-            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
-            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
-            title (str, optional): The title of the plot. Default is an empty string.
-            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
-            lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
-            sceondary (bool, optional): If true then a secondary y-axis is added that contains either the puff cound for 'time' or percentage of flies recieving the puff in 'number'. Default is True
-            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
-            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+            Args:
+                bin_time (int, optional): The number of hours you want to bin the response rate to, default is 1 (hour).
+                wrapped (bool, optional): If true the data is augmented to represent one day, combining data of the same time on consequtive days.
+                num_dtick (int, optional): The dtick for the x-axis (the number spacing) for when plot_type 'number is chosen. Default is 10.
+                response_col (str, optional): The name of the column that contains the boolean response data.
+                int_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                title (str, optional): The title of the plot. Default is an empty string.
+                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+                sceondary (bool, optional): If true then a secondary y-axis is added that contains either the puff cound for 'time' or percentage of flies recieving the puff in 'number'. Default is True
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
         
         Returns:
             returns a plotly figure object

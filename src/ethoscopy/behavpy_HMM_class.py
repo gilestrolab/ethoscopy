@@ -822,7 +822,7 @@ class behavpy_HMM(behavpy):
 
         return fig, stats_df
 
-    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, bin = 60, mago_df = None, func = 'max', title = ''):
+    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, bin = 60, mago_df = None, func = 'max', show_movement = False, title = ''):
         """ plots the raw dedoded hmm model per fly (total = num_plots) 
             If hmm is a list of hmm objects, the number of plots will equal the length of that list. Use this to compare hmm models.
             """
@@ -916,6 +916,23 @@ class behavpy_HMM(behavpy):
                 )
                 )
             fig.add_trace(trace1, row = c+1, col= 1)
+
+            if show_movement == True:
+                df['var'] = np.roll((df['var'] * 2) + 0.5, 1)
+                trace2 = go.Scatter(
+                    showlegend = False,
+                    y = df['var'],
+                    x = df['t'],
+                    mode = 'lines', 
+                    marker = dict(
+                        color = 'black',
+                        ),
+                    line = dict(
+                        color = 'black',
+                        width = 0.75
+                    )
+                    )
+                fig.add_trace(trace2, row = c+1, col= 1)
 
         y_range = [-0.2, states-0.8]
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = False, ylabel = '', title = title)
