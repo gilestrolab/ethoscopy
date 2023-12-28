@@ -176,7 +176,7 @@ class behavpy_HMM(behavpy):
         df_e = pd.DataFrame(emission_prob, index = state_names, columns = observable_names)
         print(tabulate(df_e, headers = 'keys', tablefmt = "github") + "\n")
 
-    def hmm_train(self, states, observables, var_column, trans_probs = None, emiss_probs = None, start_probs = None, iterations = 10, hmm_iterations = 100, tol = 50, t_column = 't', bin_time = 60, test_size = 10, file_name = '', verbose = False):
+    def hmm_train(self, states, observables, var_column, file_name, trans_probs = None, emiss_probs = None, start_probs = None, iterations = 10, hmm_iterations = 100, tol = 50, t_column = 't', bin_time = 60, test_size = 10, verbose = False):
         """
         Behavpy wrapper for the hmmlearn package which generates a Hidden Markov Model using the movement data from ethoscope data.
         If users want a restricted framework ,
@@ -1073,3 +1073,21 @@ class behavpy_HMM(behavpy):
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
         
         return fig, stats_df
+
+    def get_hmm_raw(self, hmm, variable = 'moving', bin = 60, func = 'max'):
+        """
+        Decode all the time series per specimin, returning an augmented behavpy dataframe that has just one row per specimin and two columns, 
+        one containing the decoded timeseries as a list and one with the given observable variable as a list
+        Args:
+            hmm (hmmlearn.hmm.CategoricalHMM): A trained categorical HMM object as produced by hmm_train.
+            variable (str): The column name of the variable you wish to decode with the trained HMM. Default is 'moving'.
+            bin (int): The amount of time (in seconds) you want to bin the time series to. Default is 60
+            func (str): The function that is applied to the time series when binning it. Default is 'max'
+
+        returns:
+            A behavpy_HMM dataframe with columns bin (time), state, previous_state, moving
+        """
+
+        tdf = self.copy(deep=True)
+        decoded_df = self._hmm_decode(tdf, hmm, bin, variable, func, return_type= 'table')
+        return type(self)(decoded_df.groupby('id').agg(list).reset_index(), tdf.meta, check = True)

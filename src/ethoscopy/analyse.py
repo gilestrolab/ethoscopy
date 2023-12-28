@@ -295,6 +295,7 @@ def stimulus_response(data, start_response_window = 0, response_window_length = 
         if any(response_data['has_responded']):
             response_dict = response_data[response_data['t_rel'] == 0].to_dict('records')[0]
             response_dict['has_responded'] = True
+            response_dict['has_walked'] = response_data['has_walked'][response_data['has_responded'] == True].iloc[0]
             response_dict['t_rel'] = response_data['t_rel'][response_data['has_responded'] == True].iloc[0]
             response_dict['response_velocity'] = response_data['velocity'][response_data['has_responded'] == True].iloc[0]
             response_dict.pop('int_id')
