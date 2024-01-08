@@ -391,6 +391,70 @@ def load_ethoscope(metadata, min_time = 0 , max_time = float('inf'), reference_h
 
     return data
 
+def load_ethoscope_metadata(metadata):
+    """
+    A function to scrape the metadata table of each ethoscope in the generated metadata file.
+
+        Args:
+            metadata (pd.DataFrame): The metadata datafframe as returned from link_meta_index function
+
+    returns: 
+        A pandas DataFrame object containing the metadata as provided from the METADATA table in each ethoscope db table
+    """  
+
+    def get_meta(path):
+        try:
+            conn = sqlite3.connect(path)
+
+            mdf = pd.read_sql_query('SELECT * FROM METADATA', conn)
+
+            cols = mdf['field'].tolist()
+            mdf =  mdf.T
+            mdf.columns = cols
+            mdf.reset_index(inplace = True)
+            mdf = mdf[1:]
+
+            mdf['date_time'] = pd.to_datetime(mdf['date_time'], unit='s')
+            mid = mdf.index[0]
+
+            d = eval(mdf['experimental_info'].iloc[0])
+            exi = d
+
+            d = eval(mdf['hardware_info'].iloc[0])
+            d.pop('partitions')
+            td = pd.DataFrame(d)
+            hdi = td.loc['version'].to_dict()
+
+            d = eval(mdf['selected_options'].iloc[0].replace('<', '').replace('>', '').replace('class ', ''))['interactor']
+            kw = d.pop('kwargs')
+            kw['class'] = d['class']
+
+            mdf.drop(columns = ['experimental_info', 'selected_options', 'hardware_info', 'index', 'backup_filename'], inplace = True)
+
+            row_dict = mdf.iloc[0].to_dict()
+            row_dict.update(kw)
+            row_dict.update(exi)
+            row_dict.update(hdi)
+
+            return row_dict
+
+        finally:
+            conn.close()
+
+
+    mdata = metadata.copy(deep=True)
+    mdata['check'] = mdata['machine_name'] + '-' + mdata['date']
+    mdata.drop_duplicates(subset = ['check'], keep = 'first', inplace = True, ignore_index = False)
+
+    rows = []
+
+    # iterate over each ethoscope in the metadata df
+    for i in mdata['path']:
+        row = get_meta(i)
+        rows.append(row)
+
+    return  pd.DataFrame(rows).set_index('machine_id')
+
 def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour = None, cache = None):
     """
     Loads the data from a single region from an ethoscope according to inputted times
