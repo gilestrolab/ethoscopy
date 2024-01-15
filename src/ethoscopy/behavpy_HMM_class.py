@@ -74,7 +74,7 @@ class behavpy_HMM(behavpy):
         if return_type == 'array':
             return states_list, time_list #, logprob_list
         if return_type == 'table':
-            df.columns = ['id', 'bin', 'state', 'previous_state', 'moving']
+            df.columns = ['id', 'bin', 'state', 'previous_state', var]
             return df
 
 

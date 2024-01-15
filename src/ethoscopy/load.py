@@ -442,14 +442,19 @@ def load_ethoscope_metadata(metadata):
             conn.close()
 
 
-    mdata = metadata.copy(deep=True)
-    mdata['check'] = mdata['machine_name'] + '-' + mdata['date']
-    mdata.drop_duplicates(subset = ['check'], keep = 'first', inplace = True, ignore_index = False)
+    meta_df = metadata.copy(deep=True)
+
+    if 'time' in meta_df.columns.tolist():
+        meta_df['check'] = meta_df['machine_name'] + meta_df['date'] + meta_df['time']
+        meta_df.drop_duplicates(subset = ['check'], keep = 'first', inplace = True, ignore_index = False)
+    else:
+        meta_df['check'] = meta_df['machine_name'] + meta_df['date'] 
+        meta_df.drop_duplicates(subset = ['check'], keep = 'first', inplace = True, ignore_index = False)
 
     rows = []
 
     # iterate over each ethoscope in the metadata df
-    for i in mdata['path']:
+    for i in meta_df['path']:
         row = get_meta(i)
         rows.append(row)
 

@@ -723,7 +723,7 @@ class behavpy(pd.DataFrame):
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
         if facet_col is not None:
-            d_list = [self.xmv(facet_col, arg) for arg in facet_arf]
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             d_list = [self.copy(deep = True)]
             facet_labels = ['']
@@ -743,6 +743,10 @@ class behavpy(pd.DataFrame):
             time_immobile = time_immobile, 
             asleep = asleep,
             t_column = t_column))
+
+            if len(bouts) < 2:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
 
             plot_gb = bouts.groupby('bins').agg(**{
                     'mean' : ('prob', 'mean'),
@@ -2317,17 +2321,17 @@ class behavpy(pd.DataFrame):
         tile_df = [self.xmv(facet_tile, tile) for tile in tile_list]
 
         if rows is None:
-            nrows = len(tile_list)
+            rows = len(tile_list)
         if cols is None:
-            ncols = 1
+            cols = 1
 
         # get a list for col number and rows 
-        col_list = list(range(1, ncols+1)) * nrows
-        row_list = list([i] * ncols for i in range(1, nrows+1))
+        col_list = list(range(1, cols+1)) * rows
+        row_list = list([i] * cols for i in range(1, rows+1))
         row_list = [item for sublist in row_list for item in sublist]
 
         # genertate a subplot figure with a single column
-        fig = make_subplots(rows=nrows, cols=ncols, shared_xaxes = True, subplot_titles = tile_list)
+        fig = make_subplots(rows=rows, cols=cols, shared_xaxes = True, subplot_titles = tile_list)
 
         layouts = []
 

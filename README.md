@@ -17,4 +17,4 @@ Within Behavpy is a wrapped version of the python package hmmlearn, a tool for c
 -- Update to 1.3.0 --
 
 The latest update now allows the user to choose the colour palette from plotly to be applied to all plotting methods, see the updated tutorial on how to do this. 
-Adtioanlly, the .pivot() method has been changed to .analyse_column() to avoid overwriting the original pandas method. Also, puff_mago and find_motifs analysing functions have been renamed to stimulus_response and stimulus_prior respectively.
+Additionally, the .pivot() method has been changed to .analyse_column() to avoid overwriting the original pandas method. Also, puff_mago and find_motifs analysing functions have been renamed to stimulus_response and stimulus_prior respectively.
