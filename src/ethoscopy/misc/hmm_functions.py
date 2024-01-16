@@ -28,7 +28,7 @@ def hmm_pct_transition(state_array, total_states):
 
     return df
 
-def hmm_mean_length(state_array, delta_t = 60, raw = False):
+def hmm_mean_length(state_array, delta_t = 60, raw = False, func = 'mean'):
     """
     Finds the mean length of each state run per array/fly 
     returns a dataframe with a state column containing the states id and a mean_length column
@@ -49,7 +49,7 @@ def hmm_mean_length(state_array, delta_t = 60, raw = False):
         return df
     else:
         gb_bout = df.groupby('state').agg(**{
-                            'mean_length' : ('length_adjusted', 'mean')
+                            'mean_length' : ('length_adjusted', func)
         })
         gb_bout.reset_index(inplace = True)
 

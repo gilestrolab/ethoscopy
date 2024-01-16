@@ -257,19 +257,20 @@ class behavpy(pd.DataFrame):
         """
         try:
             if len(array) == 1 or all(array == array[0]):
-                median = q3 = q1 = array[0]
+                mean, median = q3 = q1 = array[0]
                 zlist = array
             else:
                 zlist = array[np.abs(zscore(array)) < 3]
                 if second_array is not None:
                     second_array = second_array[np.abs(zscore(array)) < 3] 
-                median = zlist.mean()
+                mean = np.mean(zlist)
+                median = np.median(zlist)
                 boot_array = bootstrap(zlist)
                 q3 = boot_array[1]
                 q1 = boot_array[0]
 
         except ZeroDivisionError:
-            median = q3 = q1 = 0
+            mean = median = q3 = q1 = 0
             zlist = array
 
         if min_max == True:
@@ -277,17 +278,18 @@ class behavpy(pd.DataFrame):
             q1 = np.min(array)
         
         if second_array is not None:
-            return median, q3, q1, zlist, second_array
+            return mean, median, q3, q1, zlist, second_array
         else:
-            return median, q3, q1, zlist
+            return mean, median, q3, q1, zlist
 
     @staticmethod
-    def _plot_meanbox(median, q3, q1, x, colour, showlegend, name, xaxis):
+    def _plot_meanbox(mean, median, q3, q1, x, colour, showlegend, name, xaxis):
         """ For quantify plots, creates a box with a mean line and then extensions showing the confidence intervals 
         """
         trace_box = go.Box(
             showlegend = showlegend,
             median = median,
+            mean = mean,
             q3 = q3,
             q1 = q1,
             x = x,
@@ -1475,10 +1477,10 @@ class behavpy(pd.DataFrame):
 
             data = data.dropna(subset = [variable])
             gdf = data.analyse_column(column = variable, function = fun)
-            median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{variable}_{fun}'].to_numpy())
+            mean, median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{variable}_{fun}'].to_numpy())
             stats_dict[name] = zlist
 
-            fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+            fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
             x = [name], colour =  col, showlegend = False, name = name, xaxis = 'x'))
 
             fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [name], colour = col, 
@@ -1535,7 +1537,7 @@ class behavpy(pd.DataFrame):
                 
                 d = data[data['phase'] == phase]
                 t_gb = d.analyse_column(column = variable, function = fun)
-                median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{variable}_mean'].to_numpy())
+                mean, median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{variable}_mean'].to_numpy())
                 stats_dict[f'{name}_{phase}'] = zlist
 
                 if phase == 'light':
@@ -1543,7 +1545,7 @@ class behavpy(pd.DataFrame):
                 else:
                     col = 'black'
 
-                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
                 x = [name], colour =  col, showlegend = False, name = name, xaxis = f'x{c+1}'))
 
                 fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [name], colour = col, 
@@ -1588,7 +1590,7 @@ class behavpy(pd.DataFrame):
             for c2, (var, secondary) in enumerate(zip(variables, bool_list)):
 
                 t_gb = data.analyse_column(column = var, function = 'mean')
-                median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{var}_mean'].to_numpy())
+                mean, median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{var}_mean'].to_numpy())
                 stats_dict[f'{name}_{var}'] = zlist
 
                 if len(facet_arg) == 1:
@@ -1596,7 +1598,7 @@ class behavpy(pd.DataFrame):
                 else:
                     col_index = c
 
-                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
                 x = [var], colour =  col_list[col_index], showlegend = False, name = var, xaxis = f'x{c+1}'), secondary_y = secondary)
 
                 fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [var], colour = col_list[col_index], 
@@ -1683,7 +1685,7 @@ class behavpy(pd.DataFrame):
 
         for c, phase in enumerate(['Lights Off', 'Lights On']):
 
-            median_list, q3_list, q1_list, con_list, label_list = analysis(d_list, phase = phase)
+            mean, median_list, q3_list, q1_list, con_list, label_list = analysis(d_list, phase = phase)
 
             for c2, label in enumerate(facet_labels):
 
@@ -1694,7 +1696,7 @@ class behavpy(pd.DataFrame):
 
                 stats_dict[f'{label}_{phase}'] = con_list[c2]
 
-                fig.add_trace(self._plot_meanbox(median = [median_list[c2]], q3 = [q3_list[c2]], q1 = [q1_list[c2]], 
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median_list[c2]], q3 = [q3_list[c2]], q1 = [q1_list[c2]], 
                 x = [label], colour =  col_list[col_index], showlegend = False, name = label, xaxis = f'x{c+1}'))
 
                 fig.add_trace(self._plot_boxpoints(y = con_list[c2], x = label_list[c2], colour = col_list[col_index], 
@@ -1955,8 +1957,8 @@ class behavpy(pd.DataFrame):
                     col_list.append([x.hex for x in list(Color(start_color).range_to(Color(end_color), N))])
             
             else:
-                col_list = [tuple(np.array(eval(col[3:])) / 255) for col in self._get_colours(facet_arg)]
-                end_colours, start_colours = self._adjust_colours(col_list, rgb = True)
+                col_list = self._get_colours(facet_arg)#[tuple(np.array(eval(col[3:])) / 255) for col in ]
+                end_colours, start_colours = self._adjust_colours(col_list)
                 col_list = [start_colours, end_colours]
 
         fig = go.Figure() 
@@ -2110,12 +2112,12 @@ class behavpy(pd.DataFrame):
 
                 filtered = filtered.dropna(subset = [response_col])
                 gdf = filtered.analyse_column(column = response_col, function = 'mean')
-                median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{response_col}_mean'].to_numpy())
+                mean, median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{response_col}_mean'].to_numpy())
 
 
                 stats_dict[lab] = zlist
 
-                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
                 x = [lab], colour =  qcol, showlegend = False, name = lab, xaxis = 'x'))
 
                 fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [lab], colour = qcol, 
@@ -2494,6 +2496,7 @@ class behavpy(pd.DataFrame):
                     rdf = tdf.groupby('id', group_keys = False).apply(partial(get_response, ptype = plot_type, time_window_length = bin_time))
                     filt_gb = rdf.groupby(filtname).agg(**{
                             'mean' : (response_col, 'mean'),
+                            'median' : (response_col, 'median'),
                             'count' : ('puff_count', 'sum'),
                             'ci' : (response_col, bootstrap)
                     })
@@ -2501,6 +2504,7 @@ class behavpy(pd.DataFrame):
                     rdf = tdf.groupby('id', group_keys = False).apply(partial(get_response, ptype = plot_type, time_window_length = bin_time))
                     filt_gb = rdf.groupby(filtname).agg(**{
                             'mean' : (response_col, 'mean'),
+                            'median' : (response_col, 'median'),
                             'count' : (response_col, 'count'),
                             'ci' : (response_col, bootstrap)
                     })
@@ -2523,7 +2527,7 @@ class behavpy(pd.DataFrame):
 
                     for c in range(len(filt_gb)):
 
-                        fig.add_trace(self._plot_meanbox(median = [filt_gb['mean'].iloc[c]], q3 = [filt_gb['y_min'].iloc[c]], q1 = [filt_gb['y_max'].iloc[c]], 
+                        fig.add_trace(self._plot_meanbox(mean = [filt_gb['mean'].iloc[c]], median = [filt_gb['mean'].iloc[c]], q3 = [filt_gb['y_min'].iloc[c]], q1 = [filt_gb['y_max'].iloc[c]], 
                         x = [filt_gb[filtname].iloc[c]], colour =  qcol, showlegend = False, name = filt_gb[filtname].iloc[c].astype(str), xaxis = 'x'))
 
 

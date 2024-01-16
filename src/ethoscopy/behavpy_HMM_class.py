@@ -605,9 +605,9 @@ class behavpy_HMM(behavpy):
             for arg, i in zip(facet_arg, facet_labels):
                 
                 try:
-                    median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy())
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy())
                 except KeyError:
-                    median, q3, q1, zlist = [0], [0], [0], [np.nan]
+                    mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
                 
                 stats_dict[f'{arg}_{lab}'] = zlist
 
@@ -622,7 +622,7 @@ class behavpy_HMM(behavpy):
                     else:
                         marker_col = col
 
-                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
                 x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
 
                 label_list = [i] * len(zlist)
@@ -671,9 +671,9 @@ class behavpy_HMM(behavpy):
             for arg, i in zip(facet_arg, facet_labels):
 
                 try:
-                    median, q3, q1, zlist = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy())
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy())
                 except KeyError:
-                    median, q3, q1, zlist = [0], [0], [0], [np.nan]
+                    mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
                 stats_dict[f'{arg}_{lab}'] = zlist
 
                 if 'baseline' in i or 'control' in i:
@@ -687,7 +687,7 @@ class behavpy_HMM(behavpy):
                     else:
                         marker_col = col
 
-                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
                 x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
 
                 label_list = [i] * len(zlist)
@@ -728,16 +728,17 @@ class behavpy_HMM(behavpy):
         self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = 0.69897000433, ylabel = 'Length of state bout (mins)', ytype = 'log', title = title, grid = grids)
 
         gb_dict = {f'gb{n}' : analysed_dict[f'df{n}'].groupby('state') for n in facet_arg}
-
+        stats = []
         for state, col, lab in zip(list_states, colours, labels):
 
             for arg, i in zip(facet_arg, facet_labels):
                 
                 try:
-                    median, q3, q1, _ = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy(), min_max = True)
+                    mean, median, q3, q1, _ = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy(), min_max = True)
                 except KeyError:
-                    median, q3, q1 = [0], [0], [0]
-
+                    mean, median, q3, q1 = [0], [0], [0]
+                row_dict = {'group' : i, 'state' : lab, 'mean' : mean, 'median' : median, 'min' : q1, 'max' : q3}
+                stats.append(row_dict)
                 if 'baseline' in i or 'control' in i:
                     if 'rebound' in i:
                         marker_col = 'black'
@@ -748,14 +749,14 @@ class behavpy_HMM(behavpy):
                         marker_col = f'dark{col}'
                     else:
                         marker_col = col
-                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
                 x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
 
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
             axis = f'xaxis{state+1}'
             self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
         
-        return fig
+        return fig, pd.DataFrame.from_dict(stats).set_index(['group', 'state']).unstack().stack()
             
     def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
 
@@ -789,9 +790,9 @@ class behavpy_HMM(behavpy):
             for arg, i in zip(facet_arg, facet_labels):
                 
                 try:
-                    median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][str(state)].to_numpy())  
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][str(state)].to_numpy())  
                 except KeyError:
-                    median, q3, q1, zlist = [0], [0], [0], [np.nan]
+                    mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
 
                 stats_dict[f'{arg}_{lab}'] = zlist
 
@@ -806,7 +807,7 @@ class behavpy_HMM(behavpy):
                     else:
                         marker_col = col
 
-                fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
                 x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
 
                 label_list = [i] * len(zlist)
@@ -1041,7 +1042,7 @@ class behavpy_HMM(behavpy):
 
                 for q in [2, 1]:
                     try:
-                        median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][f'int_{q}'][state])
+                        mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][f'int_{q}'][state])
                     except KeyError:
                         continue
 
@@ -1059,7 +1060,7 @@ class behavpy_HMM(behavpy):
                     else:
                         marker_col = col
 
-                    fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+                    fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
                     x = [lab], colour =  marker_col, showlegend = False, name = lab, xaxis = f'x{state+1}'))
 
                     label_list = [lab] * len(zlist)
