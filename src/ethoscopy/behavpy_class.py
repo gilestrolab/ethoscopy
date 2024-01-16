@@ -955,6 +955,32 @@ class behavpy(pd.DataFrame):
                                                                                                 bin_secs = bin_secs
         )), tdf.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
 
+    def remove_first_last_bout(self):
+        """
+        A method to remove the first and last bout, only use for columns like 'moving' and 'asleep', that have continuous runs of True and False variables.
+        For use with plotting and analysis where you are not sure if the starting and ending bouts weren't cut in two when filtering or stopping experiment.
+
+        Args:
+            None
+
+        Returns:
+            returns a modified behavpy object with fewer rows
+        """
+        
+        def _wrapped_remove_first_last_bout(data):
+            v = data['moving'].tolist() 
+            try:
+                change_list = np.where(np.roll(v,1)!=v)[0]
+                ind1 = np.where(np.roll(v,1)!=v)[0][0]
+                ind2 = np.where(np.roll(v,1)!=v)[0][-1]
+            except:
+                return data
+            return data.iloc[ind1:ind2]
+
+        tdf = self.reset_index().copy(deep=True)
+        return type(self)(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_remove_first_last_bout,
+        )), tdf.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
+
     def summary(self, detailed = False, t_column = 't'):
         """ 
         Prints a table with summary statistics of metadata and data counts.
@@ -2303,15 +2329,20 @@ class behavpy(pd.DataFrame):
         return sur
 
     def make_tile(self, facet_tile, plot_fun, rows = None, cols = None):
-        """ A wrapper to take any behavpy plot and create a tile plot
-        Params:
-        @facet_tile = string, the name of column in the metadata you can to split the tile plot by
-        @plot_fun = partial function, the plotting method you want per tile with its arguments in the format of partial function. See tutorial.
-        @rows = int, the number of rows you would like. Note, if left as the default none the number of rows will be the lengh of faceted variables
-        @cols = int, the number of cols you would like. Note, if left as the default none the number of columns will be 1
-        **Make sure the rows and cols fit the total number of plots your facet should create.**
+        """ 
+            *** Warning - this method is experimental and very unpolished *** 
+            
+        A method to create a tile plot of a repeated but faceted plot.
+
+            Args:
+                facet_tile (str): The name of column in the metadata you can to split the tile plot by
+                plot_fun (partial function): The plotting method you want per tile with its arguments in the format of partial function. See tutorial.
+                rows (int): The number of rows you would like. Note, if left as the default none the number of rows will be the lengh of faceted variables
+                cols (int): the number of cols you would like. Note, if left as the default none the number of columns will be 1
+                    **Make sure the rows and cols fit the total number of plots your facet should create.**
         
-        returns a plotly subplot figure
+        returns:
+            returns a plotly subplot figure
         """
 
         if facet_tile not in self.meta.columns:
@@ -2332,7 +2363,7 @@ class behavpy(pd.DataFrame):
         row_list = list([i] * cols for i in range(1, rows+1))
         row_list = [item for sublist in row_list for item in sublist]
 
-        # genertate a subplot figure with a single column
+        # generate a subplot figure with a single column
         fig = make_subplots(rows=rows, cols=cols, shared_xaxes = True, subplot_titles = tile_list)
 
         layouts = []
@@ -2412,7 +2443,7 @@ class behavpy(pd.DataFrame):
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
         
         Returns:
-            returns a plotly figure objec
+            returns a plotly figure object
         """
 
         plot_types = ['time', 'number']
