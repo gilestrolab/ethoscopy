@@ -1079,11 +1079,12 @@ class behavpy_HMM(behavpy):
         """
         Decode all the time series per specimin, returning an augmented behavpy dataframe that has just one row per specimin and two columns, 
         one containing the decoded timeseries as a list and one with the given observable variable as a list
-        Args:
-            hmm (hmmlearn.hmm.CategoricalHMM): A trained categorical HMM object as produced by hmm_train.
-            variable (str): The column name of the variable you wish to decode with the trained HMM. Default is 'moving'.
-            bin (int): The amount of time (in seconds) you want to bin the time series to. Default is 60
-            func (str): The function that is applied to the time series when binning it. Default is 'max'
+
+            Args:
+                hmm (hmmlearn.hmm.CategoricalHMM): A trained categorical HMM object as produced by hmm_train.
+                variable (str): The column name of the variable you wish to decode with the trained HMM. Default is 'moving'.
+                bin (int): The amount of time (in seconds) you want to bin the time series to. Default is 60
+                func (str): The function that is applied to the time series when binning it. Default is 'max'
 
         returns:
             A behavpy_HMM dataframe with columns bin (time), state, previous_state, moving
