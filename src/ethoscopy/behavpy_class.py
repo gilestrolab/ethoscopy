@@ -257,7 +257,7 @@ class behavpy(pd.DataFrame):
         """
         try:
             if len(array) == 1 or all(array == array[0]):
-                mean, median = q3 = q1 = array[0]
+                mean = median = q3 = q1 = array[0]
                 zlist = array
             else:
                 zlist = array[np.abs(zscore(array)) < 3]
