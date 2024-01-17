@@ -750,7 +750,7 @@ class behavpy_HMM(behavpy):
                     else:
                         marker_col = col
                 fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
-                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
+                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}', CI = False))
 
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
             axis = f'xaxis{state+1}'

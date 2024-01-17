@@ -283,11 +283,10 @@ class behavpy(pd.DataFrame):
             return mean, median, q3, q1, zlist
 
     @staticmethod
-    def _plot_meanbox(mean, median, q3, q1, x, colour, showlegend, name, xaxis):
+    def _plot_meanbox(mean, median, q3, q1, x, colour, showlegend, name, xaxis, CI = True):
         """ For quantify plots, creates a box with a mean line and then extensions showing the confidence intervals 
         """
-        if not q1 < median < q3:
-            median = mean
+
         trace_box = go.Box(
             showlegend = showlegend,
             median = median,
@@ -306,6 +305,11 @@ class behavpy(pd.DataFrame):
             name = name,
             legendgroup = name
         )
+        
+        if CI:
+            trace_box['mean'] = []
+            trace_box['median'] = mean
+
         return trace_box
     
     @staticmethod
