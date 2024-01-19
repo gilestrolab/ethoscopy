@@ -734,10 +734,14 @@ class behavpy_HMM(behavpy):
             for arg, i in zip(facet_arg, facet_labels):
                 
                 try:
-                    mean, median, q3, q1, _ = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy(), min_max = True)
+                    lnp = gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy()
+                    count = lnp.size
+                    mean, median, q3, q1, _ = self._zscore_bootstrap(lnp, min_max = True)
+
                 except KeyError:
-                    mean, median, q3, q1 = [0], [0], [0]
-                row_dict = {'group' : i, 'state' : lab, 'mean' : mean, 'median' : median, 'min' : q1, 'max' : q3}
+                    mean, median, q3, q1, count = [0], [0], [0], [0], [0]
+
+                row_dict = {'group' : i, 'state' : lab, 'mean' : mean, 'median' : median, 'min' : q1, 'max' : q3, 'count' : count}
                 stats.append(row_dict)
                 if 'baseline' in i or 'control' in i:
                     if 'rebound' in i:
