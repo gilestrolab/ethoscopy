@@ -268,7 +268,7 @@ class behavpy_HMM(behavpy):
                 init_params += 's'
             else:
                 s_prob = np.array([[np.random.random() if y == 'rand' else y for y in x] for x in start_probs], dtype = np.float64)
-                s_prob = np.array([[y / sum(x) for y in x] for x in t_prob], dtype = np.float64)
+                s_prob = np.array([[y / sum(x) for y in x] for x in s_prob], dtype = np.float64)
                 h.startprob_ = s_prob
 
             if trans_probs is None:

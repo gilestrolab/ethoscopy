@@ -2473,7 +2473,7 @@ class behavpy(pd.DataFrame):
             xname = 'Hours post first puff'
             filtname = 'bin_time'
         else:
-            yname = 'Percentage revieving puff'
+            yname = 'Percentage recieving puff'
             xname = 'Puff number post first puff'
             filtname = 'puff_count'
 
