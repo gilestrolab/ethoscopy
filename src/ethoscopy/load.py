@@ -429,7 +429,7 @@ def load_ethoscope_metadata(metadata):
             kw = d.pop('kwargs')
             kw['class'] = d['class']
 
-            mdf.drop(columns = ['experimental_info', 'selected_options', 'hardware_info', 'index', 'backup_filename'], inplace = True)
+            mdf.drop(columns = ['experimental_info', 'selected_options', 'hardware_info', 'index', 'backup_filename'], errors = 'ignore', inplace = True)
 
             row_dict = mdf.iloc[0].to_dict()
             row_dict.update(kw)

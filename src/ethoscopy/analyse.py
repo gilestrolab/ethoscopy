@@ -447,7 +447,7 @@ def stimulus_prior(data, window = 300, response_window_length = 10, velocity_cor
 #     data['velocity'] = data.dist / velocity_correction_coef
 #     data.drop(columns = ['deltaT', 'dist'], inplace = True)
 #     data['t'] = np.floor(data['t'])
-#     data = data.groupby('t').agg(**{
+#     data = data.groupby('t').agg(**{. T
 #                 'x' : ('x', 'mean'),
 #                 'y' : ('y', 'mean'),
 #                 'w' : ('w', 'mean'),
