@@ -125,12 +125,13 @@ def prep_data_motion_detector(data,
         """ 
         Remove rows from table when there are not enough data points per the given window
 
-        Params:
-        @data =  pandas dataframe, dataframe containing ethoscope raw data with column 't' containing time series data
-        @window = int, the size of the window to search for minimum points, default is 60
-        @min_p = int, the minimum number of data points needed in a given window for it not to be removed, default is 20
+            Args:
+                data (pandas dataframe): A dataframe containing ethoscope raw data with column 't' containing time series data
+                window (int): The size of the window to search for minimum points, default is 60
+                min_p (int): The minimum number of data points needed in a given window for it not to be removed, default is 20
 
-        returns the same object as entered into the function
+        returns:
+            the same object as entered into the function with fewer rows
         """
         data['t_w'] = data['t'].map(lambda t: window * floor(t / window))
         data['n_points'] = data.groupby(['t_w'])['t_w'].transform('count')
@@ -190,10 +191,10 @@ def sleep_annotation(data,
         """ 
         Checks if contiguous bouts of immobility are greater than the minimum valid time given
 
-        Params:
-        @moving = pandas series, series object comtaining the movement data of individual flies
-        @fs = int, sampling frequency (Hz) to scale minimum length to time in seconds
-        @min_valid_time = min amount immobile time that counts as sleep, default is 300 (i.e 5 mins) 
+            Args:
+                moving (pandas series): series object comtaining the movement data of individual flies
+                fs (int): The sampling frequency (Hz) to scale minimum length to time in seconds
+                min_valid_time (int): The minimum amount immobile time that counts as sleep, default is 300 (i.e 5 mins) 
         
         returns a list object to be added to a pandas dataframe
         """
@@ -316,11 +317,11 @@ def stimulus_prior(data, window = 300, response_window_length = 10, velocity_cor
     interaction taking place. Each run is given a unique ID per fly, however it is not unique to other flies. To do so, combine the 
     fly ID with run ID after.
 
-    Args:
-        data (pd.DataFrame): A dataframe containing behavioural variable from many or one multiple animals 
-        window (int, optional): The period of time (seconds) prior to the stimulus you want data retrieved for. Default is 300.
-        response_window_length (int, optional): The period of time (seconds) after the stimulus to check for a response (movement). Default is 10 seconds.
-        velocity_correction_coef (float, optional): A coefficient to correct the velocity data (change for different length tubes), default is 3e-3
+        Args:
+            data (pd.DataFrame): A dataframe containing behavioural variable from many or one multiple animals 
+            window (int, optional): The period of time (seconds) prior to the stimulus you want data retrieved for. Default is 300.
+            response_window_length (int, optional): The period of time (seconds) after the stimulus to check for a response (movement). Default is 10 seconds.
+            velocity_correction_coef (float, optional): A coefficient to correct the velocity data (change for different length tubes), default is 3e-3
     
     returns:  
         a pandas dataframe object with columns such as 't_count' and 'has_responded'

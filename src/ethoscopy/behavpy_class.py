@@ -8,7 +8,6 @@ from plotly.express.colors import qualitative
 from math import floor, ceil, sqrt
 from scipy.stats import zscore
 from functools import partial, update_wrapper
-from scipy.interpolate import interp1d
 from colour import Color
 from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.analyse import max_velocity_detector
@@ -906,19 +905,23 @@ class behavpy(pd.DataFrame):
         return bout_gb
 
     @staticmethod
-    def _wrapped_interpolate(data, var, step, t_col = 't'):
+    def _wrapped_interpolate_lin(data, var, step, t_col = 't'):
         """ Take the min and max time, create a time series at a given time step and interpolate missing values from the data """
 
         id = data['id'].iloc[0]
-        sample_seq = np.arange(min(data[t_col]), np.nanmax(data[t_col]), step)
+        sample_seq = np.arange(min(data[t_col]), np.nanmax(data[t_col]) + step, step)
+
         if len(sample_seq) < 3:
             return None
-        f  = interp1d(data[t_col].to_numpy(), data[var].to_numpy())
-        return  pd.DataFrame(data = {'id' : id, t_col : sample_seq, var : f(sample_seq)})
 
-    def interpolate(self, variable, step_size, t_column = 't'):
+        f = np.interp(sample_seq, data[t_col].to_numpy(), data[var].to_numpy())
+
+        return  pd.DataFrame(data = {'id' : [id] * len(sample_seq), t_col : sample_seq, var : f})
+
+
+    def interpolate_linear(self, variable, step_size, t_column = 't'):
         """ A method to interpolate data from a given dataset according to a new time step size.
-            The data must by etiher a int, float, or bool.
+            The data must be ints or floats and have a linear distribution.
 
         Args:
             varibale (str): The column name of the variable you wish to interpolate.
