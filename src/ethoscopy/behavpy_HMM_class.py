@@ -1093,7 +1093,5 @@ class behavpy_HMM(behavpy):
         returns:
             A behavpy_HMM dataframe with columns bin (time), state, previous_state, moving
         """
-
         tdf = self.copy(deep=True)
-        decoded_df = self._hmm_decode(tdf, hmm, bin, variable, func, return_type= 'table')
-        return type(self)(decoded_df.groupby('id').agg(list).reset_index(), tdf.meta, check = True)
+        return self.__class__(self._hmm_decode(tdf, hmm, bin, variable, func, return_type= 'table'), tdf.meta, check = True)
