@@ -5,10 +5,17 @@ from math import floor, ceil, sqrt
 from scipy.stats import zscore
 from functools import partial, update_wrapper
 
+from tabulate import tabulate
+from hmmlearn import hmm
+
+from scipy.signal import find_peaks
+from astropy.timeseries import LombScargle
+
 from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
 from ethoscopy.misc.bootstrap_CI import bootstrap
+from ethoscopy.misc.periodogram_functions import chi_squared, lomb_scargle, fourier, welch, wavelet
 
 class behavpy_core(pd.DataFrame):
     """
@@ -1419,8 +1426,9 @@ class behavpy_core(pd.DataFrame):
         """
 
         tdf = self.copy(deep=True)
-        decoded_df = self._hmm_decode(tdf, hmm, bin, variable, func, return_type= 'table')
-        return self.__class__(decoded_df.groupby('id').agg(list).reset_index(), tdf.meta, check = True)
+        return self.__class__(self._hmm_decode(tdf, hmm, bin, variable, func, return_type= 'table'), tdf.meta, check = True)
+
+
 
     # PERIODOGRAM SECTION
 

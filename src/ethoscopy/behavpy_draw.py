@@ -9,10 +9,13 @@ from math import floor, ceil, sqrt
 from scipy.stats import zscore
 from functools import partial, update_wrapper
 from colour import Color
+
 from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
 from ethoscopy.misc.bootstrap_CI import bootstrap
+from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
+
 
 class behavpy_draw(behavpy_core):
     """
@@ -1811,6 +1814,975 @@ class behavpy_plotly(behavpy_draw):
         return fig, stats_df
 
     # def plot_survival()
+
+    # HMM section
+
+    def plot_hmm_overtime(self, hmm, variable = 'moving', labels = None, colours = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False):
+        """
+        Creates a plot of all states overlayed with y-axis shows the liklihood of being in a sleep state and the x-axis showing time in hours.
+        The plot is generated through the plotly package
+
+        Params:
+        @self = behavpy_HMM,
+        @hmm = hmmlearn.hmm.MultinomialHMM, this should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+        @variable = string, the column heading of the variable of interest. Default is "moving"
+        @labels = list[string], the names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake']
+        @colours = list[string], the name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red)
+        It accepts a specific colour or an array of numbers that are acceptable to plotly
+        @wrapped = bool, if True the plot will be limited to a 24 hour day average
+        @bin = int, the time in seconds you want to bin the movement data to, default is 60 or 1 minute
+        @func = string, when binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+        @avg_window, int, the window in minutes you want the moving average to be applied to. Default is 30 mins
+        @circadian_night, int, the hour when lights are off during the experiment. Default is ZT 12
+        @save = bool/string, if not False then save as the location and file name of the save file
+
+        returns None
+        """
+        assert isinstance(wrapped, bool)
+
+        df = self.copy(deep = True)
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+
+        states_list, time_list = self._hmm_decode(df, hmm, bin, variable, func)
+
+        df = pd.DataFrame()
+        for l, t in zip(states_list, time_list):
+            tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
+            df = pd.concat([df, tdf], ignore_index = True)
+
+        if wrapped is True:
+            df['t'] = df['t'].map(lambda t: t % (60*60*day_length))
+
+        df['t'] = df['t'] / (60*60)
+        t_min = int(12 * floor(df.t.min() / 12))
+        t_max = int(12 * ceil(df.t.max() / 12))    
+        t_range = [t_min, t_max]  
+
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = [-0.025, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Probability of being in state', title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = t_range, t0 = 0, dtick = day_length/4, xlabel = 'ZT (Hours)')
+
+        for c, (col, n) in enumerate(zip(colours, labels)):
+
+            column = f'state_{c}'
+
+            gb_df = df.groupby('t').agg(**{
+                        'mean' : (column, 'mean'), 
+                        'SD' : (column, 'std'),
+                        'count' : (column, 'count')
+                    })
+
+            gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
+            gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
+            gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
+            gb_df = gb_df.reset_index()
+
+            upper, trace, lower, _ = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = col)
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
+
+        # Light-Dark annotaion bars
+        bar_shapes, min_bar = circadian_bars(t_min, t_max, max_y = 1, day_length = day_length, lights_off = lights_off)
+        fig.update_layout(shapes=list(bar_shapes.values()))
+
+        return fig
+
+    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False):
+        """ works for any number of states """
+
+        assert isinstance(wrapped, bool)
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+
+        start_colours, end_colours = self._adjust_colours(colours)
+
+        if len(labels) <= 2:
+            nrows = 1
+            ncols =2
+        else:
+            nrows =  2
+            ncols = round(len(labels) / 2)
+
+        fig = make_subplots(rows= nrows, cols= ncols, shared_xaxes=True, shared_yaxes=True, vertical_spacing=0.02, horizontal_spacing=0.02)
+
+        col_list = list(range(1, ncols+1)) * nrows
+        row_list = list([i] * ncols for i in range(1, nrows+1))
+        row_list = [item for sublist in row_list for item in sublist]
+
+        colour_range_dict = {}
+        colours_dict = {'start' : start_colours, 'end' : end_colours}
+        for q in range(0,len(labels)):
+            start_color = colours_dict.get('start')[q]
+            end_color = colours_dict.get('end')[q]
+            N = len(facet_arg)
+            colour_range_dict[q] = [x.hex for x in list(Color(start_color).range_to(Color(end_color), N))]
+
+        for c, (arg, n, h, b) in enumerate(zip(facet_arg, facet_labels, h_list, b_list)):   
+
+            if arg != None:
+                d = self.xmv(facet_col, arg)
+            else:
+                d = self.copy(deep = True)
+
+            states_list, time_list = self._hmm_decode(d, h, b, variable, func)
+
+            analysed_df = pd.DataFrame()
+            for l, t in zip(states_list, time_list):
+                temp_df = hmm_pct_state(l, t, [0, 1, 2, 3], avg_window = int((avg_window * 60)/b))
+                analysed_df = pd.concat([analysed_df, temp_df], ignore_index = False)
+
+            if wrapped is True:
+                analysed_df['t'] = analysed_df['t'].map(lambda t: t % (60*60*day_length))
+            analysed_df['t'] = analysed_df['t'] / (60*60)
+
+            if 'control' in n.lower() or 'baseline' in n.lower() or 'ctrl' in n.lower():
+                black_list = ['black'] * len(facet_arg)
+                black_range_dict = {0 : black_list, 1: black_list, 2 : black_list, 3 : black_list}
+                marker_col = black_range_dict
+            else:
+                marker_col = colour_range_dict
+
+            t_min = int(12 * floor(analysed_df.t.min() / 12))
+            t_max = int(12 * ceil(analysed_df.t.max() / 12))    
+            t_range = [t_min, t_max]  
+
+            for i, (lab, row, col) in enumerate(zip(labels, row_list, col_list)):
+
+                column = f'state_{i}'
+
+                gb_df = analysed_df.groupby('t').agg(**{
+                            'mean' : (column, 'mean'), 
+                            'SD' : (column, 'std'),
+                            'count' : (column, 'count')
+                        })
+
+                gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
+                gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
+                gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
+                gb_df = gb_df.reset_index()
+
+                upper, trace, lower, _ = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = marker_col.get(i)[c])
+                fig.add_trace(upper,row=row, col=col)
+                fig.add_trace(trace, row=row, col=col) 
+                fig.add_trace(lower, row=row, col=col)
+
+                if c == 0:
+                    fig.add_annotation(xref='x domain', yref='y domain',x=0.1, y=0.9, text = lab, font = {'size': 18, 'color' : 'black'}, showarrow = False,
+                    row=row, col=col)
+
+        fig.update_xaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            range = t_range,
+            tick0 = 0,
+            dtick = 6,
+            ticks = 'outside',
+            tickwidth = 2,
+            tickfont = dict(
+                size = 18
+            ),
+            linewidth = 2,
+            showgrid = False
+        )
+
+        fig.update_yaxes(
+            zeroline = False, 
+            color = 'black',
+            linecolor = 'black',
+            range = [-0.05, 1], 
+            tick0 = 0,
+            dtick = 0.2,
+            ticks = 'outside',
+            tickwidth = 2,
+            tickfont = dict(
+                size = 18
+            ),
+            linewidth = 4,
+            showgrid = grids
+        )
+
+
+        fig.update_layout(
+            title = title,
+            plot_bgcolor = 'white',
+            legend = dict(
+                bgcolor = 'rgba(201, 201, 201, 1)',
+                bordercolor = 'grey',
+                font = dict(
+                    size = 14
+                ),
+                x = 1.005,
+                y = 0.5
+            )
+        )
+
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = 'ZT Time (Hours)',
+                    x = 0.5,
+                    xanchor = 'center',
+                    xref = 'paper',
+                    y = 0,
+                    yanchor = 'top',
+                    yref = 'paper',
+                    yshift = -30
+                )
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = 'Likelihood to be in sleep state',
+                    x = 0,
+                    xanchor = 'left',
+                    xref = 'paper',
+                    y = 0.5,
+                    yanchor = 'middle',
+                    yref = 'paper',
+                    xshift =  -85,
+                    textangle =  -90
+        )
+
+        # Light-Dark annotaion bars
+        bar_shapes, min_bar = circadian_bars(t_min, t_max, max_y = 1, day_length = day_length, lights_off = lights_off, split = len(labels))
+        fig.update_layout(shapes=list(bar_shapes.values()))
+
+        return fig
+
+    def plot_hmm_quantify(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
+        """
+        
+        """
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        list_states = list(range(len(labels)))
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+
+        if facet_col is not None:
+            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            df_list = [self.copy(deep = True)]
+
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
+
+        def analysis(array_states):
+            rows = []
+            for array in array_states:
+                unique, counts = np.unique(array, return_counts=True)
+                row = dict(zip(unique, counts))
+                rows.append(row)
+            counts_all =  pd.DataFrame(rows)
+            counts_all['sum'] = counts_all.sum(axis=1)
+            counts_all = counts_all.iloc[:, list_states[0]: list_states[-1]+1].div(counts_all['sum'], axis=0)
+            counts_all.fillna(0, inplace = True)
+            return counts_all
+
+        analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0]) for n in facet_arg}
+        
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Fraction of time in each state', title = title, grid = grids)
+
+        stats_dict = {}
+
+        for state, col, lab in zip(list_states, colours, labels):
+
+            for arg, i in zip(facet_arg, facet_labels):
+                
+                try:
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy())
+                except KeyError:
+                    mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
+                
+                stats_dict[f'{arg}_{lab}'] = zlist
+
+                if 'baseline' in i.lower() or 'control' in i.lower() or 'ctrl' in i.lower():
+                    if 'rebound' in i.lower():
+                        marker_col = 'black'
+                    else:
+                        marker_col = 'grey'
+                else:
+                    if 'rebound' in i.lower():
+                        marker_col = f'dark{col}'
+                    else:
+                        marker_col = col
+
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
+                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
+
+                label_list = [i] * len(zlist)
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
+                showlegend = False, name = i, xaxis = f'x{state+1}'))
+
+            domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
+            axis = f'xaxis{state+1}'
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+        
+        return fig, stats_df
+    
+    def plot_hmm_quantify_length(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
+        
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        list_states = list(range(len(labels)))
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+
+        if facet_col is not None:
+            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            df_list = [self.copy(deep = True)]
+
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
+
+        def analysis(states, t_diff):
+            df_lengths = pd.DataFrame()
+            for l in states:
+                length = hmm_mean_length(l, delta_t = t_diff) 
+                df_lengths = pd.concat([df_lengths, length], ignore_index= True)
+            return df_lengths
+
+        analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0], b) for n, b in zip(facet_arg, b_list)}
+
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = 0.69897000433, ylabel = 'Length of state bout (mins)', ytype = 'log', title = title, grid = grids)
+
+        gb_dict = {f'gb{n}' : analysed_dict[f'df{n}'].groupby('state') for n in facet_arg}
+
+        stats_dict = {}
+
+        for state, col, lab in zip(list_states, colours, labels):
+
+            for arg, i in zip(facet_arg, facet_labels):
+
+                try:
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy())
+                except KeyError:
+                    mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
+                stats_dict[f'{arg}_{lab}'] = zlist
+
+                if 'baseline' in i or 'control' in i:
+                    if 'rebound' in i:
+                        marker_col = 'black'
+                    else:
+                        marker_col = 'grey'
+                else:
+                    if 'rebound' in i:
+                        marker_col = f'dark{col}'
+                    else:
+                        marker_col = col
+
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
+                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
+
+                label_list = [i] * len(zlist)
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
+                showlegend = False, name = i, xaxis = f'x{state+1}'))
+
+            domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
+            axis = f'xaxis{state+1}'
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+        
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+
+        return fig, stats_df
+
+    def plot_hmm_quantify_length_min_max(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
+            
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        list_states = list(range(len(labels)))
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+
+        if facet_col is not None:
+            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            df_list = [self.copy(deep = True)]
+
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
+
+        def analysis(states, t_diff):
+            df_lengths = pd.DataFrame()
+            for l in states:
+                length = hmm_mean_length(l, delta_t = t_diff, raw = True) 
+                df_lengths = pd.concat([df_lengths, length], ignore_index= True)
+            return df_lengths
+
+        analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0], b) for n, b in zip(facet_arg, b_list)}
+
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = 0.69897000433, ylabel = 'Length of state bout (mins)', ytype = 'log', title = title, grid = grids)
+
+        gb_dict = {f'gb{n}' : analysed_dict[f'df{n}'].groupby('state') for n in facet_arg}
+        stats = []
+        for state, col, lab in zip(list_states, colours, labels):
+
+            for arg, i in zip(facet_arg, facet_labels):
+                
+                try:
+                    lnp = gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy()
+                    count = lnp.size
+                    mean, median, q3, q1, _ = self._zscore_bootstrap(lnp, min_max = True)
+
+                except KeyError:
+                    mean, median, q3, q1, count = [0], [0], [0], [0], [0]
+
+                row_dict = {'group' : i, 'state' : lab, 'mean' : mean, 'median' : median, 'min' : q1, 'max' : q3, 'count' : count}
+                stats.append(row_dict)
+                if 'baseline' in i or 'control' in i:
+                    if 'rebound' in i:
+                        marker_col = 'black'
+                    else:
+                        marker_col = 'grey'
+                else:
+                    if 'rebound' in i:
+                        marker_col = f'dark{col}'
+                    else:
+                        marker_col = col
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
+                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}', CI = False))
+
+            domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
+            axis = f'xaxis{state+1}'
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+        
+        return fig, pd.DataFrame.from_dict(stats).set_index(['group', 'state']).unstack().stack()
+            
+    def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        list_states = list(range(len(labels)))
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+
+        if facet_col is not None:
+            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            df_list = [self.copy(deep = True)]
+
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
+
+        def analysis(states):
+            df_trans = pd.DataFrame()
+            for l in states:
+                trans = hmm_pct_transition(l, list_states) 
+                df_trans = pd.concat([df_trans, trans], ignore_index= True)
+            return df_trans
+
+        analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0]) for n in facet_arg}
+
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = [0, 1.05], t0 = 0, dtick = 0.2, ylabel = 'Fraction of runs of each state', title = title, grid = grids)
+
+        stats_dict = {}
+
+        for state, col, lab in zip(list_states, colours, labels):
+
+            for arg, i in zip(facet_arg, facet_labels):
+                
+                try:
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][str(state)].to_numpy())  
+                except KeyError:
+                    mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
+
+                stats_dict[f'{arg}_{lab}'] = zlist
+
+                if 'baseline' in i.lower() or 'control' in i.lower():
+                    if 'rebound' in i.lower():
+                        marker_col = 'black'
+                    else:
+                        marker_col = 'grey'
+                else:
+                    if 'rebound' in i.lower():
+                        marker_col = f'dark{col}'
+                    else:
+                        marker_col = col
+
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
+                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
+
+                label_list = [i] * len(zlist)
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
+                showlegend = False, name = i, xaxis = f'x{state+1}'))
+
+            domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
+
+            axis = f'xaxis{state+1}'
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+
+        return fig, stats_df
+
+    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, bin = 60, mago_df = None, func = 'max', show_movement = False, title = ''):
+        """ plots the raw dedoded hmm model per fly (total = num_plots) 
+            If hmm is a list of hmm objects, the number of plots will equal the length of that list. Use this to compare hmm models.
+            """
+
+        if colours is None:
+            if isinstance(hmm, list):
+                h = hmm[0]
+            else:
+                h = hmm
+            states = h.transmat_.shape[0]
+            if states == 4:
+                colours = self._colours_four
+            else:
+                raise RuntimeError(f'Your trained HMM is not 4 states, please provide the {h.transmat_.shape[0]} colours for this hmm. See doc string for more info')
+
+        colours_index = {c : col for c, col in enumerate(colours)}
+
+        if mago_df is not None:
+            assert isinstance(mago_df, behavpy) or isinstance(mago_df, behavpy_HMM), 'The mAGO dataframe is not a behavpy or behavpy_HMM class'
+
+        if isinstance(hmm, list):
+            num_plots = len(hmm)
+            rand_flies = [np.random.permutation(list(set(self.meta.index)))[0]] * num_plots
+            h_list = hmm
+            if isinstance(bin, list):
+                b_list = bin 
+            else:
+                b_list = [bin] * num_plots
+        else:
+            rand_flies = np.random.permutation(list(set(self.meta.index)))[:num_plots]
+            h_list = [hmm] * num_plots
+            b_list = [bin] * num_plots
+
+        df_list = [self.xmv('id', id) for id in rand_flies]
+        decoded = [self._hmm_decode(d, h, b, variable, func) for d, h, b in zip(df_list, h_list, b_list)]
+
+        def analyse(data, df_variable):
+            states = data[0][0]
+            time = data[1][0]
+            id = df_variable.index.tolist()
+            var = df_variable[variable].tolist()
+            previous_states = np.array(states[:-1], dtype = float)
+            previous_states = np.insert(previous_states, 0, np.nan)
+            previous_var = np.array(var[:-1], dtype = float)
+            previous_var = np.insert(previous_var, 0, np.nan)
+            all_df = pd.DataFrame(data = zip(id, states, time, var, previous_states, previous_var))
+            all_df.columns = ['id','state', 't', 'var','previous_state', 'previous_var']
+            all_df.dropna(inplace = True)
+            all_df['colour'] = all_df['previous_state'].map(colours_index)
+            all_df.set_index('id', inplace = True)
+            return all_df
+
+        analysed = [analyse(i, v) for i, v in zip(decoded, df_list)]
+
+        fig = make_subplots(
+        rows= num_plots, 
+        cols=1,
+        shared_xaxes=True, 
+        shared_yaxes=True, 
+        vertical_spacing=0.02,
+        horizontal_spacing=0.02
+        )
+
+        for c, (df, b) in enumerate(zip(analysed, b_list)):
+            id = df.first_valid_index()
+            print(f'Plotting: {id}')
+            if mago_df is not None:
+                df2 = mago_df.xmv('id', id)
+                df2 = df2[df2['has_interacted'] == 1]
+                df2['t'] = df2['interaction_t'].map(lambda t:  b * floor(t / b))
+                df2.reset_index(inplace = True)
+                df = pd.merge(df, df2, how = 'outer', on = ['id', 't'])
+                df['colour'] = np.where(df['has_responded'] == True, 'purple', df['colour'])
+                df['colour'] = np.where(df['has_responded'] == False, 'lime', df['colour'])
+                df['t'] = df['t'].map(lambda t: t / (60*60))
+            
+            else:
+                df['t'] = df['t'].map(lambda t: t / (60*60))
+
+            trace1 = go.Scatter(
+                showlegend = False,
+                y = df['previous_state'],
+                x = df['t'],
+                mode = 'markers+lines', 
+                marker = dict(
+                    color = df['colour'],
+                    ),
+                line = dict(
+                    color = 'black',
+                    width = 0.5
+                )
+                )
+            fig.add_trace(trace1, row = c+1, col= 1)
+
+            if show_movement == True:
+                df['var'] = np.roll((df['var'] * 2) + 0.5, 1)
+                trace2 = go.Scatter(
+                    showlegend = False,
+                    y = df['var'],
+                    x = df['t'],
+                    mode = 'lines', 
+                    marker = dict(
+                        color = 'black',
+                        ),
+                    line = dict(
+                        color = 'black',
+                        width = 0.75
+                    )
+                    )
+                fig.add_trace(trace2, row = c+1, col= 1)
+
+        y_range = [-0.2, states-0.8]
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = False, ylabel = '', title = title)
+
+        fig.update_yaxes(
+            showgrid = False,
+            linecolor = 'black',
+            zeroline = False,
+            ticks = 'outside',
+            range = y_range, 
+            tick0 = 0, 
+            dtick = 1,
+            tickwidth = 2,
+            tickfont = dict(
+                size = 18
+            ),
+            linewidth = 4
+        )
+        fig.update_xaxes(
+            showgrid = False,
+            color = 'black',
+            linecolor = 'black',
+            ticks = 'outside',
+            tickwidth = 2,
+            tickfont = dict(
+                size = 18
+            ),
+            linewidth = 4
+        )
+
+        fig.update_yaxes(
+            title = dict(
+                text = 'Predicted State',
+                font = dict(
+                    size = 18,
+                    color = 'black'
+                )
+            ),
+            row = ceil(num_plots/2),
+            col = 1
+        )
+
+        fig.update_xaxes(
+            title = dict(
+                text = 'ZT Hours',
+                font = dict(
+                    size = 18,
+                    color = 'black'
+                )
+            ),
+            row = num_plots,
+            col = 1
+        )
+
+        return fig
+    
+    def plot_hmm_response(self, mov_df, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
+        """
+        
+        """
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        list_states = list(range(len(labels)))
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+
+        if facet_col is not None:
+            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+            mov_df_list = [mov_df.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            df_list = [self.copy(deep = True)]
+            mov_df_list = [mov_df.copy(deep = True)]
+
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func, return_type = 'table') for n, d, h, b in zip(facet_arg, mov_df_list, h_list, b_list)}
+        puff_dict = {f'pdf{n}' : d for n, d in zip(facet_arg, df_list)}
+
+        def alter_merge(data, puff):
+            puff['bin'] = puff['interaction_t'].map(lambda t:  60 * floor(t / 60))
+            puff.reset_index(inplace = True)
+
+            merged = pd.merge(data, puff, how = 'inner', on = ['id', 'bin'])
+            merged['t_check'] = merged.interaction_t + merged.t_rel
+            merged['t_check'] = merged['t_check'].map(lambda t:  60 * floor(t / 60))
+
+            merged['previous_state'] = np.where(merged['t_check'] > merged['bin'], merged['state'], merged['previous_state'])
+
+            interaction_dict = {}
+            for i in list(set(merged.has_interacted)):
+                filt_merged = merged[merged['has_interacted'] == i]
+                big_gb = filt_merged.groupby(['id', 'previous_state']).agg(**{
+                            'prop_respond' : ('has_responded', 'mean')
+                    })
+                interaction_dict[f'int_{int(i)}'] = big_gb.groupby('previous_state')['prop_respond'].apply(np.array)
+
+            return interaction_dict
+
+        analysed_dict = {f'df{n}' : alter_merge(decoded_dict[f'df{n}'], puff_dict[f'pdf{n}']) for n in facet_arg}
+        
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Response Rate', title = title, grid = grids)
+
+        stats_dict = {}
+
+        for state, col, lab in zip(list_states, colours, labels):
+
+            for arg, i in zip(facet_arg, facet_labels):
+
+                for q in [2, 1]:
+                    try:
+                        mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][f'int_{q}'][state])
+                    except KeyError:
+                        continue
+
+                    stats_dict[f'{arg}_{lab}_{q}'] = zlist
+
+                    if q == 2:
+                        lab = f'{i} Spon. mov.'
+                    else:
+                        lab = i
+
+                    if 'baseline' in lab.lower() or 'control' in lab.lower() or 'ctrl' in lab.lower():
+                            marker_col = 'black'
+                    elif 'spon. mov.' in lab.lower():
+                            marker_col = 'grey'
+                    else:
+                        marker_col = col
+
+                    fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
+                    x = [lab], colour =  marker_col, showlegend = False, name = lab, xaxis = f'x{state+1}'))
+
+                    label_list = [lab] * len(zlist)
+                    fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
+                    showlegend = False, name = lab, xaxis = f'x{state+1}'))
+
+            domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
+            axis = f'xaxis{state+1}'
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+        
+        return fig, stats_df
+
+    # PLoty Periodograms
+
+    def plot_periodogram_tile(self, labels = None, find_peaks = False, title = '', grids = False):
+        """ Create a tile plot of all the periodograms in a periodogram dataframe"""
+
+        self._validate()
+
+        if labels is not None:
+            if labels not in self.meta.columns.tolist():
+                raise AttributeError(f'{labels} is not a column in the metadata')
+            title_list = self.meta[labels].tolist() 
+        else:
+            title_list = self.meta.index.tolist()
+        
+        facet_arg = self.meta.index.tolist()
+
+        data = self.copy(deep = True)
+
+        if find_peaks is True:
+            data = data.find_peaks(num_peaks = 2)
+
+        root =  self._get_subplots(len(data.meta))
+
+        # make a square subplot domain
+        fig = make_subplots(rows=root, cols=root, shared_xaxes = False, subplot_titles = title_list)
+        col_list = list(range(1, root+1)) * root
+        row_list = list([i] * root for i in range(1, root+1))
+        row_list = [item for sublist in row_list for item in sublist]
+        
+        for arg, col, row in zip(facet_arg, col_list, row_list): 
+
+            d = data.xmv('id', arg)
+
+            fig.append_trace(go.Scatter(
+                    showlegend = False,
+                    x = d['period'],
+                    y = d['power'],
+                    mode = 'lines',
+                    line = dict(
+                    shape = 'spline',
+                    color = 'blue'
+                ),
+                ), row = row, col = col)
+
+            fig.append_trace(go.Scatter(
+                    showlegend = False,
+                    x = d['period'],
+                    y = d['sig_threshold'],
+                    mode = 'lines',
+                    line = dict(
+                    shape = 'spline',
+                    color = 'red'
+                ),
+                ), row = row, col = col)
+
+            if 'peak' in d.columns.tolist():
+                tdf = d[d['peak'] != False]
+                fig.append_trace(go.Scatter(
+                    showlegend = False,
+                    x = tdf['period'],
+                    y = tdf['power'],
+                    mode = 'markers',
+                    marker_symbol = 'x-dot',
+                    marker_color = 'gold',
+                    marker_size = 8
+                ), row = row, col = col)
+
+        tick_6 = np.arange(0,200*6,6)
+
+        fig.update_xaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            tickmode = 'array', 
+            tickvals = tick_6,
+            ticktext = tick_6,
+            range = [int(min(data['period'])), int(max(data['period']))],
+            ticks = 'outside',
+            showgrid = False
+        )
+
+        fig.update_yaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            range = [int(min(data['power'])), int(max(data['power']))],
+            ticks = 'outside',
+            showgrid = grids,
+        )
+        
+        fig.update_annotations(font_size=8)
+        fig['layout']['title'] = title
+        fig['layout']['plot_bgcolor'] = 'white'
+        
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = 'Period Frequency (Hours)',
+                    x = 0.5,
+                    xanchor = 'center',
+                    xref = 'paper',
+                    y = 0,
+                    yanchor = 'top',
+                    yref = 'paper',
+                    yshift = -30
+                )
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = 'Power',
+                    x = 0,
+                    xanchor = 'left',
+                    xref = 'paper',
+                    y = 0.5,
+                    yanchor = 'middle',
+                    yref = 'paper',
+                    xshift =  -85,
+                    textangle =  -90
+        )
+        
+        return fig
+
+    def plot_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
+        """ Plots the averaged periodograms of different experimental groups """
+        self._validate()
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+
+        col_list = self._get_colours(d_list)
+
+        variable = 'power'
+        max_var = []
+        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
+        if y_range is False:
+            max_var.append(1)
+        
+        fig = go.Figure() 
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Power', title = title, grid = grids)
+        tick_6 = np.arange(0,200*6,6)
+        self._plot_xlayout(fig, xrange = [min(self['period']), max(self['period'])], tickvals = tick_6, ticktext = tick_6, xlabel = 'Period Frequency (Hours)')
+
+        for data, name, col in zip(d_list, facet_labels, col_list):
+
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
+
+            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+                col = 'grey'
+
+            upper, trace, lower, _, _, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = 'power', avg_win = False, wrap = False, day_len = False, light_off = False, t_col = 'period')
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
+
+        return fig
+    
+    def plot_quantify_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
+        """ Plots a box plot of means and 95% confidence intervals of the highest ranked peak in a series of periodograms"""
+
+        self._validate()
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        d_list = []
+        if facet_col is not None:
+            for arg in facet_arg:
+                d_list.append(self.xmv(facet_col, arg))
+        else:
+            d_list = [self.copy(deep = True)]
+            facet_labels = ['']
+
+        col_list = self._get_colours(d_list)
+        variable = 'period'
+
+        fig = go.Figure() 
+        self._plot_ylayout(fig, yrange = [min(self['period']), max(self['period'])], t0 = False, dtick = False, ylabel = 'Period (Hours)', title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = '')
+
+        stats_dict = {}
+
+        for data, name, col in zip(d_list, facet_labels, col_list):
+            
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
+
+            if 'peak' not in data.columns.tolist():
+                data = data.find_peaks(num_peaks = 1)
+            data = data[data['peak'] == 1]
+
+            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+                col = 'grey'
+
+            median, q3, q1, zlist, z_second = self._zscore_bootstrap(data[f'{variable}'].to_numpy(), second_array = data['power'].to_numpy())
+            stats_dict[name] = zlist
+
+            fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
+            x = [name], colour =  col, showlegend = False, name = name, xaxis = 'x'))
+
+            fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [name], colour = col, 
+            showlegend = False, name = name, xaxis = 'x'))
+
+        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+
+        return fig, stats_df
 
 def behavpy(data, meta, check = False, index= None, columns=None, dtype=None, copy=True, canvas='plotly'):
 
