@@ -35,19 +35,17 @@ class behavpy_draw(behavpy_core):
         except:
             return lst
 
-    @staticmethod
     def _get_colours(self, plot_list):
         """ returns a colour palette from plotly for plotly """
-        if len(plot_list) <= len(getattr(qualitative, self.attrs['short_col'])):
-            return getattr(qualitative, self.attrs['short_col'])
-        elif len(plot_list) <= len(getattr(qualitative, self.attrs['long_col'])):
-            return getattr(qualitative, self.attrs['long_col'])
+        if len(plot_list) <= len(getattr(qualitative, self.palette)):
+            return getattr(qualitative, self.palette)
+        elif len(plot_list) <= len(getattr(qualitative, self.long_palette)):
+            return getattr(qualitative, self. long_palette)
         elif len(plot_list) <= 48:
             return qualitative.Dark24 + qualitative.Light24
         else:
             raise IndexError('Too many sub groups to plot with the current colour palette (max is 48)')
 
-    @staticmethod
     def _adjust_colours(self, colour_list):
         """ Takes a list of colours written names or hex codes.
         Returns two lists of hex colour codes. The first is a lighter version of the second which is the original.
@@ -107,9 +105,9 @@ class behavpy_seaborn(behavpy_draw):
     seaborn wrapper around behavpy_core
     """
 
-    _canvas = 'seaborn'
-    _palette  = 'deep'
-    _long_palette = _palette
+    canvas = 'seaborn'
+    palette  = 'deep'
+    long_palette = palette
     error = 'se'
 
     @staticmethod
@@ -806,9 +804,9 @@ class behavpy_plotly(behavpy_draw):
     plotly wrapper around behavpy_core
     """
 
-    _canvas = 'plotly'
-    _palette = 'Safe'
-    _long_palette = 'Dark24'
+    canvas = 'plotly'
+    palette = 'Safe'
+    long_palette = 'Dark24'
 
     @staticmethod
     def _plot_ylayout(fig, yrange, ylabel, title, t0 = False, dtick = False, secondary = False, xdomain = False, tickvals = False, ticktext = False, ytype = "-", grid = False):
@@ -1060,6 +1058,78 @@ class behavpy_plotly(behavpy_draw):
         upper, trace, lower, maxV = data._plot_line(df = gb_df, x_col = t_col, name = name, marker_col = col)
 
         return upper, trace, lower, maxV, t_min, t_max
+
+    def heatmap(self, variable = 'moving', t_column = 't', title = ''):
+        """
+        Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
+        
+            Args:
+                variable (str, optional): The name for the column containing the variable of interest. Default is moving
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                title (str, optional): The title of the plot. Default is an empty string.
+
+        returns None
+        """
+        heatmap_df = self.copy(deep = True)
+        # change movement values from boolean to intergers and bin to 30 mins finding the mean
+        if variable == 'moving':
+            heatmap_df[variable] = np.where(heatmap_df[variable] == True, 1, 0)
+
+        heatmap_df = heatmap_df.bin_time(variable = variable, bin_secs = 1800, t_column = t_column)
+        heatmap_df['t_bin'] = heatmap_df['t_bin'] / (60*60)
+        # create an array starting with the earliest half hour bin and the last with 0.5 intervals
+        start = heatmap_df['t_bin'].min().astype(int)
+        end = heatmap_df['t_bin'].max().astype(int)
+        time_list = np.array([x / 10 for x in range(start*10, end*10+5, 5)])
+        time_map = pd.Series(time_list, 
+                    name = 't_bin')
+
+        def align_data(data):
+            """merge the individual fly groups time with the time map, filling in missing points with NaN values"""
+
+            index_name = data.index[0]
+
+            df = data.merge(time_map, how = 'right', on = 't_bin', copy = False).sort_values(by=['t_bin'])
+
+            # read the old id index lost in the merge
+            old_index = pd.Index([index_name] * len(df.index), name = 'id')
+            df.set_index(old_index, inplace =True)  
+
+            return df                    
+
+        heatmap_df = heatmap_df.groupby('id', group_keys = False).apply(align_data)
+
+        gbm = heatmap_df.groupby(heatmap_df.index)[f'{variable}_mean'].apply(list)
+        id = heatmap_df.groupby(heatmap_df.index)['t_bin'].mean().index.tolist()
+
+        fig = go.Figure(data=go.Heatmap(
+                        z = gbm,
+                        x = time_list,
+                        y = id,
+                        colorscale = 'Viridis'))
+
+        fig.update_layout(
+            title = title,
+            xaxis = dict(
+                zeroline = False,
+                color = 'black',
+                linecolor = 'black',
+                gridcolor = 'black',
+                title = dict(
+                    text = 'ZT Time (Hours)',
+                    font = dict(
+                        size = 18,
+                        color = 'black'
+                    )
+                ),
+                tick0 = 0,
+                dtick = 12,
+                ticks = 'outside',
+                tickwidth = 2,
+                linewidth = 2)
+                )
+
+        return fig
 
     def plot_overtime(self, variable, wrapped = False, facet_col = None, facet_arg = None, facet_labels = None, avg_window = 180, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't'):
         """
@@ -1816,6 +1886,99 @@ class behavpy_plotly(behavpy_draw):
         return fig, stats_df
 
     # def plot_survival()
+
+    def make_tile(self, facet_tile, plot_fun, rows = None, cols = None):
+        """ 
+            *** Warning - this method is experimental and very unpolished *** 
+            
+        A method to create a tile plot of a repeated but faceted plot.
+
+            Args:
+                facet_tile (str): The name of column in the metadata you can to split the tile plot by
+                plot_fun (partial function): The plotting method you want per tile with its arguments in the format of partial function. See tutorial.
+                rows (int): The number of rows you would like. Note, if left as the default none the number of rows will be the lengh of faceted variables
+                cols (int): the number of cols you would like. Note, if left as the default none the number of columns will be 1
+                    **Make sure the rows and cols fit the total number of plots your facet should create.**
+        
+        returns:
+            returns a plotly subplot figure
+        """
+
+        if facet_tile not in self.meta.columns:
+            raise KeyError(f'Column "{facet_tile}" is not a metadata column')
+
+        # find the unique column variables and use to split df into tiled parts
+        tile_list = list(set(self.meta[facet_tile].tolist()))
+
+        tile_df = [self.xmv(facet_tile, tile) for tile in tile_list]
+
+        if rows is None:
+            rows = len(tile_list)
+        if cols is None:
+            cols = 1
+
+        # get a list for col number and rows 
+        col_list = list(range(1, cols+1)) * rows
+        row_list = list([i] * cols for i in range(1, rows+1))
+        row_list = [item for sublist in row_list for item in sublist]
+
+        # generate a subplot figure with a single column
+        fig = make_subplots(rows=rows, cols=cols, shared_xaxes = True, subplot_titles = tile_list)
+
+        layouts = []
+
+        #iterate through the tile df's
+        for d, c, r in zip(tile_df, col_list, row_list):
+                # take the arguemnts for the plotting function and set them on the function with the small df
+                fig_output = getattr(d, plot_fun.func.__name__)(**plot_fun.keywords)
+                # if a quantify plot it comes out as a tuple (fig, stats), drop the stats
+                if isinstance(fig_output, tuple):
+                    fig_output = fig_output[0]
+                # add the traces to the plot and put the layout settings into a list
+                for f in range(len(fig_output['data'])):
+                    fig.add_trace(fig_output['data'][f], col = c, row = r)
+                layouts.append(fig_output['layout'])
+
+        # set the background white and put the legend to the side
+        fig.update_layout({'legend': {'bgcolor': 'rgba(201, 201, 201, 1)', 'bordercolor': 'grey', 'font': {'size': 12}, 'x': 1.01, 'y': 0.5}, 'plot_bgcolor': 'white'})
+        # set the layout on all the different axises
+        end_index = len(layouts) - 1
+        for c, lay in enumerate(layouts):
+            yaxis_title = lay['yaxis'].pop('title')
+            xaxis_title = lay['xaxis'].pop('title')
+            lay['yaxis']['tickfont'].pop('size')
+            lay['xaxis']['tickfont'].pop('size')
+            
+            fig['layout'][f'yaxis{c+1}'].update(lay['yaxis'])
+            fig['layout'][f'xaxis{c+1}'].update(lay['xaxis'])
+
+        # add x and y axis titles
+        fig.add_annotation(
+            font = {'size': 18, 'color' : 'black'},
+            showarrow = False,
+            text = yaxis_title['text'],
+            x = 0.01,
+            xanchor = 'left',
+            xref = 'paper',
+            y = 0.5,
+            yanchor = 'middle',
+            yref = 'paper',
+            xshift =  -85,
+            textangle =  -90
+        )
+        fig.add_annotation(
+            font = {'size': 18, 'color' : 'black'},
+            showarrow = False,
+            text = xaxis_title['text'],
+            x = 0.5,
+            xanchor = 'center',
+            xref = 'paper',
+            y = 0,
+            yanchor = 'top',
+            yref = 'paper',
+            yshift = -30
+        )
+        return fig
 
     # HMM section
 

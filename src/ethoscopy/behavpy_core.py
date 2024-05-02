@@ -42,10 +42,13 @@ class behavpy_core(pd.DataFrame):
     # set meta as permenant attribute
     _metadata = ['meta']
     _canvas = None
+    _palette = None
+    _long_palette = None
+
 
     @property
     def _constructor(self):
-        return behavpy._internal_constructor(self.__class__)
+        return behavpy_core._internal_constructor(self.__class__)
 
     class _internal_constructor(object):
         def __init__(self, cls):
@@ -59,7 +62,7 @@ class behavpy_core(pd.DataFrame):
             return self.cls._from_axes(*args, **kwargs)
 
     def __init__(self, data, meta, check = False, index= None, columns=None, dtype=None, copy=True):
-        super(behavpy, self).__init__(data=data,
+        super(behavpy_core, self).__init__(data=data,
                                         index=index,
                                         columns=columns,
                                         dtype=dtype,
@@ -499,9 +502,6 @@ class behavpy_core(pd.DataFrame):
 
         return pivot
 
-
-
-
     def wrap_time(self, wrap_time = 24, time_column = 't'):
         """
         Replaces linear values of time in column 't' with a value which is a decimal of the wrap_time input
@@ -624,7 +624,7 @@ class behavpy_core(pd.DataFrame):
             return gb
         else:
             remove_ids = gb[gb['Percent Asleep'] > remove].index.tolist()
-            return gb.remove('id', remove_ids)
+            return self.remove('id', remove_ids)
 
     @staticmethod
     def _time_alive(df, name, repeat = False):
