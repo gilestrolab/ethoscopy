@@ -10,6 +10,8 @@ from scipy.stats import zscore
 from functools import partial, update_wrapper
 from colour import Color
 
+from ethoscopy.behavpy_core import behavpy_core
+
 from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
@@ -1823,7 +1825,6 @@ class behavpy_plotly(behavpy_draw):
         The plot is generated through the plotly package
 
         Params:
-        @self = behavpy_HMM,
         @hmm = hmmlearn.hmm.MultinomialHMM, this should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
         @variable = string, the column heading of the variable of interest. Default is "moving"
         @labels = list[string], the names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake']
@@ -2334,7 +2335,7 @@ class behavpy_plotly(behavpy_draw):
         colours_index = {c : col for c, col in enumerate(colours)}
 
         if mago_df is not None:
-            assert isinstance(mago_df, behavpy) or isinstance(mago_df, behavpy_HMM), 'The mAGO dataframe is not a behavpy or behavpy_HMM class'
+            assert isinstance(mago_df, behavpy), 'The mAGO dataframe is not a behavpy class'
 
         if isinstance(hmm, list):
             num_plots = len(hmm)
