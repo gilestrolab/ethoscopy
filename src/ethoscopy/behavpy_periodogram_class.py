@@ -96,7 +96,7 @@ class behavpy_periodogram(behavpy):
         data = self.copy(deep = True)
         sampled_data = data.interpolate(variable = mov_variable, step_size = 1 / sampling_rate)
         sampled_data = sampled_data.reset_index()
-        return  type(self)(sampled_data.groupby('id', group_keys = False)[[t_col, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_col, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
+        return  self.__class__(sampled_data.groupby('id', group_keys = False)[[t_col, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_col, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
 
     @staticmethod
     def wavelet_types():
@@ -174,9 +174,9 @@ class behavpy_periodogram(behavpy):
         data = self.copy(deep=True)
         data = data.reset_index()
         if 'sig_threshold' in data.columns.tolist():
-            return  type(self)(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
+            return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
         else:
-            return  type(self)(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
+            return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
 
     def plot_periodogram_tile(self, labels = None, find_peaks = False, title = '', grids = False):
         """ Create a tile plot of all the periodograms in a periodogram dataframe"""
@@ -343,7 +343,7 @@ class behavpy_periodogram(behavpy):
 
         return fig
     
-    def quantify_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
+    def plot_quantify_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
         """ Plots a box plot of means and 95% confidence intervals of the highest ranked peak in a series of periodograms"""
 
         self._validate()

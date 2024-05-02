@@ -1096,4 +1096,4 @@ class behavpy_HMM(behavpy):
 
         tdf = self.copy(deep=True)
         decoded_df = self._hmm_decode(tdf, hmm, bin, variable, func, return_type= 'table')
-        return type(self)(decoded_df.groupby('id').agg(list).reset_index(), tdf.meta, check = True)
+        return self.__class__(decoded_df.groupby('id').agg(list).reset_index(), tdf.meta, check = True)
