@@ -101,7 +101,7 @@ class behavpy_core(pd.DataFrame):
         # checks if all id's of data are in the metadata dataframe
         check_data = all(elem in set(dataframe.meta.index.tolist()) for elem in set(dataframe.index.tolist()))
         if check_data is not True:
-            warnings.warn("There are ID's in the data that are not in the metadata, please check")
+            raise RuntimeError("There are ID's in the data that are not in the metadata, please check")
 
     def _check_lists(self, f_col, f_arg, f_lab):
         """
@@ -119,12 +119,13 @@ class behavpy_core(pd.DataFrame):
                 if f_lab is None:
                     f_lab = string_args
                 elif len(f_arg) != len(f_lab):
-                    raise ValueError("The facet labels don't match the length of the variables in the column. Using column variables instead")
+                    print("The facet labels don't match the length of the variables in the column. Using column variables instead")
                     f_lab = string_args
             else:
                 string_args = []
                 for i in f_arg:
                     if i not in self.meta[f_col].tolist():
+                        print(self.meta[f_col].tolist())
                         raise KeyError(f'Argument "{i}" is not in the meta column {f_col}')
                     string_args.append(str(i))
                 if f_lab is None:
@@ -627,7 +628,7 @@ class behavpy_core(pd.DataFrame):
             return self.remove('id', remove_ids)
 
     @staticmethod
-    def _time_alive(df, name, repeat = False):
+    def _time_alive(df, facet_col, repeat = False, t_column = 't'):
         """ Method to call to the function that finds the amount of time a specimen has survived.
         If repeat is True then the function will look for a column in the metadata called 'repeat' and use it to sub filter the dataframe. 
         """
@@ -654,8 +655,14 @@ class behavpy_core(pd.DataFrame):
             col = (col / np.max(col)) * 100
             return pd.DataFrame(data = {'hour' : range(0, len(col)), 'survived' : col, 'label' : [name] * len(col)})
 
+        # set name as the facet_arg 
+        if facet_col is None:
+            name = ''
+        else:
+            name = df[facet_col].tolist()[0]
+
         if repeat is False:
-            return wrapped_time_alive(df, name)
+            return _wrapped_time_alive(df, name)
         else:
             tmp = pd.DataFrame()
             for rep in set(df.meta[repeat].tolist()):
@@ -1566,3 +1573,98 @@ class behavpy_core(pd.DataFrame):
             return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
         else:
             return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
+
+    # GENERAL PLOT HELPERS
+
+    @staticmethod
+    def _generate_overtime_plot(data, name, col, var, avg_win, wrap, day_len, light_off, t_col, canvas):
+
+        if len(data) == 0:
+            print(f'Group {name} has no values and cannot be plotted')
+            return None, None, None, None, None
+
+        if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+            col = 'grey'
+
+        if avg_win  != False:
+            rolling_col = data.groupby(data.index, sort = False)[var].rolling(avg_win, min_periods = 1).mean().reset_index(level = 0, drop = True)
+            data['rolling'] = rolling_col.to_numpy()
+            # removing dropna to speed it up
+            # data = data.dropna(subset = ['rolling'])
+        else:
+            data = data.rename(columns={var: 'rolling'})
+
+        if day_len != False:
+            if wrap is True:
+                data[t_col] = data[t_col] % (60*60*day_len)
+            data[t_col] = data[t_col] / (60*60)
+
+            t_min = int(light_off * floor(data[t_col].min() / light_off))
+            t_max = int(light_off * ceil(data[t_col].max() / light_off)) 
+        else:
+            t_min, t_max = None, None
+
+        # Not using bootstrapping here as it takes too much time
+        gb_df = data.groupby(t_col).agg(**{
+                    'mean' : ('rolling', 'mean'), 
+                    'SD' : ('rolling', 'std'),
+                    'count' : ('rolling', 'count')
+                })
+        gb_df = gb_df.reset_index()
+        gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
+        gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
+        gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
+
+        if canvas == 'seaborn':
+            return gb_df, t_min, t_max, col, None
+        elif canvas == 'plotly':
+            upper, trace, lower = data._plot_line(df = gb_df, x_col = t_col, name = name, marker_col = col)
+            return upper, trace, lower, t_min, t_max
+        else:
+            KeyError(f'Wrong plot type in back end: {plot_type}')
+
+    def heatmap_dataset(self, variable, t_column):
+        """
+        Creates an aligned heatmap of the movement data binned to 30 minute intervals
+        
+            Args:
+                variable (string): The name for the column containing the variable of interest,
+                t_column (str): The name of the time column in the DataFrame.
+        
+        returns 
+            gbm, time_list, id
+        """
+
+        heatmap_df = self.copy(deep = True)
+        # change movement values from boolean to intergers and bin to 30 mins finding the mean
+        if variable == 'moving':
+            heatmap_df[variable] = np.where(heatmap_df[variable] == True, 1, 0)
+
+        heatmap_df = heatmap_df.bin_time(variable, bin_secs = 1800, t_column = t_column)
+        heatmap_df['t_bin'] = heatmap_df['t_bin'] / (60*60)
+        # create an array starting with the earliest half hour bin and the last with 0.5 intervals
+        start = heatmap_df['t_bin'].min().astype(int)
+        end = heatmap_df['t_bin'].max().astype(int)
+        time_list = np.array([x / 10 for x in range(start*10, end*10+5, 5)])
+        time_map = pd.Series(time_list, 
+                    name = 't_bin')
+
+        def align_data(data):
+            """merge the individual fly groups time with the time map, filling in missing points with NaN values"""
+
+            index_name = data.index[0]
+
+            df = data.merge(time_map, how = 'right', on = 't_bin', copy = False).sort_values(by=['t_bin'])
+
+            # read the old id index lost in the merge
+            old_index = pd.Index([index_name] * len(df.index), name = 'id')
+            df.set_index(old_index, inplace =True)  
+
+            return df                    
+
+        heatmap_df = heatmap_df.groupby('id', group_keys = False).apply(align_data)
+
+        gbm = heatmap_df.groupby(heatmap_df.index)[f'{variable}_mean'].apply(list)
+        id_list = heatmap_df.groupby(heatmap_df.index)['t_bin'].mean().index.tolist()
+
+        return gbm, np.array(time_list), id_list

@@ -29,7 +29,7 @@ def make_bars(bar, bar_col, size, split, y_size1, y_size2):
 
     return shaped_bar
 
-def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split = False):
+def circadian_bars(t_min, t_max, min_y, max_y, day_length = 24, lights_off = 12, split = False, canvas = 'plotly'):
     """ 
     create boxes within plotly to represent the light, dark phases in light sensitive experiments
     @t_min = int, the minimum time point as a multiple of 12 
@@ -37,21 +37,13 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
     @circadian_night = int, the hour the lights turn off, must be between 1 and 23
     """
     if split != False:
-        if max_y > 0.2:
-            y_size1 = -max_y/20
-            y_size2 = 0
-        if max_y <= 0.2:
-            y_size1 = 0
-            y_size2 = max_y/15   
+        scale = 20
     else:
-        if max_y > 0.2:
-            y_size1 = -max_y/40
-            y_size2 = 0
-            split = 1
-        elif max_y <= 0.2:
-            y_size1 = 0
-            y_size2 = max_y/10   
-            split = 1
+        scale = 40
+        split = 1
+
+    y_size1 = min_y
+    y_size2 = min_y - ((max_y-min_y) / scale)   
 
     if lights_off < 1 or lights_off > day_length:
         raise ValueError(f"The argument for lights_off must be between 1 and {day_length}")
@@ -64,6 +56,10 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
     else:
         used_range = fancy_range(t_min, t_max, (lights_off, day_length-lights_off))
 
+    if canvas == 'seaborn':
+        size = (max_y-min_y) / scale
+        return used_range, size
+
     for i, bars in enumerate(used_range):
         for c in range(split):
             if bars % day_length == 0:
@@ -73,4 +69,4 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
                 black_bar = make_bars(bar = bars, bar_col = 'black', size = day_length - lights_off, split = c, y_size1 = y_size1, y_size2 = y_size2)
                 bar_shapes[f'shape_{i}{c}'] = black_bar
 
-    return bar_shapes, y_size1
+    return bar_shapes, y_size2
