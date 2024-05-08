@@ -271,8 +271,8 @@ class behavpy_seaborn(behavpy_draw):
             if y_range: 
                 ax.set_ylim(y_range)
 
-            sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, ax=ax, palette=self.attrs['sh_pal'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
-            sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, ax=ax, size=5, hue=facet_col, alpha=0.5, edgecolor='black', linewidth=1, palette=self.attrs['sh_pal'])
+            sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_arg, ax=ax, palette=self.attrs['sh_pal'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
+            sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_arg, ax=ax, size=5, hue=facet_col, alpha=0.5, edgecolor='black', linewidth=1, palette=self.attrs['sh_pal'])
 
             ax.set_xticklabels(facet_labels)
 
@@ -319,23 +319,28 @@ class behavpy_seaborn(behavpy_draw):
 
         # this applies in case we want to apply the specified information to ALL the data
         else:
-            grouped_data = self.groupby([self.index, 'has_interacted']).agg(**data_summary).copy(deep=True)
+            grouped_data = self.groupby([self.index, 'has_interacted']).agg(**data_summary).copy(deep=True).reset_index()
 
-        # BOXPLOT
         # (0,0) means automatic size
         if figsize == (0,0):
-            figsize = (3*len(facet_arg), 4)
+            figsize = (6*len(facet_arg), 10)
 
         fig, ax = plt.subplots(figsize=figsize)
 
         plt.ylim(0, 1.01)
         map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov'}
         grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
+        
+        if facet_col:
+            map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
+            grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
+            sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0}, dodge = True)
+            sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'], dodge = True)
+            ax.set_xticklabels(facet_labels)
 
-        sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'])
-        sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'], dodge = True)
-
-        ax.set_xticklabels(facet_labels)
+        else:
+            sns.boxplot(data=grouped_data, y=plot_column, x='has_interacted', order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0}, dodge = True)
+            sns.swarmplot(data=grouped_data, y=plot_column, x='has_interacted', order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'], dodge = True)
 
         #Customise legend values
         handles, _ = ax.get_legend_handles_labels()
@@ -414,15 +419,17 @@ class behavpy_seaborn(behavpy_draw):
         if y_range:
             plt.ylim(y_range)
 
-        map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
-        grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
-
-        sns.boxplot(data=grouped_data, x="phase", y=plot_column, hue=facet_col, hue_order=facet_labels, ax=ax, palette="Paired", showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
-        sns.swarmplot(data=grouped_data, x="phase", y=plot_column, hue=facet_col, hue_order=facet_labels, ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette="Paired", dodge = True)
-
-        # Customise legend values
-        handles, _ = ax.get_legend_handles_labels()
-        ax.legend(handles=handles, labels=facet_labels)
+        if facet_col:
+            map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
+            grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
+            sns.boxplot(data=grouped_data, x="phase", order = ['light', 'dark'], y=plot_column, hue=facet_col, hue_order=facet_labels, ax=ax, palette="Paired", showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
+            sns.swarmplot(data=grouped_data, x="phase", order = ['light', 'dark'], y=plot_column, hue=facet_col, hue_order=facet_labels, ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette="Paired", dodge = True)
+            # Customise legend values
+            handles, _ = ax.get_legend_handles_labels()
+            ax.legend(handles=handles, labels=facet_labels)
+        else:
+            sns.boxplot(data=grouped_data, x="phase", y=plot_column, order = ['light', 'dark'], ax=ax, palette=['yellow', 'darkgrey'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
+            sns.swarmplot(data=grouped_data, x="phase", y=plot_column, order = ['light', 'dark'], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['yellow', 'darkgrey'])
 
         plt.title(title)
         if grids: plt.grid(axis='y')

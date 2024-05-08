@@ -8,3 +8,4 @@ ethoscopy.egg-info/
 test/
 play.ipynb
 .gitignore
+*.pkl
