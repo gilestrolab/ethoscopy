@@ -42,8 +42,8 @@ class behavpy_core(pd.DataFrame):
     # set meta as permenant attribute
     _metadata = ['meta']
     _canvas = None
-    _palette = None
-    _long_palette = None
+    _hmm_colours = None
+    _hmm_labels = None
 
 
     @property
@@ -61,7 +61,7 @@ class behavpy_core(pd.DataFrame):
         def _from_axes(self, *args, **kwargs):
             return self.cls._from_axes(*args, **kwargs)
 
-    def __init__(self, data, meta, check = False, index= None, columns=None, dtype=None, copy=True):
+    def __init__(self, data, meta, palette = None, long_palette = None, check = False, index= None, columns=None, dtype=None, copy=True):
         super(behavpy_core, self).__init__(data=data,
                                         index=index,
                                         columns=columns,
@@ -71,6 +71,7 @@ class behavpy_core(pd.DataFrame):
         self.meta = meta   
         if check is True:
             self._check_conform(self)
+        self.attrs = {'sh_pal' : palette, 'lg_pal' : long_palette}
 
     @staticmethod
     def _check_conform(dataframe):
@@ -419,7 +420,7 @@ class behavpy_core(pd.DataFrame):
 
         for df in args:
 
-            if isinstance(df, type(self)) is not True or isinstance(df, behavpy) is not True:
+            if isinstance(df, self.__class__) is not True or isinstance(df, behavpy) is not True:
                 raise TypeError('Object(s) to concat is(are) not a Behavpy object')
 
             meta_list.append(df.meta)
@@ -622,7 +623,7 @@ class behavpy_core(pd.DataFrame):
         gb.drop(columns = ['time asleep', 'max t', 'min t'], inplace = True)
 
         if remove == False:
-            return gb
+            return self.__class__(gb, self.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check=True)
         else:
             remove_ids = gb[gb['Percent Asleep'] > remove].index.tolist()
             return self.remove('id', remove_ids)
@@ -755,7 +756,7 @@ class behavpy_core(pd.DataFrame):
                                                                                                 time_immobile = time_immobile, 
                                                                                                 asleep = asleep,
                                                                                                 t_column = t_column
-            )), tdf.meta, check = True)
+            )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
 
     @staticmethod
@@ -807,7 +808,7 @@ class behavpy_core(pd.DataFrame):
                                                                                                             time_window = time_window, 
                                                                                                             prop_immobile = prop_immobile,
                                                                                                             resolution = resolution
-        )), tdf.meta, check = True)
+        )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     def curate_dead_animals_interactions(self, mov_df, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
         """ 
@@ -847,7 +848,7 @@ class behavpy_core(pd.DataFrame):
                                                                                                             time_dict = time_dict
         ))
         curated_puff = tdf.groupby('id', group_keys = False, sort = False).apply(partial(curate_filter, dict = time_dict))
-        return self.__class__(curated_puff, tdf.meta, check = True), self.__class__(curated_df, tdf2.meta, check = True), 
+        return self.__class__(curated_puff, tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'],check = True), self.__class__(curated_df, tdf2.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'],check = True), 
 
     @staticmethod
     def _wrapped_interpolate_lin(data, var, step, t_col = 't'):
@@ -884,7 +885,7 @@ class behavpy_core(pd.DataFrame):
         return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_interpolate_lin, 
                                                                                     var = variable, 
                                                                                     step = step_size)), 
-        data.meta, check = True)
+        data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
     def _wrapped_bin_data(data, column, bin_column, function, bin_secs):
@@ -925,12 +926,12 @@ class behavpy_core(pd.DataFrame):
             raise KeyError('Column heading "{}", is not in the data table'.format(column))
 
         tdf = self.reset_index().copy(deep=True)
-        return type(self)(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bin_data,
+        return self.__class__(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bin_data,
                                                                                                 column = variable, 
                                                                                                 bin_column = t_column,
                                                                                                 function = function, 
                                                                                                 bin_secs = bin_secs
-        )), tdf.meta, check = True)
+        )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     def remove_first_last_bout(self):
         """
@@ -956,7 +957,7 @@ class behavpy_core(pd.DataFrame):
 
         tdf = self.reset_index().copy(deep=True)
         return self.__class__(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_remove_first_last_bout,
-        )), tdf.meta, check = True)
+        )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
     def _wrapped_motion_detector(data, time_window_length, velocity_correction_coef, masking_duration, optional_columns):
@@ -995,7 +996,7 @@ class behavpy_core(pd.DataFrame):
                                                                                                         velocity_correction_coef = velocity_correction_coef,
                                                                                                         masking_duration = masking_duration,
                                                                                                         optional_columns = optional_columns
-        )), tdf.meta, check = True)
+        )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
     def _wrapped_sleep_contiguous(d_small, mov_column, t_column, time_window_length, min_time_immobile):
@@ -1058,7 +1059,7 @@ class behavpy_core(pd.DataFrame):
                                                                                                         t_column = t_column,
                                                                                                         time_window_length = time_window_length,
                                                                                                         min_time_immobile = min_time_immobile
-        )), tdf.meta, check = True)
+        )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', x_position = 'x', t_column = 't', check = False):
         """ A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food
@@ -1114,7 +1115,7 @@ class behavpy_core(pd.DataFrame):
             
         ds.reset_index(inplace = True)   
         ds_meta = ds.meta
-        return self.__class__(ds.groupby('id', group_keys = False).apply(find_feed), ds_meta, check = True)
+        return self.__class__(ds.groupby('id', group_keys = False).apply(find_feed), ds_meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     # HMM SECTION
 
@@ -1433,9 +1434,7 @@ class behavpy_core(pd.DataFrame):
         """
 
         tdf = self.copy(deep=True)
-        return self.__class__(self._hmm_decode(tdf, hmm, bin, variable, func, return_type= 'table'), tdf.meta, check = True)
-
-
+        return self.__class__(self._hmm_decode(tdf, hmm, bin, variable, func, return_type= 'table'), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     # PERIODOGRAM SECTION
 
@@ -1492,7 +1491,7 @@ class behavpy_core(pd.DataFrame):
         data = self.copy(deep = True)
         sampled_data = data.interpolate(variable = mov_variable, step_size = 1 / sampling_rate)
         sampled_data = sampled_data.reset_index()
-        return  self.__class__(sampled_data.groupby('id', group_keys = False)[[t_col, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_col, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
+        return  self.__class__(sampled_data.groupby('id', group_keys = False)[[t_col, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_col, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
     def wavelet_types():
@@ -1570,9 +1569,9 @@ class behavpy_core(pd.DataFrame):
         data = self.copy(deep=True)
         data = data.reset_index()
         if 'sig_threshold' in data.columns.tolist():
-            return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
+            return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, cpalette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
         else:
-            return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, colour = self.attrs['short_col'], long_colour = self.attrs['long_col'], check = True)
+            return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     # GENERAL PLOT HELPERS
 
