@@ -155,7 +155,7 @@ class behavpy_core(pd.DataFrame):
         return y_range, dtick
 
     @staticmethod
-    def _zscore_bootstrap(array, second_array = None, min_max = False):
+    def _zscore_bootstrap(array, z_score = True, second_array = None, min_max = False):
         """ Calculate the z score of a given array, remove any values +- 3 SD and then perform bootstrapping on the remaining
         returns the mean and then several lists with the confidence intervals and z-scored values
         """
@@ -164,9 +164,12 @@ class behavpy_core(pd.DataFrame):
                 mean = median = q3 = q1 = array[0]
                 zlist = array
             else:
-                zlist = array[np.abs(zscore(array)) < 3]
-                if second_array is not None:
-                    second_array = second_array[np.abs(zscore(array)) < 3] 
+                if z_score is True:
+                    zlist = array[np.abs(zscore(array)) < 3]
+                    if second_array is not None:
+                        second_array = second_array[np.abs(zscore(array)) < 3] 
+                else:
+                    zlist = array
                 mean = np.mean(zlist)
                 median = np.median(zlist)
                 boot_array = bootstrap(zlist)
@@ -1572,98 +1575,3 @@ class behavpy_core(pd.DataFrame):
             return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, cpalette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
         else:
             return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
-
-    # GENERAL PLOT HELPERS
-
-    @staticmethod
-    def _generate_overtime_plot(data, name, col, var, avg_win, wrap, day_len, light_off, t_col, canvas):
-
-        if len(data) == 0:
-            print(f'Group {name} has no values and cannot be plotted')
-            return None, None, None, None, None
-
-        if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
-            col = 'grey'
-
-        if avg_win  != False:
-            rolling_col = data.groupby(data.index, sort = False)[var].rolling(avg_win, min_periods = 1).mean().reset_index(level = 0, drop = True)
-            data['rolling'] = rolling_col.to_numpy()
-            # removing dropna to speed it up
-            # data = data.dropna(subset = ['rolling'])
-        else:
-            data = data.rename(columns={var: 'rolling'})
-
-        if day_len != False:
-            if wrap is True:
-                data[t_col] = data[t_col] % (60*60*day_len)
-            data[t_col] = data[t_col] / (60*60)
-
-            t_min = int(light_off * floor(data[t_col].min() / light_off))
-            t_max = int(light_off * ceil(data[t_col].max() / light_off)) 
-        else:
-            t_min, t_max = None, None
-
-        # Not using bootstrapping here as it takes too much time
-        gb_df = data.groupby(t_col).agg(**{
-                    'mean' : ('rolling', 'mean'), 
-                    'SD' : ('rolling', 'std'),
-                    'count' : ('rolling', 'count')
-                })
-        gb_df = gb_df.reset_index()
-        gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
-        gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
-        gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
-
-        if canvas == 'seaborn':
-            return gb_df, t_min, t_max, col, None
-        elif canvas == 'plotly':
-            upper, trace, lower = data._plot_line(df = gb_df, x_col = t_col, name = name, marker_col = col)
-            return upper, trace, lower, t_min, t_max
-        else:
-            KeyError(f'Wrong plot type in back end: {plot_type}')
-
-    def heatmap_dataset(self, variable, t_column):
-        """
-        Creates an aligned heatmap of the movement data binned to 30 minute intervals
-        
-            Args:
-                variable (string): The name for the column containing the variable of interest,
-                t_column (str): The name of the time column in the DataFrame.
-        
-        returns 
-            gbm, time_list, id
-        """
-
-        heatmap_df = self.copy(deep = True)
-        # change movement values from boolean to intergers and bin to 30 mins finding the mean
-        if variable == 'moving':
-            heatmap_df[variable] = np.where(heatmap_df[variable] == True, 1, 0)
-
-        heatmap_df = heatmap_df.bin_time(variable, bin_secs = 1800, t_column = t_column)
-        heatmap_df['t_bin'] = heatmap_df['t_bin'] / (60*60)
-        # create an array starting with the earliest half hour bin and the last with 0.5 intervals
-        start = heatmap_df['t_bin'].min().astype(int)
-        end = heatmap_df['t_bin'].max().astype(int)
-        time_list = np.array([x / 10 for x in range(start*10, end*10+5, 5)])
-        time_map = pd.Series(time_list, 
-                    name = 't_bin')
-
-        def align_data(data):
-            """merge the individual fly groups time with the time map, filling in missing points with NaN values"""
-
-            index_name = data.index[0]
-
-            df = data.merge(time_map, how = 'right', on = 't_bin', copy = False).sort_values(by=['t_bin'])
-
-            # read the old id index lost in the merge
-            old_index = pd.Index([index_name] * len(df.index), name = 'id')
-            df.set_index(old_index, inplace =True)  
-
-            return df                    
-
-        heatmap_df = heatmap_df.groupby('id', group_keys = False).apply(align_data)
-
-        gbm = heatmap_df.groupby(heatmap_df.index)[f'{variable}_mean'].apply(list)
-        id_list = heatmap_df.groupby(heatmap_df.index)['t_bin'].mean().index.tolist()
-
-        return gbm, np.array(time_list), id_list

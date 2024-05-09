@@ -122,7 +122,7 @@ class behavpy_seaborn(behavpy_draw):
 
         fig, ax = plt.subplots(figsize=figsize)
 
-        for data, name, col in zip(d_list, facet_labels, list(self._get_colours(d_list))):
+        for data, name, col in zip(d_list, facet_labels, self._get_colours(d_list)):
 
             gb_df, t_min, t_max, col, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = variable, 
                                                                                     avg_win = avg_window, wrap = wrapped, day_len = day_length, 
@@ -249,9 +249,10 @@ class behavpy_seaborn(behavpy_draw):
 
         fig, axes = plt.subplots(fig_rows, fig_cols, figsize=figsize)
         
-        # map the users labels onto he old facet_arg strings
-        map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
-        grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
+        if facet_col:
+            # map the users labels onto he old facet_arg strings
+            map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
+            grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
 
         # axes is
         #  matplotlib.axes._axes.Axes if only one subplot
@@ -261,6 +262,10 @@ class behavpy_seaborn(behavpy_draw):
             axes = axes.flatten()
         else:
             axes = [axes]
+        
+        palette = self._get_colours(facet_labels)
+        for c, name in enumerate(facet_labels):
+            _, palette[c], = self._check_grey(name, palette[c]) # change to grey if control
 
         for ax, var in zip(axes, variable):
         
@@ -271,14 +276,18 @@ class behavpy_seaborn(behavpy_draw):
             if y_range: 
                 ax.set_ylim(y_range)
 
-            sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_arg, ax=ax, palette=self.attrs['sh_pal'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
-            sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_arg, ax=ax, size=5, hue=facet_col, alpha=0.5, edgecolor='black', linewidth=1, palette=self.attrs['sh_pal'])
+            if facet_col:
+                sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, ax=ax, palette=palette, showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
+                sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, ax=ax, palette=palette, size=5, alpha=0.5, edgecolor='black', linewidth=1)
 
-            ax.set_xticklabels(facet_labels)
+                # ax.set_xticklabels(facet_labels)
+                # # Customise legend values
+                # handles, _ = ax.get_legend_handles_labels()
+                # ax.legend(labels=facet_labels)
 
-        #Customise legend values
-        handles, _ = ax.get_legend_handles_labels()
-        ax.legend(handles=handles, labels=facet_labels)
+            else:
+                sns.boxplot(data=grouped_data, y=plot_column, ax=ax, palette=palette, showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
+                sns.swarmplot(data=grouped_data, y=plot_column, ax=ax, palette=palette, size=5, alpha=0.5, edgecolor='black', linewidth=1)
 
         if grids: plt.grid(axis='y')
         plt.title(title)
@@ -293,67 +302,6 @@ class behavpy_seaborn(behavpy_draw):
     def plot_compare_variables(self, variables, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False):
 
         return self.plot_quantify(variable = variables, facet_col = facet_col, facet_arg = facet_arg, facet_labels = facet_labels, fun = fun, title = title, grids = grids)
-
-    def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize = (0,0)):
-        """
-        """
-        if response_col not in self.columns.tolist():
-            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with puff_mago')
-
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
-        plot_column = f'{response_col}_mean'
-
-        data_summary = {
-            "%s_mean" % response_col : (response_col, 'mean'),
-            "%s_std" % response_col : (response_col, 'std'),
-            }
-
-        # takes subset of data if requested
-        if facet_col and facet_arg:
-            # takes subselection of df that contains the specified facet columns
-            data = self.xmv(facet_col, facet_arg)
-            # apply the specified operation and add the specified columns from metadata
-            grouped_data = data.groupby([data.index, 'has_interacted']).agg(**data_summary).reset_index(level = 1).merge(self.meta[[facet_col]], left_index=True, right_index=True)
-            grouped_data[facet_col] = grouped_data[facet_col].astype('category')
-
-        # this applies in case we want to apply the specified information to ALL the data
-        else:
-            grouped_data = self.groupby([self.index, 'has_interacted']).agg(**data_summary).copy(deep=True).reset_index()
-
-        # (0,0) means automatic size
-        if figsize == (0,0):
-            figsize = (6*len(facet_arg), 10)
-
-        fig, ax = plt.subplots(figsize=figsize)
-
-        plt.ylim(0, 1.01)
-        map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov'}
-        grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
-        
-        if facet_col:
-            map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
-            grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
-            sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0}, dodge = True)
-            sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'], dodge = True)
-            ax.set_xticklabels(facet_labels)
-
-        else:
-            sns.boxplot(data=grouped_data, y=plot_column, x='has_interacted', order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0}, dodge = True)
-            sns.swarmplot(data=grouped_data, y=plot_column, x='has_interacted', order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'], dodge = True)
-
-        #Customise legend values
-        handles, _ = ax.get_legend_handles_labels()
-        ax.legend(handles=handles, labels=["Spon. Mov", "True Stimulus"])
-
-        plt.title(title)
-        if grids: plt.grid(axis='y')
-
-        # reorder dataframe for stats output
-        if facet_col: 
-            grouped_data = grouped_data.sort_values(facet_col)
-
-        return fig, grouped_data
 
     def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, figsize=(0,0)):
         """
@@ -390,23 +338,11 @@ class behavpy_seaborn(behavpy_draw):
         #Add phase information to the data
         data.add_day_phase(day_length = day_length, lights_off = lights_off)
 
-        # Do the groupby operation on the entire dataframe and calculate mean and std on the given variable
-        # grouped_data = data.groupby([data.index, 'phase']).agg(**data_summary)
-
-        # Reset the index to bring 'phase' back as a column
-        # grouped_data = grouped_data.reset_index()
-
-        # Ensure 'phase' column is categorical for efficient memory usage - It already is categorical from the method
-        # grouped_data['phase'] = grouped_data['phase'].astype('category')
-
         # takes subset of data if requested
         if facet_col and facet_arg:
             # Add the specified columns from metadata
             data = data.xmv(facet_col, facet_arg)
-            grouped_data = data.groupby([data.index, 'phase']).agg(**data_summary).reset_index(level = 1).merge(data.meta[[facet_col]], left_index=True, right_index=True).reset_index()
-        else:
-            grouped_data = data.groupby([data.index, 'phase']).agg(**data_summary).reset_index()
-        # ^^ for some reason to make the swarm plot work you have to have no personalised index
+        grouped_data = data.groupby([data.index, 'phase']).agg(**data_summary).reset_index(1)
 
         # BOXPLOT
         # (0,0) means automatic size
@@ -419,17 +355,22 @@ class behavpy_seaborn(behavpy_draw):
         if y_range:
             plt.ylim(y_range)
 
+        palette = self._get_colours(facet_labels)
+        for c, name in enumerate(facet_labels):
+            _, palette[c], = self._check_grey(name, palette[c]) # change to grey if control
+
         if facet_col:
-            map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
-            grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
-            sns.boxplot(data=grouped_data, x="phase", order = ['light', 'dark'], y=plot_column, hue=facet_col, hue_order=facet_labels, ax=ax, palette="Paired", showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
-            sns.swarmplot(data=grouped_data, x="phase", order = ['light', 'dark'], y=plot_column, hue=facet_col, hue_order=facet_labels, ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette="Paired", dodge = True)
+            # merge the facet_col column and replace with the labels
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
+
+            sns.boxplot(data=grouped_data, x="phase", order = ['light', 'dark'], y=plot_column, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette, showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
+            sns.swarmplot(data=grouped_data, x="phase", order = ['light', 'dark'], y=plot_column, hue=facet_col, hue_order=facet_labels, ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=palette, dodge = True)
             # Customise legend values
             handles, _ = ax.get_legend_handles_labels()
             ax.legend(handles=handles, labels=facet_labels)
         else:
             sns.boxplot(data=grouped_data, x="phase", y=plot_column, order = ['light', 'dark'], ax=ax, palette=['yellow', 'darkgrey'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
-            sns.swarmplot(data=grouped_data, x="phase", y=plot_column, order = ['light', 'dark'], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['yellow', 'darkgrey'])
+            sns.swarmplot(data=grouped_data, x="phase", y=plot_column, order = ['light', 'dark'], ax=ax, palette=['yellow', 'darkgrey'], size=5, alpha=0.5, edgecolor='black', linewidth=1)
 
         plt.title(title)
         if grids: plt.grid(axis='y')
@@ -439,6 +380,91 @@ class behavpy_seaborn(behavpy_draw):
             grouped_data = grouped_data.sort_values(facet_col)
 
         return fig, data
+
+    def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, figsize=(0,0)):
+        """
+        Plots the anticipation scores for lights on and off periods, separately for each category defined by facet_col.
+        
+        This function calculates the anticipation scores for lights off and on conditions and then plots a seaborn boxplot.
+
+        Parameters
+        ----------
+        mov_variable : str, optional
+            The movement variable to consider for calculating the anticipation score, by default 'moving'.
+        facet_col : str, optional
+            The column name to be used for faceting, by default None.
+        facet_arg : list, optional
+            List of arguments to consider for faceting, by default None.
+        facet_labels : list, optional
+            Labels for the facet arguments, by default None.
+        day_length : int, optional
+            The length of the day in hours, by default 24.
+        lights_off : int, optional
+            The time in hours when the lights are turned off, by default 12.
+        title : str, optional
+            The title of the plot, by default ''.
+        grids : bool, optional
+            If True, the grid is displayed on the plot, by default False.
+        figsize : tuple, optional
+            Tuple indicating the size of the figure (width, height), by default (0,0) which indicates automatic size.
+
+        Returns
+        -------
+        tuple
+            A tuple containing the figure and the dataset used for plotting.
+        """
+
+
+        # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg)
+        else:
+            data = self.copy(deep=True)
+
+        data = data.dropna(subset=[mov_variable])
+        data = data.wrap_time()
+
+        dataset = self.anticipation_score(data, mov_variable, day_length, lights_off).set_index('id')
+
+        # BOXPLOT
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = (4*len(facet_arg), 6)
+
+        fig, ax = plt.subplots(figsize=figsize)
+
+        palette = self._get_colours(facet_labels)
+        for c, name in enumerate(facet_labels):
+            _, palette[c], = self._check_grey(name, palette[c]) # change to grey if control
+
+        if facet_col:
+            # merge the facet_col column and replace with the labels
+            dataset = self.facet_merge(dataset, facet_col, facet_arg, facet_labels)
+
+            sns.boxplot(data=dataset, x="phase", y="anticipation_score", order = ['Lights On', 'Lights Off'], hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette, showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
+            sns.swarmplot(data=dataset, x="phase", y="anticipation_score", order = ['Lights On', 'Lights Off'], hue=facet_col, hue_order=facet_labels, ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=palette, dodge = True)
+            # Customise legend values
+            handles, _ = ax.get_legend_handles_labels()
+            ax.legend(handles=handles, labels=facet_labels)
+
+        else:
+            sns.boxplot(data=dataset, x="phase", y="anticipation_score", order = ['Lights On', 'Lights Off'], ax=ax, palette=['yellow', 'darkgrey'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
+            sns.swarmplot(data=dataset, x="phase", y="anticipation_score", order = ['Lights On', 'Lights Off'], ax=ax, palette=['yellow', 'darkgrey'], size=5, alpha=0.5, edgecolor='black', linewidth=1)
+
+        if grids: plt.grid(axis='y')
+        plt.title(title)
+        plt.tight_layout()
+
+        # The score is in %
+        plt.ylim(0,100)
+
+        # reorder dataframe for stats output
+        if facet_col: dataset = dataset.sort_values(facet_col)
+
+        return fig, dataset
 
     def plot_actogram(self, mov_variable = 'moving', bin_window = 5, t_column = 't', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = '', figsize=(0,0)):
         """
@@ -651,111 +677,69 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig
 
-    def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, figsize=(0,0)):
+    # Response AGO/mAGO section
+
+    def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize = (0,0)):
         """
-        Plots the anticipation scores for lights on and off periods, separately for each category defined by facet_col.
-        
-        This function calculates the anticipation scores for lights off and on conditions and then plots a seaborn boxplot.
-
-        Parameters
-        ----------
-        mov_variable : str, optional
-            The movement variable to consider for calculating the anticipation score, by default 'moving'.
-        facet_col : str, optional
-            The column name to be used for faceting, by default None.
-        facet_arg : list, optional
-            List of arguments to consider for faceting, by default None.
-        facet_labels : list, optional
-            Labels for the facet arguments, by default None.
-        day_length : int, optional
-            The length of the day in hours, by default 24.
-        lights_off : int, optional
-            The time in hours when the lights are turned off, by default 12.
-        title : str, optional
-            The title of the plot, by default ''.
-        grids : bool, optional
-            If True, the grid is displayed on the plot, by default False.
-        figsize : tuple, optional
-            Tuple indicating the size of the figure (width, height), by default (0,0) which indicates automatic size.
-
-        Returns
-        -------
-        tuple
-            A tuple containing the figure and the dataset used for plotting.
         """
-        def anticipation_score(d, mov_variable, start, end):
-            
-            def _ap_score(total, small):
-                try:
-                    return (small / total) * 100
-                except ZeroDivisionError:
-                    return 0
+        if response_col not in self.columns.tolist():
+            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with puff_mago')
 
-            d = d.t_filter(start_time = start[0], end_time = end)
-            total = d.pivot(column = mov_variable, function = 'sum')
-            
-            d = d.t_filter(start_time = start[1], end_time = end)
-            small = d.groupby(d.index).agg(**{
-                    'moving_small' : (mov_variable, 'sum')
-                    })
-            d = total.join(small)
-            d = d.dropna()
-            
-            return d[[f'{mov_variable}_sum', 'moving_small']].apply(lambda x: _ap_score(*x), axis = 1)
-
-
-        # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        plot_column = f'{response_col}_mean'
+
+        data_summary = {
+            "%s_mean" % response_col : (response_col, 'mean'),
+            "%s_std" % response_col : (response_col, 'std'),
+            }
 
         # takes subset of data if requested
         if facet_col and facet_arg:
-            data = self.xmv(facet_col, facet_arg).merge(self.meta, left_index=True, right_index=True)
+            # takes subselection of df that contains the specified facet columns
+            data = self.xmv(facet_col, facet_arg)
+            # apply the specified operation and add the specified columns from metadata
+            grouped_data = data.groupby([data.index, 'has_interacted']).agg(**data_summary).reset_index(level = 1).merge(self.meta[[facet_col]], left_index=True, right_index=True)
+            grouped_data[facet_col] = grouped_data[facet_col].astype('category')
+
+        # this applies in case we want to apply the specified information to ALL the data
         else:
-            data = self.copy(deep=True)
+            grouped_data = self.groupby([self.index, 'has_interacted']).agg(**data_summary).copy(deep=True).reset_index()
 
-        data = data.dropna(subset=[mov_variable])
-        data.wrap_time(inplace = True)
-
-        # calculate anticipation score for lights_off
-        start, end = [lights_off - 6, lights_off - 3], lights_off
-        lights_off = pd.DataFrame( anticipation_score(data, mov_variable, start, end).rename("anticipation_score") )
-        lights_off["phase"] = "Lights Off"
-
-        # calculate anticipation score for lights_on
-        start, end = [day_length - 6, day_length - 3], day_length
-        lights_on = pd.DataFrame( anticipation_score(data, mov_variable, start, end).rename("anticipation_score") )
-        lights_on["phase"] = "Lights On"
-
-        # reset the index for both dataframes
-        lights_off_reset = lights_off.reset_index()
-        lights_on_reset = lights_on.reset_index()
-
-        # concatenate along the row axis (i.e., append the dataframes one on top of the other) then set id as index
-        anticipation_scores_df = pd.concat([lights_off_reset, lights_on_reset], axis=0).set_index("id")
-
-        # Add the metadata columns and mark them as category
-        dataset = anticipation_scores_df.join(self.meta)
-        dataset[self.meta.columns] = dataset[self.meta.columns].astype('category')
-
-
-        # BOXPLOT
         # (0,0) means automatic size
         if figsize == (0,0):
-            figsize = (2*len(facet_arg), 4)
+            figsize = (6*len(facet_arg), 10)
 
         fig, ax = plt.subplots(figsize=figsize)
 
-        sns.boxplot(data=dataset, x="phase", y="anticipation_score", hue=facet_col, hue_order=facet_arg, palette=self._palette, ax=ax)
-        #sns.swarmplot(data=dataset, x="phase", y="anticipation_score", hue=facet_col, size=8, alpha=0.5, edgecolor='black', linewidth=1, palette=self.palette, ax=ax)
+        plt.ylim(0, 1.01)
+        map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov'}
+        grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
+        
+        if facet_col:
+            map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
+            grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
 
-        if grids: plt.grid(axis='y')
+            sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0}, dodge = True)
+            sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'], dodge = True)
+            ax.set_xticklabels(facet_labels)
+
+            #Customise legend values
+            handles, _ = ax.get_legend_handles_labels()
+            ax.legend(handles = handles, labels=["Spon. Mov", "True Stimulus"])
+
+        else:
+            sns.boxplot(data=grouped_data, y=plot_column, x='has_interacted', order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
+            sns.swarmplot(data=grouped_data, y=plot_column, x='has_interacted', order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'])
+            
+            #Customise legend values
+            ax.legend(labels=["Spon. Mov", "True Stimulus"])
+
         plt.title(title)
-        plt.tight_layout()
-
-        # The score is in %
-        plt.ylim(0,100)
+        if grids: plt.grid(axis='y')
 
         # reorder dataframe for stats output
-        if facet_col: dataset = dataset.sort_values(facet_col)
+        if facet_col: 
+            grouped_data = grouped_data.sort_values(facet_col)
 
-        return fig, dataset
+        return fig, grouped_data
