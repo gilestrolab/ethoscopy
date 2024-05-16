@@ -10,6 +10,10 @@ from scipy.stats import zscore
 from functools import partial, update_wrapper
 from colour import Color
 
+#fig to img
+import io
+import PIL
+
 from ethoscopy.behavpy_draw import behavpy_draw
 
 from ethoscopy.misc.circadian_bars import circadian_bars
@@ -289,6 +293,8 @@ class behavpy_seaborn(behavpy_draw):
                 sns.boxplot(data=grouped_data, y=plot_column, ax=ax, palette=palette, showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
                 sns.swarmplot(data=grouped_data, y=plot_column, ax=ax, palette=palette, size=5, alpha=0.5, edgecolor='black', linewidth=1)
 
+            ax.set_ylabel(var)
+
         if grids: plt.grid(axis='y')
         plt.title(title)
         plt.tight_layout()
@@ -465,6 +471,67 @@ class behavpy_seaborn(behavpy_draw):
         if facet_col: dataset = dataset.sort_values(facet_col)
 
         return fig, dataset
+    
+    @staticmethod
+    def _plot_single_actogram(dt, figsize, days, title, day_length):
+
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = (10, len(days)/2)
+
+        fig, axes = plt.subplots(len(days)-1, 1, figsize=figsize, sharex=True)
+        axes[0].set_title(title)
+
+        for ax, day in zip(axes, days[:-1]):
+
+            subset = dt[dt['day'].isin([day, day+1])].copy()
+            subset.loc[subset['day'] == day+1, 'hours'] += 24
+
+            # Remove x and y axis labels and ticks
+            ax.set(yticklabels=[])
+            ax.tick_params(axis='both', which='both', length=0)
+
+            #ax.step(subset["hours"], subset["moving_mean"], alpha=0.5) 
+            ax.fill_between(subset["hours"], subset["moving_mean"], step="pre", color="black", alpha=1.0)
+
+        plt.xticks(range(0, day_length*2+1, int(day_length*2/8)))
+        plt.xlim(0,48)
+        plt.xlabel("ZT (Hours)")
+        #plt.tight_layout()
+
+        sns.despine(left=True, bottom=True)
+        return fig 
+
+    @staticmethod
+    def _internal_actogram(data, mov_variable, bin_window, t_column, facet_col):
+        """
+        An internal function to augment and setup the data for plotting actograms
+        """
+
+        data = data.bin_time(mov_variable, bin_window*60, t_column = t_column)
+        data.add_day_phase(time_column = f'{t_column}_bin')
+        days = data["day"].unique()
+
+        data = data.merge(data.meta, left_index=True, right_index=True)
+
+        data["hours"] = (data[f'{t_column}_bin'] / (60*60))
+        data["hours"] = data["hours"] - (data["day"]*24)
+        data.reset_index(inplace = True)
+        if facet_col:
+            data = data.groupby([f'{t_column}_bin', facet_col]).agg(**{
+                'moving_mean' : ('moving_mean', 'mean'),
+                'day' : ('day', 'max'),
+                'hours': ('hours', 'max')
+
+            }).reset_index()
+        else:
+            data = data.groupby(f'{t_column}_bin').agg(**{
+                'moving_mean' : ('moving_mean', 'mean'),
+                'day' : ('day', 'max'),
+                'hours': ('hours', 'max')
+
+            }).reset_index()
+        return data, days
 
     def plot_actogram(self, mov_variable = 'moving', bin_window = 5, t_column = 't', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = '', figsize=(0,0)):
         """
@@ -501,34 +568,6 @@ class behavpy_seaborn(behavpy_draw):
             >>> instance.plot_actogram(mov_variable='movement', bin_window=10, 
             ...                        t_column='time', facet_col='activity_type')
         """
-        def _plot_single_actogram(dt, figsize, days, title, day_length):
-
-            # (0,0) means automatic size
-            if figsize == (0,0):
-                figsize = (8, len(days)/3)
-
-            fig, axes = plt.subplots(len(days)-1, 1, figsize=figsize, sharex=True)
-            axes[0].set_title(title)
-
-            for ax, day in zip(axes, days[:-1]):
-
-                subset = dt[dt['day'].isin([day, day+1])].copy()
-                subset.loc[subset['day'] == day+1, 'hours'] += 24
-
-                # Remove x and y axis labels and ticks
-                ax.set(yticklabels=[])
-                ax.tick_params(axis='both', which='both', length=0)
-
-                #ax.step(subset["hours"], subset["moving_mean"], alpha=0.5) 
-                ax.fill_between(subset["hours"], subset["moving_mean"], step="pre", color="black", alpha=1.0)
-
-            plt.xticks(range(0, day_length*2+1, int(day_length*2/8)))
-            plt.xlim(0,48)
-            plt.xlabel("ZT (Hours)")
-            #plt.tight_layout()
-
-            sns.despine(left=True, bottom=True)
-            return fig 
 
         # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
@@ -539,30 +578,8 @@ class behavpy_seaborn(behavpy_draw):
         else:
             data = self.copy(deep=True)
 
-        data = data.bin_time(mov_variable, bin_window*60, t_column = t_column)
-        data.add_day_phase(time_column = f'{t_column}_bin')
-        days = data["day"].unique()
-
-        data = data.merge(data.meta, left_index=True, right_index=True)
-
-        data["hours"] = (data[f'{t_column}_bin'] / (60*60))
-        data["hours"] = data["hours"] - (data["day"]*24)
-
-        if facet_col:
-            data = data.groupby([f'{t_column}_bin', facet_col]).agg(**{
-                'moving_mean' : ('moving_mean', 'mean'),
-                'day' : ('day', 'max'),
-                'hours': ('hours', 'max')
-
-            }).reset_index()
-        else:
-            data = data.groupby(f'{t_column}_bin').agg(**{
-                'moving_mean' : ('moving_mean', 'mean'),
-                'day' : ('day', 'max'),
-                'hours': ('hours', 'max')
-
-            }).reset_index()
-
+        # call the internal actogram augmentor
+        data, days = self._internal_actogram(data, mov_variable, bin_window, t_column, facet_col)
 
         if facet_col:
             figs = []
@@ -570,7 +587,7 @@ class behavpy_seaborn(behavpy_draw):
 
                 dt = data.loc [data[facet_col] == subplot]
                 title = "%s - %s" % (title, subplot)
-                fig = _plot_single_actogram(dt, figsize, days, title, day_length)
+                fig = self._plot_single_actogram(dt, figsize, days, title, day_length)
                 plt.close()
 
                 figs.append(fig)
@@ -581,7 +598,7 @@ class behavpy_seaborn(behavpy_draw):
             c = []
 
             if figsize == (0,0):
-                figsize = (8*rows, len(days))
+                figsize = (16*rows, 2*len(days))
 
             combined_fig = plt.figure(figsize = figsize )
             
@@ -597,8 +614,91 @@ class behavpy_seaborn(behavpy_draw):
             return combined_fig
 
         else:
+            return self._plot_single_actogram(data, figsize, days, title, day_length)
 
-            return _plot_single_actogram(data, figsize, days, title, day_length)
+    def plot_actogram_tile(self, mov_variable = 'moving', bin_window = 15, t_column = 't', labels = None, day_length = 24, title = '', figsize=(0,0)):
+        """
+        This function creates a grid or tile actogram plot of all specimens in the provided data. Actograms are useful for visualizing 
+        patterns in activity data (like movement or behavior) over time, often with an emphasis on daily 
+        (24-hour) rhythms. 
+
+        Args:
+            mov_variable (str, optional): The name of the column in the dataframe representing movement 
+                data. Default is 'moving'.
+            bin_window (int, optional): The bin size for data aggregation in minutes. Default is 5.
+            t_column (str, optional): The name of the column in the dataframe representing time data.
+                Default is 't'.
+            facet_col (str, optional): The name of the column to be used for faceting. If None, no faceting 
+                is applied. Default is None.
+            facet_arg (list, optional): List of arguments to be used for faceting. If None and if 
+                facet_col is not None, all unique values in the facet_col are used. Default is None.
+            facet_labels (list, optional): List of labels to be used for the facets. If None and if 
+                facet_col is not None, all unique values in the facet_col are used as labels. Default is None.
+            day_length (int, optional): The length of the day in hours. Default is 24.
+            title (str, optional): The title of the plot. Default is an empty string.
+            figsize (tuple, optional): The size of the figure to be plotted as (width, height). If set to 
+                (0,0), the size is determined automatically. Default is (0,0).
+
+        Returns:
+            matplotlib.figure.Figure: If facet_col is provided, returns a figure that contains subplots for each 
+            facet. If facet_col is not provided, returns a single actogram plot.
+
+        Raises:
+            ValueError: If facet_arg is provided but facet_col is None.
+            SomeOtherException: If some other condition is met.
+
+        Example:
+            >>> instance.plot_actogram_tile(mov_variable='movement', bin_window=10, 
+            ...                        t_column='time', facet_col='activity_type')
+        """
+
+        # If there are no lablels then populate with index IDs
+        if labels is not None:
+            if labels not in self.meta.columns.tolist():
+                raise AttributeError(f'{labels} is not a column in the metadata')
+            title_list = self.meta[labels].tolist() 
+        else:
+            title_list = self.meta.index.tolist()
+
+        facet_arg = self.meta.index.tolist()
+
+        # call the internal actogram augmentor
+        data, days = self._internal_actogram(self, mov_variable, bin_window, t_column, facet_col='id')
+
+        # get the nearest square number to make a grid plot
+        root =  self._get_subplots(len(title_list))
+
+        figs = []
+        for subplot, label in zip(facet_arg, title_list):
+
+            dt = data.loc[data['id'] == subplot]
+            subtitle = "%s" % (label)
+            fig = self._plot_single_actogram(dt, figsize, days, subtitle, day_length)
+            plt.close()
+
+            figs.append(fig)
+
+        
+        # Create a new figure to combine the figures
+        cols, rows = root, root
+        c = []
+
+        if figsize == (0,0):
+            figsize = (6*rows, 2*len(days))
+
+        combined_fig = plt.figure(figsize = figsize )
+        for pos, f in enumerate(figs):
+
+            c.append( combined_fig.add_subplot(rows, cols, pos+1))
+            c[-1].axis('off')  # Turn off axis
+            c[-1].imshow( self._fig2img (f) )
+
+        combined_fig.suptitle(title, size = 7*root)
+
+        # Adjust the layout of the subplots in the combined figure
+        #combined_fig.tight_layout()
+
+        return combined_fig
 
     def survival_plot(self, facet_col = None, facet_arg = None, facet_labels = None, repeat = False, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't', figsize=(0,0)):
         """
@@ -679,67 +779,284 @@ class behavpy_seaborn(behavpy_draw):
 
     # Response AGO/mAGO section
 
-    def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize = (0,0)):
-        """
-        """
-        if response_col not in self.columns.tolist():
-            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with puff_mago')
+    # def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize = (0,0)):
+    #     """
+    #     """
+    #     if response_col not in self.columns.tolist():
+    #         raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with puff_mago')
 
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+    #     facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
-        plot_column = f'{response_col}_mean'
+    #     plot_column = f'{response_col}_mean'
 
-        data_summary = {
-            "%s_mean" % response_col : (response_col, 'mean'),
-            "%s_std" % response_col : (response_col, 'std'),
-            }
+    #     data_summary = {
+    #         "%s_mean" % response_col : (response_col, 'mean'),
+    #         "%s_std" % response_col : (response_col, 'std'),
+    #         }
 
-        # takes subset of data if requested
-        if facet_col and facet_arg:
-            # takes subselection of df that contains the specified facet columns
-            data = self.xmv(facet_col, facet_arg)
-            # apply the specified operation and add the specified columns from metadata
-            grouped_data = data.groupby([data.index, 'has_interacted']).agg(**data_summary).reset_index(level = 1).merge(self.meta[[facet_col]], left_index=True, right_index=True)
-            grouped_data[facet_col] = grouped_data[facet_col].astype('category')
+    #     # takes subset of data if requested
+    #     if facet_col and facet_arg:
+    #         # takes subselection of df that contains the specified facet columns
+    #         data = self.xmv(facet_col, facet_arg)
+    #         # apply the specified operation and add the specified columns from metadata
+    #         grouped_data = data.groupby([data.index, 'has_interacted']).agg(**data_summary).reset_index(level = 1).merge(self.meta[[facet_col]], left_index=True, right_index=True)
+    #         grouped_data[facet_col] = grouped_data[facet_col].astype('category')
 
-        # this applies in case we want to apply the specified information to ALL the data
+    #     # this applies in case we want to apply the specified information to ALL the data
+    #     else:
+    #         grouped_data = self.groupby([self.index, 'has_interacted']).agg(**data_summary).copy(deep=True).reset_index()
+
+    #     # (0,0) means automatic size
+    #     if figsize == (0,0):
+    #         figsize = (6*len(facet_arg), 10)
+
+    #     fig, ax = plt.subplots(figsize=figsize)
+
+    #     plt.ylim(0, 1.01)
+    #     map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov'}
+    #     grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
+        
+    #     if facet_col:
+    #         map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
+    #         grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
+
+    #         sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0}, dodge = True)
+    #         sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'], dodge = True)
+    #         ax.set_xticklabels(facet_labels)
+
+    #         #Customise legend values
+    #         handles, _ = ax.get_legend_handles_labels()
+    #         ax.legend(handles = handles, labels=["Spon. Mov", "True Stimulus"])
+
+    #     else:
+    #         sns.boxplot(data=grouped_data, y=plot_column, x='has_interacted', order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
+    #         sns.swarmplot(data=grouped_data, y=plot_column, x='has_interacted', order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'])
+            
+    #         #Customise legend values
+    #         ax.legend(labels=["Spon. Mov", "True Stimulus"])
+
+    #     plt.title(title)
+    #     if grids: plt.grid(axis='y')
+
+    #     # reorder dataframe for stats output
+    #     if facet_col: 
+    #         grouped_data = grouped_data.sort_values(facet_col)
+
+    #     return fig, grouped_data
+
+    # Seaborn Periodograms
+
+    def plot_periodogram_tile(self, labels = None, find_peaks = False, title = '', grids = False, figsize=(0,0)):
+        """ Create a tile plot of all the periodograms in a periodogram dataframe"""
+
+        self._validate()
+
+        if labels is not None:
+            if labels not in self.meta.columns.tolist():
+                raise KeyError(f'{labels} is not a column in the metadata')
+            title_list = self.meta[labels].tolist() 
         else:
-            grouped_data = self.groupby([self.index, 'has_interacted']).agg(**data_summary).copy(deep=True).reset_index()
+            title_list = self.meta.index.tolist()
+        
+        facet_arg = self.meta.index.tolist()
 
+        data = self.copy(deep = True)
+
+        # Find the peaks if True
+        if find_peaks is True:
+            data = data.find_peaks(num_peaks = 2)
+        
+        if 'peak' in data.columns.tolist():
+            plot_peaks = True
+
+        # get the nearest square number to make a grid plot
+        root =  self._get_subplots(len(data.meta))
+        col_list = list(range(0, root)) * root
+        row_list = list([i] * root for i in range(0, root))
+        row_list = [item for sublist in row_list for item in sublist]
         # (0,0) means automatic size
         if figsize == (0,0):
-            figsize = (6*len(facet_arg), 10)
+            figsize = (2*len(facet_arg), 4*root)
+        # create the subplot
+        fig, axes = plt.subplots(root, root, figsize=figsize)
+        # print(data)
+        for subplot, col, row, label in zip(facet_arg, col_list, row_list, title_list): 
+            # filter by index for subplot
+            dt = data.loc[data.index == subplot]
+            # plot the power (blue) and signigicant threshold (red)
+            axes[row, col].plot(dt['period'], dt['power'], color = 'blue')
+            axes[row, col].plot(dt['period'], dt['sig_threshold'], color = 'red')
+            axes[row, col].set_title(label)
+
+            if plot_peaks is True:                
+                tdf = dt[dt['peak'] == 1]
+                axes[row, col].plot(tdf['period'], tdf['power'], marker='x', markersize=40, color="black")
+
+        for ax in axes.flat:
+            ax.set(xlabel='Period (Hours)', ylabel='Power')
+        fig.suptitle(title, size = 7*root)
+
+        # Hide x labels and tick labels for top plots and y ticks for right plots.
+        for ax in axes.flat:
+            ax.label_outer()
+
+        return fig
+
+    def plot_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize=(0,0)):
+        """ This function plot the averaged periodograms of the whole dataset or faceted by a metadata column.
+        This function should only be used after calling the periodogram function as it needs columns populated
+        from the analysis. 
+        Periodograms are a good way to quantify through signal analysis the ryhthmicity of your dataset.
+        
+            Args:
+                facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. Default is None.
+                facet_labels (list, optional): The labels to use for faceting. Default is None.
+                title (str, optional): The title of the plot. Default is an empty string.
+                grids (bool, optional): True/False to whether the resulting figure should have grids. Default is False.
+                figsize (tuple, optional): The size of the figure to be plotted as (width, height). If set to 
+                    (0,0), the size is determined automatically. Default is (0,0).
+        
+        """
+
+        # check if the dataset has the needed columns from .periodogram()
+        self._validate()
+        # check the facet_col and args are in the dataset, populate if not
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # takes subset of data if requested
+        if facet_col is not None:
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            d_list = [self.copy(deep = True)]
+
+        power_var = 'power'
+        period_var = 'period'
 
         fig, ax = plt.subplots(figsize=figsize)
 
-        plt.ylim(0, 1.01)
-        map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov'}
-        grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
+        for data, name, col in zip(d_list, facet_labels, self._get_colours(d_list)):
+
+            gb_df, t_min, t_max, col, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = power_var, 
+                                                                                    avg_win = False, wrap = False, day_len = False, 
+                                                                                    light_off= False, t_col = period_var, canvas = 'seaborn')
+            if gb_df is None:
+                continue
+
+            plt.plot(gb_df[period_var], gb_df["mean"], label=name, color=col)
+            plt.fill_between(
+            gb_df[period_var], gb_df["y_min"], gb_df["y_max"], alpha = 0.25, color=col
+            )
         
-        if facet_col:
-            map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
-            grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
+        x_ticks = np.arange(0,36*6,6, dtype=int)
 
-            sns.boxplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0}, dodge = True)
-            sns.swarmplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'], dodge = True)
-            ax.set_xticklabels(facet_labels)
+        if figsize == (0,0):
+            figsize = ( 6 + 1/3 * len(x_ticks), 
+                        4 + 1/24 * len(x_ticks) 
+                        )
+            fig.set_size_inches(figsize)
 
-            #Customise legend values
-            handles, _ = ax.get_legend_handles_labels()
-            ax.legend(handles = handles, labels=["Spon. Mov", "True Stimulus"])
-
-        else:
-            sns.boxplot(data=grouped_data, y=plot_column, x='has_interacted', order=["Spon. Mov", "True Stimulus"], ax=ax, palette=['grey', 'red'], showcaps=False, showfliers=False, whiskerprops={'linewidth':0})
-            sns.swarmplot(data=grouped_data, y=plot_column, x='has_interacted', order=["Spon. Mov", "True Stimulus"], ax=ax, size=5, alpha=0.5, edgecolor='black', linewidth=1, palette=['grey', 'red'])
-            
-            #Customise legend values
-            ax.legend(labels=["Spon. Mov", "True Stimulus"])
+        plt.xticks(ticks=x_ticks, labels=x_ticks, rotation=0)
+        plt.xlim(np.nanmin(self[period_var]), np.nanmax(self[period_var]))
+        plt.xlabel('Period Frequency (Hours)')
+        plt.ylabel(power_var)
 
         plt.title(title)
-        if grids: plt.grid(axis='y')
 
-        # reorder dataframe for stats output
-        if facet_col: 
-            grouped_data = grouped_data.sort_values(facet_col)
+        if grids:
+            plt.grid(axis='y')
 
-        return fig, grouped_data
+        return fig
+    
+    def plot_quantify_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize=(0,0)):
+        """
+        Creates a boxplot and swarmplot of the peaks in circadian rythymn according to a computed periodogram.
+        At its core it is just a wrapper of plot_quantify, with some data augmented before being sent to the method.
+
+        Args:
+            facet_col (str, optional): The column name used for faceting. Defaults to None.
+            facet_arg (list, optional): List of values used for faceting. Defaults to None.
+            facet_labels (list, optional): List of labels used for faceting. Defaults to None.
+            title (str, optional): Title of the plot. Defaults to ''.
+            grids (bool, optional): If True, add a grid to the plot. Defaults to False.
+            figsize (tuple, optional): Tuple specifying the figure size. Default is (0, 0) which auto-adjusts the size.
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
+
+        Note:
+            This function uses seaborn to create a boxplot and swarmplot. It allows to facet the data by a specific column.
+            The function to be applied on the data is specified by the `fun` parameter.
+        """
+        # check it has the right periodogram columns
+        self._validate()
+        # name for plotting
+        power_var = 'period'
+        y_label = 'Period (Hours)'
+        # find period peaks for plotting
+        if 'peak' not in self.columns.tolist():
+            self = self.find_peaks(num_peaks = 1)
+        # filter by these plot
+        self = self[self['peak'] == 1]
+        self = self.rename(columns = {power_var : y_label})
+        # call the plot quantify method
+        return self.plot_quantify(variable = y_label, facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, 
+                                    fun='max', title=title, grids=grids, figsize=figsize)
+
+
+    def plot_wavelet(self, mov_variable, sampling_rate = 15, scale = 156, wavelet_type = 'morl', t_col = 't', title = '', grids = False, figsize = (0,0)):
+        """ A formatter and plotter for a wavelet function.
+        Wavelet analysis is a windowed fourier transform that yields a two-dimensional plot, both period and time.
+        With this you can see how rhythmicity changes in an experimemnt overtime.
+
+            Args:
+                mov_variable (str):The name of the column containting the movement data
+                sampling_rate (int, optional): The time in minutes the data should be augmented to. Default is 15 minutes
+                scale (int optional): The scale facotr, the smaller the scale the more stretched the plot. Default is 156.
+                wavelet_type (str, optional): The wavelet family to be used to decompose the sequences. Default is 'morl'.
+                t_col (str, optional): The name of the time column in the DataFrame. Default is 't'.
+                title (str, optional): The title of the plot. Default is an empty string.
+                
+        Returns:
+            A matplotlib,figure
+        """
+        # format the data for the wavelet function
+        fun, avg_data = self._format_wavelet(mov_variable, sampling_rate, wavelet_type, t_col)
+        # call the wavelet function
+        t, per, power = fun(avg_data, t_col = t_col, var = mov_variable, scale = scale, wavelet_type = wavelet_type)
+
+        # fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots()
+
+        # set contour levels between -3 and 3
+        levels = np.arange(-3, 4)
+
+        CS = ax.contourf(t, per, power, levels=levels, cmap = self.attrs['sh_pal'], extend = 'min')
+
+        plt.colorbar(CS, label='Power')
+
+        if figsize == (0,0):
+            figsize = ( 15 + (1/24 * len(t)), 
+                        12 
+                        )
+            fig.set_size_inches(figsize)
+
+        # set y ticks in log 2
+        y_ticks = [1,2,4,6,12,24,36]
+        y_ticks_log = np.log2(y_ticks)
+        plt.yticks(ticks=y_ticks_log, labels=y_ticks, fontsize=20, rotation=0)
+        plt.ylim(np.log2([2,38]))
+
+        # set x ticks to every 12
+        x_ticks = np.arange(0, 24*200, 12)
+        plt.xticks(ticks=x_ticks, labels=x_ticks, fontsize=20, rotation=0)
+        plt.xlim(np.min(t), np.max(t))
+
+        plt.title(title)
+        plt.ylabel("Period Frequency (Hours)", fontsize=20)
+        plt.xlabel("ZT (Hours)", fontsize=20)
+
+        if grids:
+            plt.grid(axis='y')
+
+        return fig

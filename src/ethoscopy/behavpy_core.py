@@ -1473,8 +1473,7 @@ class behavpy_core(pd.DataFrame):
         if isinstance(per_range, list) or isinstance(per_range, np.array):
 
             if len(per_range) != 2:
-                warnings.warn("The period range can only be a tuple/array of length 2, please amend")
-                exit()
+                raise TypeError("The period range can only be a tuple/array of length 2, please amend")
 
             if per_range[0] < 0 or per_range[1] < 0:
                 raise ValueError(f"One or both of the values of the period_range given are negative, please amend")
@@ -1492,7 +1491,7 @@ class behavpy_core(pd.DataFrame):
         sampling_rate = 1 / (sampling_rate * 60)
 
         data = self.copy(deep = True)
-        sampled_data = data.interpolate(variable = mov_variable, step_size = 1 / sampling_rate)
+        sampled_data = data.interpolate_linear(variable = mov_variable, step_size = 1 / sampling_rate)
         sampled_data = sampled_data.reset_index()
         return  self.__class__(sampled_data.groupby('id', group_keys = False)[[t_col, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_col, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
@@ -1501,50 +1500,26 @@ class behavpy_core(pd.DataFrame):
         wave_types = ['morl', 'cmor', 'mexh', 'shan', 'fbsp', 'gaus1', 'gaus2', 'gaus3', 'gaus4', 'gaus5', 'gaus6', 'gaus7', 'gaus8', 'cgau1', 'cgau2', 'cgau3', 'cgau4', 'cgau5', 'cgau6', 'cgau7', 'cgau8']
         return wave_types
 
-    def wavelet(self, mov_variable, sampling_rate = 15, scale = 156, wavelet_type = 'morl', t_col = 't', title = '', grids = False):
-        """ A method to apply a wavelet function using the python package pywt. Head to https://pywavelets.readthedocs.io/en/latest/ for information about the pacakage and the other wavelet types
-        This method will produce a single wavelet transformation plot, averging the the data from across all specimens. It is therefore recommended you filter your dataset accordingly before applying 
-        this method, i.e. by different experimental groups or a singl specimen.
-        params:
-        @variable:  """
-        
+    def _format_wavelet(self, mov_variable, sampling_rate = 15, wavelet_type = 'morl', t_col = 't'):
+        """ A background method for the preperation of data for a wavelet plot.
+            Head to https://pywavelets.readthedocs.io/en/latest/ for information about the pacakage and the other wavelet types
+            This method will produce a single wavelet transformation plot, averaging the the data from across all specimens. It is therefore recommended you filter your dataset accordingly before applying 
+            this method, i.e. by different experimental groups or a single specimen.
+        """
+        # check input and return the wavelet function with given wave type
         fun = self._check_periodogram_input(v = mov_variable, per = 'wavelet', per_range = None, t_col = t_col, wavelet_type = wavelet_type)
         sampling_rate = 1 / (sampling_rate * 60)
 
+        # re-sample the data at the given rate and interpolate 
         data = self.copy(deep = True)
-        sampled_data = data.interpolate(variable = mov_variable, step_size = 1 / sampling_rate)
+        sampled_data = data.interpolate_linear(variable = mov_variable, step_size = 1 / sampling_rate)
+        # average across the dataset
         avg_data = sampled_data.groupby(t_col).agg(**{
                         mov_variable : (mov_variable, 'mean')
         })
         avg_data = avg_data.reset_index()
 
-        fig = go.Figure()
-        yticks = [1,2,4,6,12,24,36]
-        self._plot_ylayout(fig, yrange = np.log2([2,38]), tickvals = np.log2(yticks), ticktext = yticks, title = title, ylabel = 'Period Frequency (Hours)', grid = grids)
-        self._plot_xlayout(fig, xrange = False, t0 = False, dtick = 12, xlabel = 'ZT (Hours)')
-
-        t, per, pow = fun(avg_data, t_col = t_col, var = mov_variable, scale = scale, wavelet_type = wavelet_type)
-
-        trace = go.Contour(
-                z=pow,
-                x=t, 
-                y=per,
-                contours=dict(
-                    start= -3,
-                    end= 3,
-                    size= 1,
-                    # type = 'constraint'
-                ),
-                colorscale='Jet',
-                colorbar=dict(nticks=7, ticks='outside',
-                        ticklen=5, tickwidth=1,
-                        showticklabels=True,
-                        tickangle=0, tickfont_size=12)
-            )
-        fig.add_trace(trace)
-        # config = {'staticPlot': True} 
-        
-        return fig
+        return fun, avg_data
 
     @staticmethod
     def _wrapped_find_peaks(data, num, height = None):
@@ -1572,6 +1547,6 @@ class behavpy_core(pd.DataFrame):
         data = self.copy(deep=True)
         data = data.reset_index()
         if 'sig_threshold' in data.columns.tolist():
-            return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, cpalette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
+            return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
         else:
             return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)

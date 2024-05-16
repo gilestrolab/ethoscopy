@@ -737,11 +737,11 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
     
-    def plot_actogram_tile(self, mov_variable = 'moving', bin_window = 5, t_column = 't', labels = None, day_length = 24, title = ''):
+    def plot_actogram_tile(self, mov_variable = 'moving', bin_window = 15, t_column = 't', labels = None, day_length = 24, title = ''):
         
         if labels is not None:
             if labels not in self.meta.columns.tolist():
-                raise AttributeError(f'{labels} is not a column in the metadata')
+                raise KeyError(f'{labels} is not a column in the metadata')
             title_list = self.meta[labels].tolist() 
         else:
             title_list = self.meta.index.tolist()
@@ -752,7 +752,7 @@ class behavpy_plotly(behavpy_draw):
         data = self.copy(deep=True)
 
         # make a square subplot domain
-        fig = make_subplots(rows=root, cols=root, shared_xaxes = False, subplot_titles = title_list)
+        fig = make_subplots(rows=root, cols=root, shared_xaxes = False, vertical_spacing = 0.8/root, subplot_titles = title_list)
         col_list = list(range(1, root+1)) * root
         row_list = list([i] * root for i in range(1, root+1))
         row_list = [item for sublist in row_list for item in sublist]
@@ -799,6 +799,7 @@ class behavpy_plotly(behavpy_draw):
         fig.update_annotations(font_size=8)
         fig['layout']['title'] = title
         fig['layout']['plot_bgcolor'] = 'white'
+        fig.update_layout(height=150*root, width=250*6)
 
         return fig
 
@@ -2079,7 +2080,7 @@ class behavpy_plotly(behavpy_draw):
         
         return fig, stats_df
 
-    # PLoty Periodograms
+    # Ploty Periodograms
 
     def plot_periodogram_tile(self, labels = None, find_peaks = False, title = '', grids = False):
         """ Create a tile plot of all the periodograms in a periodogram dataframe"""
@@ -2099,11 +2100,13 @@ class behavpy_plotly(behavpy_draw):
 
         if find_peaks is True:
             data = data.find_peaks(num_peaks = 2)
+        if 'peak' in data.columns.tolist():
+            plot_peaks = True
 
         root =  self._get_subplots(len(data.meta))
 
         # make a square subplot domain
-        fig = make_subplots(rows=root, cols=root, shared_xaxes = False, subplot_titles = title_list)
+        fig = make_subplots(rows=root, cols=root, shared_yaxes = True, shared_xaxes = True, vertical_spacing = 0.8/root, subplot_titles = title_list)
         col_list = list(range(1, root+1)) * root
         row_list = list([i] * root for i in range(1, root+1))
         row_list = [item for sublist in row_list for item in sublist]
@@ -2134,7 +2137,7 @@ class behavpy_plotly(behavpy_draw):
                 ),
                 ), row = row, col = col)
 
-            if 'peak' in d.columns.tolist():
+            if plot_peaks is True:                
                 tdf = d[d['peak'] != False]
                 fig.append_trace(go.Scatter(
                     showlegend = False,
@@ -2174,7 +2177,8 @@ class behavpy_plotly(behavpy_draw):
         fig.update_annotations(font_size=8)
         fig['layout']['title'] = title
         fig['layout']['plot_bgcolor'] = 'white'
-        
+        fig.update_layout(height=150*root, width=250*6)
+
         fig.add_annotation(
                     font = {'size': 18, 'color' : 'black'},
                     showarrow = False,
@@ -2200,12 +2204,26 @@ class behavpy_plotly(behavpy_draw):
                     xshift =  -85,
                     textangle =  -90
         )
-        
+
         return fig
 
     def plot_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
-        """ Plots the averaged periodograms of different experimental groups """
-        self._validate()
+        """ This function plot the averaged periodograms of the whole dataset or faceted by a metadata column.
+        This function should only be used after calling the periodogram function as it needs columns populated
+        from the analysis. 
+        Periodograms are a good way to quantify through signal analysis the ryhthmicity of your dataset.
+        
+            Args:
+                facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. Default is None.
+                facet_labels (list, optional): The labels to use for faceting. Default is None.
+                title (str, optional): The title of the plot. Default is an empty string.
+                grids (bool, optional): True/False to whether the resulting figure should have grids. Default is False.
+
+        Returns:
+            A plotly.figure 
+        
+        """
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -2239,7 +2257,7 @@ class behavpy_plotly(behavpy_draw):
             if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
                 col = 'grey'
 
-            upper, trace, lower, _, _, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = 'power', avg_win = False, wrap = False, day_len = False, light_off = False, t_col = 'period')
+            upper, trace, lower, _, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = 'power', avg_win = False, wrap = False, day_len = False, light_off = False, canvas = 'plotly', t_col = 'period')
             fig.add_trace(upper)
             fig.add_trace(trace) 
             fig.add_trace(lower)
@@ -2247,54 +2265,84 @@ class behavpy_plotly(behavpy_draw):
         return fig
     
     def plot_quantify_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
-        """ Plots a box plot of means and 95% confidence intervals of the highest ranked peak in a series of periodograms"""
+        """
+        Creates a boxplot and swarmplot of the peaks in circadian rythymn according to a computed periodogram.
+        At its core it is just a wrapper of plot_quantify, with some data augmented before being sent to the method.
 
+        Args:
+            facet_col (str, optional): The column name used for faceting. Defaults to None.
+            facet_arg (list, optional): List of values used for faceting. Defaults to None.
+            facet_labels (list, optional): List of labels used for faceting. Defaults to None.
+            title (str, optional): Title of the plot. Defaults to ''.
+            grids (bool, optional): If True, add a grid to the plot. Defaults to False.
+        Returns:
+            fig (plotly.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
+
+        Note:
+            This function uses seaborn to create a boxplot and swarmplot. It allows to facet the data by a specific column.
+            The function to be applied on the data is specified by the `fun` parameter.
+        """
+        # check it has the right periodogram columns
         self._validate()
+        # name for plotting
+        power_var = 'period'
+        y_label = 'Period (Hours)'
+        # find period peaks for plotting
+        if 'peak' not in self.columns.tolist():
+            self = self.find_peaks(num_peaks = 1)
+        # filter by these plot
+        self = self[self['peak'] == 1]
+        self = self.rename(columns = {power_var : y_label})
+    
+        return self.plot_quantify(variable = y_label, facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, 
+                                    fun='max', title=title, grids=grids)
 
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+    def plot_wavelet(self, mov_variable, sampling_rate = 15, scale = 156, wavelet_type = 'morl', t_col = 't', title = '', grids = False):
+        """ A formatter and plotter for a wavelet function.
+        Wavelet analysis is a windowed fourier transform that yields a two-dimensional plot, both period and time.
+        With this you can see how rhythmicity changes in an experimemnt overtime.
 
-        d_list = []
-        if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
-        else:
-            d_list = [self.copy(deep = True)]
-            facet_labels = ['']
+            Args:
+                mov_variable (str):The name of the column containting the movement data
+                sampling_rate (int, optional): The time in minutes the data should be augmented to. Default is 15 minutes
+                scale (int optional): The scale facotr, the smaller the scale the more stretched the plot. Default is 156.
+                wavelet_type (str, optional): The wavelet family to be used to decompose the sequences. Default is 'morl'.
+                t_col (str, optional): The name of the time column in the DataFrame. Default is 't'.
+                title (str, optional): The title of the plot. Default is an empty string.
 
-        col_list = self._get_colours(d_list)
-        variable = 'period'
+        Returns:
+            A plotly figure
+        """
+        fun, avg_data = self._format_wavelet(mov_variable, sampling_rate, wavelet_type, t_col)
 
-        fig = go.Figure() 
-        self._plot_ylayout(fig, yrange = [min(self['period']), max(self['period'])], t0 = False, dtick = False, ylabel = 'Period (Hours)', title = title, grid = grids)
-        self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = '')
+        fig = go.Figure()
+        yticks = [1,2,4,6,12,24,36]
+        self._plot_ylayout(fig, yrange = np.log2([2,38]), tickvals = np.log2(yticks), ticktext = yticks, title = title, ylabel = 'Period Frequency (Hours)', grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = False, dtick = 12, xlabel = 'ZT (Hours)')
 
-        stats_dict = {}
+        t, per, power = fun(avg_data, t_col = t_col, var = mov_variable, scale = scale, wavelet_type = wavelet_type)
 
-        for data, name, col in zip(d_list, facet_labels, col_list):
-            
-            if len(data) == 0:
-                print(f'Group {name} has no values and cannot be plotted')
-                continue
-
-            if 'peak' not in data.columns.tolist():
-                data = data.find_peaks(num_peaks = 1)
-            data = data[data['peak'] == 1]
-
-            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
-                col = 'grey'
-
-            median, q3, q1, zlist, z_second = self._zscore_bootstrap(data[f'{variable}'].to_numpy(), second_array = data['power'].to_numpy())
-            stats_dict[name] = zlist
-
-            fig.add_trace(self._plot_meanbox(median = [median], q3 = [q3], q1 = [q1], 
-            x = [name], colour =  col, showlegend = False, name = name, xaxis = 'x'))
-
-            fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [name], colour = col, 
-            showlegend = False, name = name, xaxis = 'x'))
-
-        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
-
-        return fig, stats_df
+        trace = go.Contour(
+                z=power,
+                x=t, 
+                y=per,
+                contours=dict(
+                    start= -3,
+                    end= 3,
+                    size= 1,
+                    # type = 'constraint'
+                ),
+                colorscale='jet',
+                colorbar=dict(nticks=7, ticks='outside',
+                        ticklen=5, tickwidth=1,
+                        showticklabels=True,
+                        tickangle=0, tickfont_size=12)
+            )
+        fig.add_trace(trace)
+        # config = {'staticPlot': True} 
+        
+        return fig
 
     # Experimental section
 

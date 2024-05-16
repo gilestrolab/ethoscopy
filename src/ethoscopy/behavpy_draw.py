@@ -134,8 +134,7 @@ class behavpy_draw(behavpy_core):
 
     # GENERAL PLOT HELPERS
 
-    @staticmethod
-    def _generate_overtime_plot(data, name, col, var, avg_win, wrap, day_len, light_off, t_col, canvas):
+    def _generate_overtime_plot(self, data, name, col, var, avg_win, wrap, day_len, light_off, t_col, canvas):
 
         if len(data) == 0:
             print(f'Group {name} has no values and cannot be plotted')
