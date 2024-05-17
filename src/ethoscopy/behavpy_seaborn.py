@@ -1104,84 +1104,153 @@ class behavpy_seaborn(behavpy_draw):
         m = m.set_index('id')
 
         df = self.__class__(melt_df, m)
-        df.display()
 
         return df.plot_overtime(variable='value', wrapped=wrapped, facet_col='variable', facet_arg=labels, avg_window=avg_window, day_length=day_length, 
                                     lights_off=lights_off, title=title, grids=grids, t_column=t_column, col_list = colours)
 
-    # def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False):
-    #     """ works for any number of states """
+    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False):
+        """ works for any number of states """
 
-    #     assert isinstance(wrapped, bool)
+        assert isinstance(wrapped, bool)
 
-    #     labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-    #     facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
 
-    #     # make the colours a range for plotting 
-    #     start_colours, end_colours = self._adjust_colours(colours)
-    #     colour_range_dict = {}
-    #     colours_dict = {'start' : start_colours, 'end' : end_colours}
-    #     for q in range(0,len(labels)):
-    #         start_color = colours_dict.get('start')[q]
-    #         end_color = colours_dict.get('end')[q]
-    #         N = len(facet_arg)
-    #         colour_range_dict[q] = [x.hex for x in list(Color(start_color).range_to(Color(end_color), N))]
-    #     print(colour_range_dict)
+        # make the colours a range for plotting 
+        start_colours, end_colours = self._adjust_colours(colours)
+        colour_range_dict = {}
+        colours_dict = {'start' : start_colours, 'end' : end_colours}
+        for q in range(0,len(labels)):
+            start_color = colours_dict.get('start')[q]
+            end_color = colours_dict.get('end')[q]
+            N = len(facet_arg)
+            colour_range_dict[q] = [x.hex for x in list(Color(start_color).range_to(Color(end_color), N))]
 
-    #     if len(labels) <= 2:
-    #         nrows = 1
-    #         ncols =2
-    #     else:
-    #         nrows =  2
-    #         ncols = round(len(labels) / 2)
+        print(colour_range_dict)
+        df = self.copy(deep=True)
+        df = self.__class__(self._hmm_decode(self, hmm, bin, variable, func, t_column, return_type='table'), self.meta, check=True)
+        # print(df)
 
-    #     col_list = list(range(1, ncols+1)) * nrows
-    #     row_list = list([i] * ncols for i in range(1, nrows+1))
-    #     row_list = [item for sublist in row_list for item in sublist]
+        # figs  = []
 
-    #     states_list, time_list = self._hmm_decode(df, hmm, bin, variable, func, t_column)
+        # for c, state in enumerate(labels):
 
-    #     df = pd.DataFrame()
-    #     for l, t in zip(states_list, time_list):
-    #         tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
-    #         df = pd.concat([df, tdf], ignore_index = True)
+        #     sub_df = df[df['state'] == c]
+        #     states_list = sub_df.groupby(sub_df.index)['state'].apply(np.array)
+        #     time_list = sub_df.groupby(sub_df.index)['bin'].apply(list)
+        #     print(sub_df)
+        #     states_df = pd.DataFrame()
+        #     for l, t in zip(states_list, time_list):
+        #         tdf = hmm_pct_state(l, t, [c], avg_window = int((avg_window * 60)/bin))
+        #         print(tdf)
+        #         states_df = pd.concat([states_df, tdf], ignore_index = True)
+        #         break
 
-    #     for data in 
+        #     states_df.rename(columns = dict(zip([f'state_{c}' for c in range(0,len(labels))], labels)), inplace = True)
+        #     melt_df = states_df.melt('t')
+        #     m = melt_df[['variable']]
+        #     melt_df = melt_df.rename(columns = {'variable' : 'id'}).set_index('id')
+        #     m['id'] = m[['variable']]
+        #     m = m.set_index('id')
 
-    #     for c, (arg, n, h, b) in enumerate(zip(facet_arg, facet_labels, h_list, b_list)):   
+        #     states_df = self.__class__(melt_df, m)
+        #     print(states_df)
+        #     # fig = states_df.plot_overtime(variable='value', wrapped=wrapped, facet_col='variable', facet_arg=labels, avg_window=avg_window, day_length=day_length, 
+        #                                 # lights_off=lights_off, title=title, grids=grids, t_column=t_column, col_list = colours)
+        #     break
+
+        states_dict = {k : [] for k in labels}
+        print(states_dict)
+        for arg in facet_arg:
+
+            sub_df = df.xmv(facet_col, arg)
+            states_list = sub_df.groupby(sub_df.index)['state'].apply(np.array)
+            time_list = sub_df.groupby(sub_df.index)['bin'].apply(list)
+
+            states_df = pd.DataFrame()
+            for l, t in zip(states_list, time_list):
+                tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
+                # print(tdf)
+                states_df = pd.concat([states_df, tdf], ignore_index = True)
+                # break
+
+            states_df.rename(columns = dict(zip([f'state_{c}' for c in range(0,len(labels))], labels)), inplace = True)
+            melt_df = states_df.melt('t')
+            m = melt_df[['variable']]
+            melt_df = melt_df.rename(columns = {'variable' : 'id'}).set_index('id')
+            m['id'] = m[['variable']]
+            m = m.set_index('id')
+
+            states_df = self.__class__(melt_df, m)
+
+            for state in labels:
+                # print(state)
+                # print(states_dict[state])
+                sub_states = states_df[states_df.index == state]
+                states_dict[state].append(sub_states)
+
+        print(states_dict)
+
+            # fig = states_df.plot_overtime(variable='value', wrapped=wrapped, facet_col='variable', facet_arg=labels, avg_window=avg_window, day_length=day_length, 
+                                        # lights_off=lights_off, title=title, grids=grids, t_column=t_column, col_list = colours)
+            # break
+
+
+
+        # if len(labels) <= 2:
+        #     nrows = 1
+        #     ncols =2
+        # else:
+        #     nrows =  2
+        #     ncols = round(len(labels) / 2)
+
+        # col_list = list(range(1, ncols+1)) * nrows
+        # row_list = list([i] * ncols for i in range(1, nrows+1))
+        # row_list = [item for sublist in row_list for item in sublist]
+
+        # states_list, time_list = self._hmm_decode(df, hmm, bin, variable, func, t_column)
+
+        # df = pd.DataFrame()
+        # for l, t in zip(states_list, time_list):
+        #     tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
+        #     df = pd.concat([df, tdf], ignore_index = True)
+
+        # for data in 
+
+        # for c, (arg, n, h, b) in enumerate(zip(facet_arg, facet_labels, h_list, b_list)):   
 
 
 
 
 
-    #     return fig
+        # return fig
 
-    #     if facet_col:
-    #         figs = []
-    #         for subplot in facet_arg:
+        # if facet_col:
+        #     figs = []
+        #     for subplot in facet_arg:
 
-    #             dt = data.loc [data[facet_col] == subplot]
-    #             title = "%s - %s" % (title, subplot)
-    #             fig = self._plot_single_actogram(dt, figsize, days, title, day_length)
-    #             plt.close()
+        #         dt = data.loc [data[facet_col] == subplot]
+        #         title = "%s - %s" % (title, subplot)
+        #         fig = self._plot_single_actogram(dt, figsize, days, title, day_length)
+        #         plt.close()
 
-    #             figs.append(fig)
+        #         figs.append(fig)
 
             
-    #         # Create a new figure to combine the figures
-    #         cols, rows = 3, -(-len(facet_arg) // 3)
-    #         c = []
+        #     # Create a new figure to combine the figures
+        #     cols, rows = 3, -(-len(facet_arg) // 3)
+        #     c = []
 
-    #         if figsize == (0,0):
-    #             figsize = (16*rows, 2*len(days))
+        #     if figsize == (0,0):
+        #         figsize = (16*rows, 2*len(days))
 
-    #         combined_fig = plt.figure(figsize = figsize )
+        #     combined_fig = plt.figure(figsize = figsize )
             
-    #         for pos, f in enumerate(figs):
+        #     for pos, f in enumerate(figs):
 
-    #             c.append( combined_fig.add_subplot(rows, cols, pos+1))
-    #             c[-1].axis('off')  # Turn off axis
-    #             c[-1].imshow( self._fig2img (f) )
+        #         c.append( combined_fig.add_subplot(rows, cols, pos+1))
+        #         c[-1].axis('off')  # Turn off axis
+        #         c[-1].imshow( self._fig2img (f) )
 
-    #         # Adjust the layout of the subplots in the combined figure
-    #         #combined_fig.tight_layout()
+        #     # Adjust the layout of the subplots in the combined figure
+        #     #combined_fig.tight_layout()

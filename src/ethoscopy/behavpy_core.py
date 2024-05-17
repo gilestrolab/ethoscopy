@@ -1132,8 +1132,8 @@ class behavpy_core(pd.DataFrame):
 
         # bin the data to 60 second intervals with a selected column and function on that column
         bin_df = d.bin_time(var, b, t_column = t, function = fun)
-        gb = bin_df.groupby(bin_df.index)[f'{var}_{fun}'].apply(list)
-        time_list = bin_df.groupby(bin_df.index)['t_bin'].apply(list)
+        gb = bin_df.groupby(bin_df.index, sort=False)[f'{var}_{fun}'].apply(list)
+        time_list = bin_df.groupby(bin_df.index, sort=False)['t_bin'].apply(list)
 
         # logprob_list = []
         states_list = []
@@ -1182,6 +1182,9 @@ class behavpy_core(pd.DataFrame):
         elif hm.transmat_.shape[0] != 4:
             if col is None or lab is None:
                 raise RuntimeError('Your trained HMM is not 4 states, please provide the lables and colours for this hmm. See doc string for more info')
+                # give generic names and populate with colours from the given palette 
+                # _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
+                # _colours = self.get_colours(hm.transmat_)
             elif len(col) != len(lab):
                 raise RuntimeError('You have more or less states than colours, please rectify so the lists are equal in length')
         else:
