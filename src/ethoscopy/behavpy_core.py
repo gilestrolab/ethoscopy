@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np 
+import pickle
 
 from math import floor, ceil, sqrt
 from scipy.stats import zscore
@@ -1123,14 +1124,14 @@ class behavpy_core(pd.DataFrame):
     # HMM SECTION
 
     @staticmethod
-    def _hmm_decode(d, h, b, var, fun, return_type = 'array'):
+    def _hmm_decode(d, h, b, var, fun, t, return_type = 'array'):
 
         # change the movement column of choice to intergers, 1 == active, 0 == inactive
         if var == 'moving' or var == 'asleep':
             d[var] = np.where(d[var] == True, 1, 0)
 
         # bin the data to 60 second intervals with a selected column and function on that column
-        bin_df = d.bin_time(var, b, function = fun)
+        bin_df = d.bin_time(var, b, t_column = t, function = fun)
         gb = bin_df.groupby(bin_df.index)[f'{var}_{fun}'].apply(list)
         time_list = bin_df.groupby(bin_df.index)['t_bin'].apply(list)
 
@@ -1171,13 +1172,13 @@ class behavpy_core(pd.DataFrame):
 
         if hm.transmat_.shape[0] == 4 and lab == None and col == None:
             _labels = self._hmm_labels
-            _colours = self._colours_four
+            _colours = self._hmm_colours
         elif hm.transmat_.shape[0] == 4 and lab == None and col != None:
             _labels = self._hmm_labels
             _colours = col
         elif hm.transmat_.shape[0] == 4 and lab != None and col == None:
             _labels = lab
-            _colours = self._colours_four
+            _colours = self._hmm_colours
         elif hm.transmat_.shape[0] != 4:
             if col is None or lab is None:
                 raise RuntimeError('Your trained HMM is not 4 states, please provide the lables and colours for this hmm. See doc string for more info')

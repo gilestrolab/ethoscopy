@@ -271,7 +271,7 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
 
-    def plot_overtime(self, variable:str, wrapped:bool = False, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, avg_window:int = 180, day_length:int = 24, lights_off:int = 12, title:str = '', grids:bool = False, t_column:str = 't'):
+    def plot_overtime(self, variable:str, wrapped:bool = False, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, avg_window:int = 180, day_length:int = 24, lights_off:int = 12, title:str = '', grids:bool = False, t_column:str = 't', col_list = None):
         """
         A plot to view a variable of choice over an experiment of experimental day. The variable must be within the data. White and black boxes are generated to signify when lights are on and off and can be augmented.
         
@@ -304,7 +304,8 @@ class behavpy_plotly(behavpy_draw):
         else:
             d_list = [self.copy(deep = True)]
 
-        col_list = self._get_colours(d_list)
+        if col_list is None:
+            col_list = self._get_colours(d_list)
 
         fig = go.Figure() 
 
@@ -1009,7 +1010,7 @@ class behavpy_plotly(behavpy_draw):
 
                 if display == 'continuous':
 
-                    upper, trace, lower, _ = self._plot_line(df = filt_gb, x_col = filtname, name = lab, marker_col = qcol)
+                    upper, trace, lower = self._plot_line(df = filt_gb, x_col = filtname, name = lab, marker_col = qcol)
                     fig.add_trace(upper)
                     fig.add_trace(trace) 
                     fig.add_trace(lower)
@@ -1187,7 +1188,7 @@ class behavpy_plotly(behavpy_draw):
                     continue
 
                 max_x.append(np.nanmax(small_data['previous_activity_count']))
-                upper, trace, lower, _ = self._plot_line(df = small_data, x_col = 'previous_activity_count', name = label, marker_col = col)
+                upper, trace, lower = self._plot_line(df = small_data, x_col = 'previous_activity_count', name = label, marker_col = col)
                 fig.add_trace(upper)
                 fig.add_trace(trace) 
                 fig.add_trace(lower)
@@ -1301,7 +1302,7 @@ class behavpy_plotly(behavpy_draw):
 
                 max_x.append(np.nanmax(filt_gb['bin_time']))
 
-                upper, trace, lower, _ = self._plot_line(df = filt_gb, x_col = 'bin_time', name = lab, marker_col = qcol)
+                upper, trace, lower = self._plot_line(df = filt_gb, x_col = 'bin_time', name = lab, marker_col = qcol)
                 fig.add_trace(upper)
                 fig.add_trace(trace) 
                 fig.add_trace(lower)
@@ -1331,7 +1332,7 @@ class behavpy_plotly(behavpy_draw):
 
     # HMM section
 
-    def plot_hmm_overtime(self, hmm, variable = 'moving', labels = None, colours = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False):
+    def plot_hmm_overtime(self, hmm, variable = 'moving', labels = None, colours = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False):
         """
         Creates a plot of all states overlayed with y-axis shows the liklihood of being in a sleep state and the x-axis showing time in hours.
         The plot is generated through the plotly package
@@ -1357,52 +1358,26 @@ class behavpy_plotly(behavpy_draw):
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
 
-        states_list, time_list = self._hmm_decode(df, hmm, bin, variable, func)
+        states_list, time_list = self._hmm_decode(df, hmm, bin, variable, func, t_column)
 
         df = pd.DataFrame()
         for l, t in zip(states_list, time_list):
             tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
             df = pd.concat([df, tdf], ignore_index = True)
 
-        if wrapped is True:
-            df['t'] = df['t'].map(lambda t: t % (60*60*day_length))
+        df.rename(columns = dict(zip([f'state_{c}' for c in range(0,len(labels))], labels)), inplace = True)
+        melt_df = df.melt('t')
+        m = melt_df[['variable']]
+        melt_df = melt_df.rename(columns = {'variable' : 'id'}).set_index('id')
+        m['id'] = m[['variable']]
+        m = m.set_index('id')
 
-        df['t'] = df['t'] / (60*60)
-        t_min = int(12 * floor(df.t.min() / 12))
-        t_max = int(12 * ceil(df.t.max() / 12))    
-        t_range = [t_min, t_max]  
+        df = self.__class__(melt_df, m)
 
-        fig = go.Figure()
-        self._plot_ylayout(fig, yrange = [-0.025, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Probability of being in state', title = title, grid = grids)
-        self._plot_xlayout(fig, xrange = t_range, t0 = 0, dtick = day_length/4, xlabel = 'ZT (Hours)')
+        return df.plot_overtime(variable='value', wrapped=wrapped, facet_col='variable', facet_arg=labels, avg_window=avg_window, day_length=day_length, 
+                                    lights_off=lights_off, title=title, grids=grids, t_column=t_column, col_list = colours)
 
-        for c, (col, n) in enumerate(zip(colours, labels)):
-
-            column = f'state_{c}'
-
-            gb_df = df.groupby('t').agg(**{
-                        'mean' : (column, 'mean'), 
-                        'SD' : (column, 'std'),
-                        'count' : (column, 'count')
-                    })
-
-            gb_df['SE'] = (1.96*gb_df['SD']) / np.sqrt(gb_df['count'])
-            gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
-            gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
-            gb_df = gb_df.reset_index()
-
-            upper, trace, lower, _ = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = col)
-            fig.add_trace(upper)
-            fig.add_trace(trace) 
-            fig.add_trace(lower)
-
-        # Light-Dark annotaion bars
-        bar_shapes, min_bar = circadian_bars(t_min, t_max, max_y = 1, day_length = day_length, lights_off = lights_off)
-        fig.update_layout(shapes=list(bar_shapes.values()))
-
-        return fig
-
-    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', grids = False):
+    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False):
         """ works for any number of states """
 
         assert isinstance(wrapped, bool)
@@ -1440,7 +1415,7 @@ class behavpy_plotly(behavpy_draw):
             else:
                 d = self.copy(deep = True)
 
-            states_list, time_list = self._hmm_decode(d, h, b, variable, func)
+            states_list, time_list = self._hmm_decode(d, h, b, variable, func, t_column)
 
             analysed_df = pd.DataFrame()
             for l, t in zip(states_list, time_list):
@@ -1477,7 +1452,7 @@ class behavpy_plotly(behavpy_draw):
                 gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
                 gb_df = gb_df.reset_index()
 
-                upper, trace, lower, _ = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = marker_col.get(i)[c])
+                upper, trace, lower = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = marker_col.get(i)[c])
                 fig.add_trace(upper,row=row, col=col)
                 fig.add_trace(trace, row=row, col=col) 
                 fig.add_trace(lower, row=row, col=col)
@@ -1561,7 +1536,7 @@ class behavpy_plotly(behavpy_draw):
         )
 
         # Light-Dark annotaion bars
-        bar_shapes, min_bar = circadian_bars(t_min, t_max, max_y = 1, day_length = day_length, lights_off = lights_off, split = len(labels))
+        bar_shapes, min_bar = circadian_bars(t_min, t_max, min_y = 0, max_y = 1, day_length = day_length, lights_off = lights_off, split = len(labels))
         fig.update_layout(shapes=list(bar_shapes.values()))
 
         return fig
@@ -1580,7 +1555,7 @@ class behavpy_plotly(behavpy_draw):
         else:
             df_list = [self.copy(deep = True)]
 
-        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func, t_column) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
 
         def analysis(array_states):
             rows = []
@@ -1649,7 +1624,7 @@ class behavpy_plotly(behavpy_draw):
         else:
             df_list = [self.copy(deep = True)]
 
-        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func, t_column) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
 
         def analysis(states, t_diff):
             df_lengths = pd.DataFrame()

@@ -86,7 +86,7 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig
 
-    def plot_overtime(self, variable:str, wrapped:bool = False, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, facet_tile:None|str = None, avg_window:int = 180, day_length:int = 24, lights_off:int = 12, title:str = '', grids:bool = False, t_column:str = 't', figsize:tuple = (0,0)):
+    def plot_overtime(self, variable:str, wrapped:bool = False, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, facet_tile:None|str = None, avg_window:int = 180, day_length:int = 24, lights_off:int = 12, title:str = '', grids:bool = False, t_column:str = 't', col_list:list|None = None, figsize:tuple = (0,0)):
         """
         Plots a line hypnogram using seaborn, displaying rolling averages of a chosen variable over time.
         Optionally, the plot can be wrapped and faceted.
@@ -121,12 +121,15 @@ class behavpy_seaborn(behavpy_draw):
         else:
             d_list = [self.copy(deep = True)]
 
+        if col_list is None:
+            col_list = self._get_colours(d_list)
+
         min_t = []
         max_t = []
 
         fig, ax = plt.subplots(figsize=figsize)
 
-        for data, name, col in zip(d_list, facet_labels, self._get_colours(d_list)):
+        for data, name, col in zip(d_list, facet_labels, col_list):
 
             gb_df, t_min, t_max, col, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = variable, 
                                                                                     avg_win = avg_window, wrap = wrapped, day_len = day_length, 
@@ -1060,3 +1063,125 @@ class behavpy_seaborn(behavpy_draw):
             plt.grid(axis='y')
 
         return fig
+
+    def plot_hmm_overtime(self, hmm, variable = 'moving', labels = None, colours = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False):
+        """
+        Creates a plot of all states overlayed with y-axis shows the liklihood of being in a sleep state and the x-axis showing time in hours.
+        The plot is generated through the plotly package
+
+        Params:
+        @hmm = hmmlearn.hmm.MultinomialHMM, this should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+        @variable = string, the column heading of the variable of interest. Default is "moving"
+        @labels = list[string], the names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake']
+        @colours = list[string], the name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red)
+        It accepts a specific colour or an array of numbers that are acceptable to plotly
+        @wrapped = bool, if True the plot will be limited to a 24 hour day average
+        @bin = int, the time in seconds you want to bin the movement data to, default is 60 or 1 minute
+        @func = string, when binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+        @avg_window, int, the window in minutes you want the moving average to be applied to. Default is 30 mins
+        @circadian_night, int, the hour when lights are off during the experiment. Default is ZT 12
+        @save = bool/string, if not False then save as the location and file name of the save file
+
+        returns None
+        """
+        assert isinstance(wrapped, bool)
+
+        df = self.copy(deep = True)
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        states_list, time_list = self._hmm_decode(df, hmm, bin, variable, func, t_column)
+
+        df = pd.DataFrame()
+        for l, t in zip(states_list, time_list):
+            tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
+            df = pd.concat([df, tdf], ignore_index = True)
+
+        df.rename(columns = dict(zip([f'state_{c}' for c in range(0,len(labels))], labels)), inplace = True)
+        melt_df = df.melt('t')
+        m = melt_df[['variable']]
+        melt_df = melt_df.rename(columns = {'variable' : 'id'}).set_index('id')
+        m['id'] = m[['variable']]
+        m = m.set_index('id')
+
+        df = self.__class__(melt_df, m)
+        df.display()
+
+        return df.plot_overtime(variable='value', wrapped=wrapped, facet_col='variable', facet_arg=labels, avg_window=avg_window, day_length=day_length, 
+                                    lights_off=lights_off, title=title, grids=grids, t_column=t_column, col_list = colours)
+
+    # def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False):
+    #     """ works for any number of states """
+
+    #     assert isinstance(wrapped, bool)
+
+    #     labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+    #     facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+
+    #     # make the colours a range for plotting 
+    #     start_colours, end_colours = self._adjust_colours(colours)
+    #     colour_range_dict = {}
+    #     colours_dict = {'start' : start_colours, 'end' : end_colours}
+    #     for q in range(0,len(labels)):
+    #         start_color = colours_dict.get('start')[q]
+    #         end_color = colours_dict.get('end')[q]
+    #         N = len(facet_arg)
+    #         colour_range_dict[q] = [x.hex for x in list(Color(start_color).range_to(Color(end_color), N))]
+    #     print(colour_range_dict)
+
+    #     if len(labels) <= 2:
+    #         nrows = 1
+    #         ncols =2
+    #     else:
+    #         nrows =  2
+    #         ncols = round(len(labels) / 2)
+
+    #     col_list = list(range(1, ncols+1)) * nrows
+    #     row_list = list([i] * ncols for i in range(1, nrows+1))
+    #     row_list = [item for sublist in row_list for item in sublist]
+
+    #     states_list, time_list = self._hmm_decode(df, hmm, bin, variable, func, t_column)
+
+    #     df = pd.DataFrame()
+    #     for l, t in zip(states_list, time_list):
+    #         tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
+    #         df = pd.concat([df, tdf], ignore_index = True)
+
+    #     for data in 
+
+    #     for c, (arg, n, h, b) in enumerate(zip(facet_arg, facet_labels, h_list, b_list)):   
+
+
+
+
+
+    #     return fig
+
+    #     if facet_col:
+    #         figs = []
+    #         for subplot in facet_arg:
+
+    #             dt = data.loc [data[facet_col] == subplot]
+    #             title = "%s - %s" % (title, subplot)
+    #             fig = self._plot_single_actogram(dt, figsize, days, title, day_length)
+    #             plt.close()
+
+    #             figs.append(fig)
+
+            
+    #         # Create a new figure to combine the figures
+    #         cols, rows = 3, -(-len(facet_arg) // 3)
+    #         c = []
+
+    #         if figsize == (0,0):
+    #             figsize = (16*rows, 2*len(days))
+
+    #         combined_fig = plt.figure(figsize = figsize )
+            
+    #         for pos, f in enumerate(figs):
+
+    #             c.append( combined_fig.add_subplot(rows, cols, pos+1))
+    #             c[-1].axis('off')  # Turn off axis
+    #             c[-1].imshow( self._fig2img (f) )
+
+    #         # Adjust the layout of the subplots in the combined figure
+    #         #combined_fig.tight_layout()
