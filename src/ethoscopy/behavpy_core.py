@@ -1183,16 +1183,16 @@ class behavpy_core(pd.DataFrame):
             if col is None or lab is None:
                 raise RuntimeError('Your trained HMM is not 4 states, please provide the lables and colours for this hmm. See doc string for more info')
                 # give generic names and populate with colours from the given palette 
-                # _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
-                # _colours = self.get_colours(hm.transmat_)
+                _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
+                _colours = self.get_colours(hm.transmat_)
             elif len(col) != len(lab):
                 raise RuntimeError('You have more or less states than colours, please rectify so the lists are equal in length')
-        else:
-            _labels = lab
-            _colours = col
+            else:
+                _labels = lab
+                _colours = col
 
         if len(_labels) != len(_colours):
-            raise RuntimeError('You have more or less states than colours, please rectify so they are equal in length')
+            raise RuntimeError('Internal check fail: You have more or less states than colours, please rectify so they are equal in length')
         
         return _labels, _colours
 
