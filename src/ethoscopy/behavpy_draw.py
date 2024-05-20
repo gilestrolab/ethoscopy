@@ -7,6 +7,10 @@ from plotly.express.colors import qualitative
 from colour import Color
 from math import sqrt, floor, ceil
 
+#fig to img
+import io
+import PIL
+
 from ethoscopy.behavpy_core import behavpy_core
 
 class behavpy_draw(behavpy_core):
@@ -76,6 +80,14 @@ class behavpy_draw(behavpy_core):
             return True
         return False
 
+    @staticmethod
+    # Function to convert figure to image
+    def _fig2img(fig, format='png'):
+        buf = io.BytesIO()
+        fig.savefig(buf, format=format, bbox_inches='tight', pad_inches=0)
+        buf.seek(0)
+        img = PIL.Image.open(buf)
+        return img
 
     @staticmethod
     def _rgb_to_hex(rgb_string):
