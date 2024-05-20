@@ -832,7 +832,10 @@ class behavpy_HMM(behavpy):
             If hmm is a list of hmm objects, the number of plots will equal the length of that list. Use this to compare hmm models.
             """
 
-        states = h.transmat_.shape[0]
+        if isinstance(hmm, list):
+            states = hmm[0].transmat_.shape[0]
+        else:
+            states = hmm.transmat_.shape[0]
 
         if colours is None:
             if isinstance(hmm, list):
