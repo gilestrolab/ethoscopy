@@ -100,9 +100,9 @@ class behavpy_HMM(behavpy):
                 raise RuntimeError('Your trained HMM is not 4 states, please provide the lables and colours for this hmm. See doc string for more info')
             elif len(col) != len(lab):
                 raise RuntimeError('You have more or less states than colours, please rectify so the lists are equal in length')
-        else:
-            _labels = lab
-            _colours = col
+            else:
+                _labels = lab
+                _colours = col
 
         if len(_labels) != len(_colours):
             raise RuntimeError('You have more or less states than colours, please rectify so they are equal in length')
