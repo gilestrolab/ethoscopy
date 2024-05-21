@@ -1541,7 +1541,7 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
 
-    def plot_hmm_quantify(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
+    def plot_hmm_quantify(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', t_column = 't', grids = False):
         """
         
         """
