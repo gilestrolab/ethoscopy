@@ -220,7 +220,7 @@ def stimulus_response(data, start_response_window = 0, response_window_length = 
         Args:
             data (pd.DataFrame): The dataframe containing behavioural variable from many or one multiple animals 
             response_window (int, optional): The period of time (seconds) after the stimulus to check for a response (movement). Default is 10 seconds
-            add_false (bool / int, optional): If not False then an int which is the percentage of the total of which to add false interactions, recommended is 1.
+            add_false (bool / int, optional): If not False then an int which is the immobility criteria in seconds, i.e 30 would be 30 seconds immobile before the stimulus.
                 This is for use with old datasets with no false interactions so you can observe spontaneous movement with a HMM. Default is False
             velocity_correction_coef (float, optional): A coefficient to correct the velocity data (change for different length tubes). Default is 3e-3.
     
@@ -239,18 +239,32 @@ def stimulus_response(data, start_response_window = 0, response_window_length = 
     data['deltaT'] = data.t.diff()
     data['dist'] = 10 ** (data.xy_dist_log10x1000 / 1000)
     data['velocity'] = data.dist / velocity_correction_coef
-    data.drop(columns = ['deltaT', 'dist'], inplace = True)
 
     if add_false is not False:
-        if add_false <= 0 or add_false >= 101:
-            raise ValueError("add_false must be between 1 and 100") 
-        int_list = [2] * (int(len(data)*(add_false/100)))
-        int_list_2 = [0] * (len(data) - len(int_list))
-        int_list_all = int_list + int_list_2 
-        shuffle(int_list_all)
-        data['has_interacted2'] = int_list_all 
-        data['has_interacted'] = np.where(data['has_interacted'] == 1, data['has_interacted'], data['has_interacted2'])
-        data = data.drop(columns = ['has_interacted2'])
+
+        if add_false <= 0:
+            raise ValueError("add_false must be a positive integer") 
+        # add a moving column
+        data['moving'] = np.where(data['velocity'] > 1, True, False)
+        # find continuous runs of either moving or immobile
+        counted_df = _find_runs(data['moving'], data['t'], data['deltaT'])
+        # for runs of immobility cumsum the detlta time at add false interaction on at every interval of the immobility integer, i.e. every 30 seconds add 2
+        new_int_df = cumsum_delta(dataframe=counted_df[counted_df['moving'] == False], immobility_int=add_false)
+        data = pd.merge(data, new_int_df[['t', 'new_has_interacted']], how = 'left', on = 't')
+        # integrate the new false interactions into the original column, but keeping the true ones
+        data['has_interacted'] = np.where((data['new_has_interacted'] == 2) & (data['has_interacted'] == 0), 2, data['has_interacted'])
+        data.drop(columns=['new_has_interacted'], inplace=True)
+
+        # THE OLD ADD_FALSE - ADDED AT RANDOM FALSE INTERACTIONS GIVEN A % OF THE TOTAL
+        # int_list = [2] * (int(len(data)*(add_false/100)))
+        # int_list_2 = [0] * (len(data) - len(int_list))
+        # int_list_all = int_list + int_list_2 
+        # shuffle(int_list_all)
+        # data['has_interacted2'] = int_list_all 
+        # data['has_interacted'] = np.where(data['has_interacted'] == 1, data['has_interacted'], data['has_interacted2'])
+        # data = data.drop(columns = ['has_interacted2'])
+
+    data.drop(columns = ['deltaT', 'dist'], inplace = True)
 
     #isolate interaction times
     interaction_dt = data['t'][(data['has_interacted'] == 1) | (data['has_interacted'] == 2)].to_frame()
