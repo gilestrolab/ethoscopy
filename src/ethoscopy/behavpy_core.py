@@ -343,13 +343,13 @@ class behavpy_core(pd.DataFrame):
 
             print(group)
 
-    def add_day_phase(self, time_column = 't', day_length = 24, lights_off = 12, inplace = True):
+    def add_day_phase(self, t_column = 't', day_length = 24, lights_off = 12, inplace = True):
         """ 
         Adds a column called 'phase' with either light or dark as catergories according to its time compared to the reference hour
         Adds a column with the day the row is in, starting with 1 as the first day and increasing sequentially.
 
         Args:
-            time_column (str): The name of column containing the timing data (in seconds). Default is 't'.
+            t_column (str): The name of column containing the timing data (in seconds). Default is 't'.
             day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
             lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
             inplace (bool, optional): 
@@ -360,14 +360,14 @@ class behavpy_core(pd.DataFrame):
         night_in_secs = lights_off * 60 * 60
 
         if inplace == True:
-            self['day'] = self[time_column].map(lambda t: floor(t / day_in_secs))
-            self['phase'] = np.where(((self[time_column] % day_in_secs) > night_in_secs), 'dark', 'light')
+            self['day'] = self[t_column].map(lambda t: floor(t / day_in_secs))
+            self['phase'] = np.where(((self[t_column] % day_in_secs) > night_in_secs), 'dark', 'light')
             self['phase'] = self['phase'].astype('category')
 
         elif inplace == False:
             new_df = self.copy(deep = True)
-            new_df['day'] = new_df[time_column].map(lambda t: floor(t / day_in_secs)) 
-            new_df['phase'] = np.where(((new_df[time_column] % day_in_secs) > night_in_secs), 'dark', 'light')
+            new_df['day'] = new_df[t_column].map(lambda t: floor(t / day_in_secs)) 
+            new_df['phase'] = np.where(((new_df[t_column] % day_in_secs) > night_in_secs), 'dark', 'light')
             new_df['phase'] = new_df['phase'].astype('category')
 
             return new_df
@@ -1190,6 +1190,9 @@ class behavpy_core(pd.DataFrame):
             else:
                 _labels = lab
                 _colours = col
+        else:
+            _labels = lab
+            _colours = col
 
         if len(_labels) != len(_colours):
             raise RuntimeError('Internal check fail: You have more or less states than colours, please rectify so they are equal in length')
@@ -1312,7 +1315,7 @@ class behavpy_core(pd.DataFrame):
 
         hmm_df = self.copy(deep = True)
 
-        def bin_to_list(data, t_var, mov_var, bin):
+        def bin_to_list(data, t_column, mov_var, bin):
             """ 
             Bins the time to the given integer and creates a nested list of the movement column by id
             """
@@ -1320,7 +1323,7 @@ class behavpy_core(pd.DataFrame):
             data = data.reset_index()
             t_delta = data[t_column].iloc[1] - data[t_column].iloc[0]
             if t_delta != bin:
-                data[t_var] = data[t_var].map(lambda t: bin * floor(t / bin))
+                data[t_column] = data[t_column].map(lambda t: bin * floor(t / bin))
                 bin_gb = data.groupby(['id', t_var]).agg(**{
                     mov_var : (var_column, stat)
                 })
@@ -1332,14 +1335,14 @@ class behavpy_core(pd.DataFrame):
 
         if var_column == 'beam_crosses':
             hmm_df['active'] = np.where(hmm_df[var_column] == 0, 0, 1)
-            gb = bin_to_list(hmm_df, t_var = t_column, mov_var = var_column, bin = bin_time)
+            gb = bin_to_list(hmm_df, t_column = t_column, mov_var = var_column, bin = bin_time)
 
         elif var_column == 'moving':
             hmm_df[var_column] = np.where(hmm_df[var_column] == True, 1, 0)
-            gb = bin_to_list(hmm_df, t_var = t_column, mov_var = var_column, bin = bin_time)
+            gb = bin_to_list(hmm_df, t_column = t_column, mov_var = var_column, bin = bin_time)
 
         else:
-            gb = bin_to_list(hmm_df, t_var = t_column, mov_var = var_column, bin = bin_time)
+            gb = bin_to_list(hmm_df, t_column = t_column, mov_var = var_column, bin = bin_time)
 
         # split runs into test and train lists
         test_train_split = round(len(gb) * (test_size/100))

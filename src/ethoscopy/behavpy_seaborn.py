@@ -300,7 +300,7 @@ class behavpy_seaborn(behavpy_draw):
 
         return self.plot_quantify(variable = variables, facet_col = facet_col, facet_arg = facet_arg, facet_labels = facet_labels, fun = fun, title = title, grids = grids)
 
-    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, figsize=(0,0)):
+    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False, figsize=(0,0)):
         """
         Plot day and night data.
 
@@ -333,7 +333,7 @@ class behavpy_seaborn(behavpy_draw):
         data = self.copy(deep=True)
         
         #Add phase information to the data
-        data.add_day_phase(day_length = day_length, lights_off = lights_off)
+        data.add_day_phase(day_length = day_length, lights_off = lights_off, t_column = t_column)
 
         # takes subset of data if requested
         if facet_col and facet_arg:

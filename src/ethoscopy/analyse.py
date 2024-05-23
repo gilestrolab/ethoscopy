@@ -220,7 +220,7 @@ def stimulus_response(data, start_response_window = 0, response_window_length = 
         Args:
             data (pd.DataFrame): The dataframe containing behavioural variable from many or one multiple animals 
             response_window (int, optional): The period of time (seconds) after the stimulus to check for a response (movement). Default is 10 seconds
-            add_false (bool / int, optional): If not False then an int which is the percentage of the total of which to add false interactions, recommended is 10.
+            add_false (bool / int, optional): If not False then an int which is the percentage of the total of which to add false interactions, recommended is 1.
                 This is for use with old datasets with no false interactions so you can observe spontaneous movement with a HMM. Default is False
             velocity_correction_coef (float, optional): A coefficient to correct the velocity data (change for different length tubes). Default is 3e-3.
     

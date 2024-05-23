@@ -481,7 +481,7 @@ class behavpy_plotly(behavpy_draw):
 
         return fig, stats_df
 
-    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', day_length = 24, lights_off = 12, title = '', z_score = True, grids = False):
+    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', day_length = 24, lights_off = 12, title = '', t_column = 't', z_score = True, grids = False):
         """
         A plot that shows the average of a varaible split between the day (lights on) and night (lights off).
         Addtionally, a pandas dataframe is generated that contains the averages per specimen per group for users to perform statistics with.
@@ -513,7 +513,7 @@ class behavpy_plotly(behavpy_draw):
             data = self.copy(deep=True)
         
         # add the phases for day and night
-        data.add_day_phase(day_length = day_length, lights_off = lights_off)
+        data.add_day_phase(day_length = day_length, lights_off = lights_off, t_column = t_column)
         data = data.dropna(subset=[variable])
 
         if facet_col:
