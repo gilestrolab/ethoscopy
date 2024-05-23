@@ -1044,23 +1044,23 @@ class behavpy_HMM(behavpy):
         self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Response Rate', title = title, grid = grids)
 
         stats_dict = {}
-
-        for state, col, lab in zip(list_states, colours, labels):
+        for state, col, st_lab in zip(list_states, colours, labels):
 
             for arg, i in zip(facet_arg, facet_labels):
 
                 for q in [2, 1]:
+
                     try:
                         mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][f'int_{q}'][state])
                     except KeyError:
                         continue
 
-                    stats_dict[f'{arg}_{lab}_{q}'] = zlist
-
                     if q == 2:
                         lab = f'{i} Spon. mov.'
                     else:
                         lab = i
+
+                    stats_dict[f'{st_lab}: {lab}'] = zlist
 
                     if 'baseline' in lab.lower() or 'control' in lab.lower() or 'ctrl' in lab.lower():
                             marker_col = 'black'
@@ -1078,7 +1078,7 @@ class behavpy_HMM(behavpy):
 
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
             axis = f'xaxis{state+1}'
-            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = st_lab, domains = domains[state:state+2], axis = axis)
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
         
