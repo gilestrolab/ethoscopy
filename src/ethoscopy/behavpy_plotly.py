@@ -2022,7 +2022,7 @@ class behavpy_plotly(behavpy_draw):
 
         stats_dict = {}
 
-        for state, col, lab in zip(list_states, colours, labels):
+        for state, col, st_lab in zip(list_states, colours, labels):
 
             for arg, i in zip(facet_arg, facet_labels):
 
@@ -2032,12 +2032,12 @@ class behavpy_plotly(behavpy_draw):
                     except KeyError:
                         continue
 
-                    stats_dict[f'{arg}_{lab}_{q}'] = zlist
-
                     if q == 2:
                         lab = f'{i} Spon. mov.'
                     else:
                         lab = i
+
+                    stats_dict[f'{i}: {st_lab}'] = zlist
 
                     if 'baseline' in lab.lower() or 'control' in lab.lower() or 'ctrl' in lab.lower():
                             marker_col = 'black'
@@ -2055,7 +2055,7 @@ class behavpy_plotly(behavpy_draw):
 
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
             axis = f'xaxis{state+1}'
-            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = st_lab, domains = domains[state:state+2], axis = axis)
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
         

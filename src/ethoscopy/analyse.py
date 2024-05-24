@@ -248,7 +248,7 @@ def stimulus_response(data, start_response_window = 0, response_window_length = 
         data['moving'] = np.where(data['velocity'] > 1, True, False)
         # find continuous runs of either moving or immobile
         counted_df = _find_runs(data['moving'], data['t'], data['deltaT'])
-        # for runs of immobility cumsum the detlta time at add false interaction on at every interval of the immobility integer, i.e. every 30 seconds add 2
+        # for runs of immobility cumsum the detlta time and add false interactions at every interval of the immobility integer, i.e. every 30 seconds add 2
         new_int_df = cumsum_delta(dataframe=counted_df[counted_df['moving'] == False], immobility_int=add_false)
         data = pd.merge(data, new_int_df[['t', 'new_has_interacted']], how = 'left', on = 't')
         # integrate the new false interactions into the original column, but keeping the true ones
