@@ -1039,16 +1039,21 @@ class behavpy_HMM(behavpy):
             return interaction_dict
 
         analysed_dict = {f'df{n}' : alter_merge(decoded_dict[f'df{n}'], puff_dict[f'pdf{n}']) for n in facet_arg}
-        
+
         fig = go.Figure()
         self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Response Rate', title = title, grid = grids)
+
+        if len(set(self.has_interacted)) == 1:
+            loop_itr = list(set(self.has_interacted))
+        else:
+            loop_itr = [2, 1]
 
         stats_dict = {}
         for state, col, st_lab in zip(list_states, colours, labels):
 
             for arg, i in zip(facet_arg, facet_labels):
-
-                for q in [2, 1]:
+                
+                for q in loop_itr:
 
                     try:
                         mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][f'int_{q}'][state])

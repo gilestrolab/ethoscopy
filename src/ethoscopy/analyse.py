@@ -11,6 +11,7 @@ from scipy.stats import zscore
 from ethoscopy.misc.rle import rle
 
 def max_velocity_detector(data, 
+                        time_window_length = 10,
                         velocity_correction_coef = 3e-3,
                         masking_duration = 6,
                         optional_columns = 'has_interacted'                        
@@ -21,7 +22,7 @@ def max_velocity_detector(data,
 
         Args:
             data (pd.DataFrame): A dataframe containing behavioural variables of a single animal (no id)    
-            time_window_length (int, optional): The period of time the data is binned and sampled to, i.e. if 60 the timestep will per row will be 60 seconds.
+            time_window_length (int, optional): The period of time the data is binned and sampled to, i.e. if 60 the timestep will per row will be 60 seconds. Default is 10.
             velocity_correction_coef (float, optional):  A coefficient to correct the velocity data (change for different length tubes). For 'small' tubes (20 per ethoscope) =
                 3e-3, for 'long' tubes (10 per ethoscope) = 15e-4. Default is 3e-3.
             masking_duration (int, optional): The number of seconds during which any movement is ignored (velocity is set to 0) after a stimulus is delivered (a.k.a. interaction).
@@ -171,7 +172,7 @@ def sleep_annotation(data,
     if len(data.index) < 100:
         return None
     
-    d_small = motion_detector_FUN(data, time_window_length, masking_duration = masking_duration, velocity_correction_coef = velocity_correction_coef)
+    d_small = motion_detector_FUN(data = data, time_window_length = time_window_length, masking_duration = masking_duration, velocity_correction_coef = velocity_correction_coef)
 
     if len(d_small.index) < 100:
         return None

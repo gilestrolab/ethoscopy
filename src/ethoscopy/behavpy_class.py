@@ -2017,8 +2017,7 @@ class behavpy(pd.DataFrame):
                 all_runs.append(spec_run)
 
             counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
-
-            puff_df[t_column] = puff_df['interaction_t'] % 86400
+            # puff_df[t_column] = puff_df['interaction_t'] % 86400
             puff_df[t_column] = puff_df['interaction_t'].map(lambda t:  60 * floor(t / 60))
             puff_df.reset_index(inplace = True)
 
@@ -2032,9 +2031,9 @@ class behavpy(pd.DataFrame):
             for i in [0, 1]:
                 first_filter = merged[merged['previous_moving'] == i]
                 if len(first_filter) == 0:
-                    for q in [1, 2]:
-                        interaction_dict[f'{i}_{int(q)}'] = None
-                        continue
+                    # for q in [1, 2]:
+                    #     interaction_dict[f'{i}_{int(q)}'] = None
+                    continue
                 # for q in list(set(first_filter.has_interacted)):
                 for q in [1, 2]:
                     second_filter = first_filter[first_filter['has_interacted'] == q]
