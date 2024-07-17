@@ -3,7 +3,6 @@ import numpy as np
 import pickle
 
 from math import floor, ceil, sqrt
-from scipy.stats import zscore
 from functools import partial, update_wrapper
 
 from tabulate import tabulate
@@ -15,7 +14,6 @@ from astropy.timeseries import LombScargle
 from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
-from ethoscopy.misc.bootstrap_CI import bootstrap
 from ethoscopy.misc.periodogram_functions import chi_squared, lomb_scargle, fourier, welch, wavelet
 
 class behavpy_core(pd.DataFrame):
@@ -1393,7 +1391,7 @@ class behavpy_core(pd.DataFrame):
                 self._hmm_table(start_prob = h.startprob_, trans_prob = h.transmat_, emission_prob = h.emissionprob_, state_names = states, observable_names = observables)
                 return h
 
-    def get_hmm_raw(self, hmm, variable = 'moving', bin = 60, func = 'max'):
+    def get_hmm_raw(self, hmm, variable = 'moving', t_bin = 60, func = 'max', t_column = 't'):
         """
         Decode all the time series per specimin, returning an augmented behavpy dataframe that has just one row per specimin and two columns, 
         one containing the decoded timeseries as a list and one with the given observable variable as a list
@@ -1403,13 +1401,13 @@ class behavpy_core(pd.DataFrame):
                 variable (str): The column name of the variable you wish to decode with the trained HMM. Default is 'moving'.
                 bin (int): The amount of time (in seconds) you want to bin the time series to. Default is 60
                 func (str): The function that is applied to the time series when binning it. Default is 'max'
-
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
         returns:
-            A behavpy_HMM dataframe with columns bin (time), state, previous_state, moving
+            A behavpy dataframe with columns bin (time), state, previous_state, moving
         """
 
         tdf = self.copy(deep=True)
-        return self.__class__(self._hmm_decode(tdf, hmm, bin, variable, func, return_type= 'table'), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
+        return self.__class__(self._hmm_decode(tdf, hmm, t_bin, variable, func, t_column, return_type= 'table'), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     # PERIODOGRAM SECTION
 

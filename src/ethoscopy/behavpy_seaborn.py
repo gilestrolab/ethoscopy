@@ -73,7 +73,7 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig
 
-    def plot_overtime(self, variable:str, wrapped:bool = False, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, facet_tile:None|str = None, avg_window:int = 180, day_length:int = 24, lights_off:int = 12, title:str = '', grids:bool = False, t_column:str = 't', col_list:list|None = None, figsize:tuple = (0,0)):
+    def plot_overtime(self, variable:str, wrapped:bool = False, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, facet_tile:None|str = None, avg_window:int = 30, day_length:int = 24, lights_off:int = 12, title:str = '', grids:bool = False, t_column:str = 't', col_list:list|None = None, figsize:tuple = (0,0)):
         """
         Plots a line hypnogram using seaborn, displaying rolling averages of a chosen variable over time.
         Optionally, the plot can be wrapped and faceted.
@@ -84,7 +84,7 @@ class behavpy_seaborn(behavpy_draw):
             facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
             facet_arg (list, optional): The arguments to use for faceting. Default is None.
             facet_labels (list, optional): The labels to use for faceting. Default is None.
-            avg_window (int, optional): The window size for rolling average calculation. Default is 180.
+            avg_window (int, optional): The number, in minutes, that is applied to the rolling smoothing function. The default is 30 minutes, which for a t_diff of 10 would be a window of 180.
             day_length (int, optional): The length of the day in hours for wrapping. Default is 24.
             lights_off (int, optional): The time of "lights off" in hours. Default is 12.
             title (str, optional): The title of the plot. Default is an empty string.
@@ -122,7 +122,7 @@ class behavpy_seaborn(behavpy_draw):
         for data, name, col in zip(d_list, facet_labels, col_list):
 
             gb_df, t_min, t_max, col, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = variable, 
-                                                                                    avg_win = avg_window, wrap = wrapped, day_len = day_length, 
+                                                                                    avg_win = int((avg_window * 60)/self[t_column].diff().median()), wrap = wrapped, day_len = day_length, 
                                                                                     light_off= lights_off, t_col = t_column, canvas = 'seaborn')
             if gb_df is None:
                 continue
@@ -340,7 +340,7 @@ class behavpy_seaborn(behavpy_draw):
         # BOXPLOT
         # (0,0) means automatic size
         if figsize == (0,0):
-            figsize = (4*len(facet_arg), 4)
+            figsize = (4*len(facet_arg)+2, 4+2)
 
         fig, ax = plt.subplots(figsize=figsize)
 
@@ -351,14 +351,13 @@ class behavpy_seaborn(behavpy_draw):
         palette = self._get_colours(facet_labels)
         palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
 
-
         if facet_col:
             # merge the facet_col column and replace with the labelsBinned
             grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
 
             sns.stripplot(data=grouped_data, x='phase', y=plot_column, order=['light', 'dark'], hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge = True)
             sns.pointplot(data=grouped_data, x='phase', y=plot_column, order=['light', 'dark'], hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, estimator = 'mean',
-                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.1)
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.3)
 
             # Customise legend values
             handles, _ = ax.get_legend_handles_labels()
@@ -429,7 +428,7 @@ class behavpy_seaborn(behavpy_draw):
         # BOXPLOT
         # (0,0) means automatic size
         if figsize == (0,0):
-            figsize = (4*len(facet_arg), 6)
+            figsize = (4*len(facet_arg)+2, 6+2)
 
         fig, ax = plt.subplots(figsize=figsize)
 
@@ -442,7 +441,7 @@ class behavpy_seaborn(behavpy_draw):
 
             sns.stripplot(data=dataset, x='phase', y="anticipation_score", order=['Lights On', 'Lights Off'], ax=ax, hue =facet_col, hue_order=facet_labels, palette=palette_dict, alpha=0.5, legend=False, dodge = True)
             sns.pointplot(data=dataset, x='phase', y="anticipation_score", order=['Lights On', 'Lights Off'], ax=ax, hue =facet_col, hue_order=facet_labels, palette=palette_dict, estimator = 'mean',
-                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.1)
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.3)
 
             # Customise legend values
             handles, _ = ax.get_legend_handles_labels()
@@ -1061,36 +1060,40 @@ class behavpy_seaborn(behavpy_draw):
 
     # HMM plots
 
-    def plot_hmm_overtime(self, hmm, variable = 'moving', labels = None, colours = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False, figsize=(0,0)):
+    def plot_hmm_overtime(self, hmm, variable = 'moving', labels = None, colours = None, wrapped = False, t_bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False, figsize=(0,0)):
         """
-        Creates a plot of all states overlayed with y-axis shows the liklihood of being in a sleep state and the x-axis showing time in hours.
-        The plot is generated through the plotly package
+        Creates a plot of the occurance of each state as a percentage at each time point. The method will decode and augment the dataset to be fed into a plot_overtime method.
 
-        Params:
-        @hmm = hmmlearn.hmm.MultinomialHMM, this should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
-        @variable = string, the column heading of the variable of interest. Default is "moving"
-        @labels = list[string], the names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake']
-        @colours = list[string], the name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red)
-        It accepts a specific colour or an array of numbers that are acceptable to plotly
-        @wrapped = bool, if True the plot will be limited to a 24 hour day average
-        @bin = int, the time in seconds you want to bin the movement data to, default is 60 or 1 minute
-        @func = string, when binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
-        @avg_window, int, the window in minutes you want the moving average to be applied to. Default is 30 mins
-        @circadian_night, int, the hour when lights are off during the experiment. Default is ZT 12
-        @save = bool/string, if not False then save as the location and file name of the save file
+            Args:
+                hmm (hmmlearn.hmm.MultinomialHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                variable (str, optional): The column heading of the variable of interest. Default is "moving"
+                labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                wrapped (bool, optional). If True the plot will be limited to a 24 hour day average. Default is False.
+                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
+                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+                avg_window (int, optioanl): The window in minutes you want the moving average to be applied to. Default is 30 mins
+                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
 
-        returns None
+        Returns:
+            returns a Seaborn figure made by the .plot_overtime() method
         """
         assert isinstance(wrapped, bool)
 
         df = self.copy(deep = True)
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-        states_list, time_list = self._hmm_decode(df, hmm, bin, variable, func, t_column)
+        states_list, time_list = self._hmm_decode(df, hmm, t_bin, variable, func, t_column)
 
         df = pd.DataFrame()
         for l, t in zip(states_list, time_list):
-            tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
+            tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = 5)
             df = pd.concat([df, tdf], ignore_index = True)
 
         df.rename(columns = dict(zip([f'state_{c}' for c in range(0,len(labels))], labels)), inplace = True)
@@ -1106,13 +1109,13 @@ class behavpy_seaborn(behavpy_draw):
         return df.plot_overtime(variable='Probability of state', wrapped=wrapped, facet_col='variable', facet_arg=labels, avg_window=avg_window, day_length=day_length, 
                                     lights_off=lights_off, title=title, grids=grids, t_column=t_column, col_list = colours, figsize=figsize)
 
-    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_col = None, facet_arg = None, facet_labels = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False, figsize=(0,0)):
+    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_col = None, facet_arg = None, facet_labels = None, wrapped = False, t_bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False, figsize=(0,0)):
         """ works for any number of states """
 
         assert isinstance(wrapped, bool)
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
 
         # make the colours a range for plotting 
         # start_colours, end_colours = self._adjust_colours(colours)
@@ -1141,7 +1144,7 @@ class behavpy_seaborn(behavpy_draw):
             # calculate the % per state
             states_df = pd.DataFrame()
             for l, t in zip(states_list, time_list):
-                tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = int((avg_window * 60)/bin))
+                tdf = hmm_pct_state(l, t, list(range(len(labels))), avg_window = 5)
                 states_df = pd.concat([states_df, tdf], ignore_index = True)
 
             # melt to make ready for plot
@@ -1195,3 +1198,164 @@ class behavpy_seaborn(behavpy_draw):
         combined_fig.subplots_adjust(wspace=0.05, hspace=-0.55)
         
         return combined_fig
+
+    def plot_hmm_quantify(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column = 't', grids = False, figsize=(0,0)):
+        """
+        Creates a quantification plot of how much a predicted state appears per individual. 
+
+            Args:
+                hmm (hmmlearn.hmm.MultinomialHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                variable (str, optional): The column heading of the variable of interest. Default is "moving"
+                labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
+                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+        Returns:
+            returns a Seaborn figure and pandas Dataframe with the means per state per indivdual
+        """
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
+
+        data = self.copy(deep=True)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            # takes subselection of df that contains the specified facet columns
+            data = self.xmv(facet_col, facet_arg)
+
+        # Decode the whole dataset, count each state and the length of each individuals dataset to find the total percentage
+        decoded_data = data.get_hmm_raw(hmm, variable=variable, t_bin=t_bin, func=func, t_column=t_column)
+        grouped_data = decoded_data.groupby([decoded_data.index, 'state'], sort=False).agg({'bin' : 'count'})
+        grouped_data = grouped_data.join(decoded_data.groupby('id', sort=False).agg({'previous_state':'count'}))
+        grouped_data['Fraction of time in each State'] = grouped_data['bin'] / grouped_data['previous_state']
+        grouped_data.reset_index(level=1, inplace = True)
+
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = (4*len(facet_arg)+2, 4+2)
+        
+        fig, ax = plt.subplots(figsize=figsize)
+        plt.ylim([0, 1.01])
+
+        palette = self._get_colours(facet_labels)
+        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+
+        if facet_col:
+            # merge the facet_col column and replace with the labelsBinned
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels)
+            sns.stripplot(data=grouped_data, x='state', y='Fraction of time in each State', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge = True)
+            sns.pointplot(data=grouped_data, x='state', y='Fraction of time in each State', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, estimator = 'mean',
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.3)
+
+            # Customise legend values
+            handles, _ = ax.get_legend_handles_labels()
+            ax.legend(handles=handles, labels=facet_labels)
+        else:
+            hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
+            grouped_data['state'] = grouped_data['state'].map(hmm_dict)
+            sns.stripplot(data=grouped_data, x='state', y='Fraction of time in each State', order=labels, ax=ax, hue ='state', palette={k: v for k,v in zip(labels, colours)}, alpha=0.5, legend=False)
+            sns.pointplot(data=grouped_data, x='state', y='Fraction of time in each State', order=labels, ax=ax, hue ='state', palette={k: v for k,v in zip(labels, colours)}, estimator = 'mean',
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3)
+
+        plt.title(title)
+        if grids: plt.grid(axis='y')
+
+        # reorder dataframe for stats output
+        if facet_col: 
+            grouped_data = grouped_data.sort_values(facet_col)
+        grouped_data.drop(columns=['bin', 'previous_state'], inplace=True)
+        return fig, grouped_data
+
+    def plot_hmm_quantify_length(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column = 't', grids = False, scale = 'log', figsize=(0,0)):
+        """
+        Creates a quantification plot of the average length of each state per individual. 
+
+            Args:
+                hmm (hmmlearn.hmm.MultinomialHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                variable (str, optional): The column heading of the variable of interest. Default is "moving"
+                labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
+                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+        Returns:
+            returns a Seaborn figure and pandas Dataframe with the mean length of each state per indivdual
+        """
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
+
+        data = self.copy(deep=True)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            # takes subselection of df that contains the specified facet columns
+            data = self.xmv(facet_col, facet_arg)
+
+        # Decode the whole dataset, count each state and the length of each individuals dataset to find the total percentage
+        decoded_data = data.get_hmm_raw(hmm, variable=variable, t_bin=t_bin, func=func, t_column=t_column)
+        states = decoded_data.groupby(decoded_data.index, sort=False)['state'].apply(list)
+
+        df_lengths = []
+        for l, id in zip(states, states.index):
+            length = hmm_mean_length(l, delta_t = t_bin) 
+            length['id'] = [id] * len(length)
+            df_lengths.append(length)
+
+        grouped_data = pd.concat(df_lengths)
+        grouped_data.rename(columns={'mean_length' : 'Length of state bout (mins)'}, inplace=True)
+        grouped_data.set_index('id', inplace=True)
+
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = (4*len(facet_arg)+2, 4+2)
+        
+        fig, ax = plt.subplots(figsize=figsize)
+        if scale is not None:
+            plt.yscale(scale)
+
+        palette = self._get_colours(facet_labels)
+        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+
+        if facet_col:
+            # merge the facet_col column and replace with the labelsBinned
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels)
+            sns.stripplot(data=grouped_data, x='state', y='Length of state bout (mins)', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge = True)
+            sns.pointplot(data=grouped_data, x='state', y='Length of state bout (mins)', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, estimator = 'mean',
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.3)
+
+            # Customise legend values
+            handles, _ = ax.get_legend_handles_labels()
+            ax.legend(handles=handles, labels=facet_labels)
+        else:
+            hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
+            grouped_data['state'] = grouped_data['state'].map(hmm_dict)
+            sns.stripplot(data=grouped_data, x='state', y='Length of state bout (mins)', order=labels, ax=ax, hue ='state', palette={k: v for k,v in zip(labels, colours)}, alpha=0.5, legend=False)
+            sns.pointplot(data=grouped_data, x='state', y='Length of state bout (mins)', order=labels, ax=ax, hue ='state', palette={k: v for k,v in zip(labels, colours)}, estimator = 'mean',
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3)
+
+        plt.title(title)
+        if grids: plt.grid(axis='y')
+
+        # reorder dataframe for stats output
+        if facet_col: 
+            grouped_data = grouped_data.sort_values(facet_col)
+
+        return fig, grouped_data

@@ -6,12 +6,14 @@ import seaborn as sns
 from plotly.express.colors import qualitative
 from colour import Color
 from math import sqrt, floor, ceil
+from scipy.stats import zscore
 
 #fig to img
 import io
 import PIL
 
 from ethoscopy.behavpy_core import behavpy_core
+from ethoscopy.misc.bootstrap_CI import bootstrap
 
 class behavpy_draw(behavpy_core):
     """
@@ -320,10 +322,13 @@ class behavpy_draw(behavpy_core):
         
         return ant_df
 
-    def facet_merge(self, data, facet_col, facet_arg, facet_labels):
+    def facet_merge(self, data, facet_col, facet_arg, facet_labels, hmm_labels = None):
         # merge the facet_col column and replace with the labels
         data = data.join(self.meta[[facet_col]])
         data[facet_col] = data[facet_col].astype('category')
         map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
         data[facet_col] = data[facet_col].map(map_dict)
+        if hmm_labels is not None:
+            hmm_dict = {k : v for k, v in zip(range(len(hmm_labels)), hmm_labels)}
+            data['state'] = data['state'].map(hmm_dict)
         return data
