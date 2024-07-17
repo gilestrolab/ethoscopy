@@ -36,6 +36,93 @@ class behavpy_draw(behavpy_core):
             dtick = False
         return y_range, dtick
 
+    # Internal methods for checking data/arguments before plotting
+    def _check_hmm_shape(self, hm, lab, col):
+        """
+        Check the colours and labels passed to a plotting method are of equal length. If None then it will be populated with the defaults.
+        """
+        if isinstance(hm, list):
+            hm = hm[0]
+
+        if hm.transmat_.shape[0] == 4 and lab == None and col == None:
+            _labels = self._hmm_labels
+            _colours = self._hmm_colours
+        elif hm.transmat_.shape[0] == 4 and lab == None and col != None:
+            _labels = self._hmm_labels
+            _colours = col
+        elif hm.transmat_.shape[0] == 4 and lab != None and col == None:
+            _labels = lab
+            _colours = self._hmm_colours
+        elif hm.transmat_.shape[0] != 4:
+            if col is None or lab is None:
+                raise RuntimeError('Your trained HMM is not 4 states, please provide the lables and colours for this hmm. See doc string for more info')
+                # give generic names and populate with colours from the given palette 
+                _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
+                _colours = self.get_colours(hm.transmat_)
+            elif len(col) != len(lab):
+                raise RuntimeError('You have more or less states than colours, please rectify so the lists are equal in length')
+            else:
+                _labels = lab
+                _colours = col
+        else:
+            _labels = lab
+            _colours = col
+
+        if len(_labels) != len(_colours):
+            raise RuntimeError('Internal check fail: You have more or less states than colours, please rectify so they are equal in length')
+        
+        return _labels, _colours
+
+    def _check_lists_hmm(self, f_col, f_arg, f_lab, h, b):
+        """
+        Check if the facet arguments match the labels or populate from the column if not.
+        Check if there is more than one HMM object for HMM comparison. Populate hmm and bin lists accordingly.
+        """
+        if isinstance(h, list):
+            assert isinstance(b, list)
+            if len(h) != len(f_arg) or len(b) != len(f_arg):
+                raise RuntimeError('There are not enough hmm models or bin intergers for the different groups or vice versa')
+            else:
+                h_list = h
+                b_list = b
+
+        if f_col is not None:
+            if f_arg is None:
+                f_arg = list(set(self.meta[f_col].tolist()))
+                if f_lab is None:
+                    string_args = []
+                    for i in f_arg:
+                        if i not in self.meta[f_col].tolist():
+                            raise KeyError(f'Argument "{i}" is not in the meta column {f_col}')
+                        string_args.append(str(i))
+                    f_lab = string_args
+                elif len(f_arg) != len(f_lab):
+                    print("The facet labels don't match the length of the variables in the column. Using column variables instead")
+                    f_lab = f_arg
+            else:
+                if f_lab is None:
+                    string_args = []
+                    for i in f_arg:
+                        string_args.append(str(i))
+                    f_lab = string_args
+                elif len(f_arg) != len(f_lab):
+                    print("The facet labels don't match the entered facet arguments in length. Using column variables instead")
+                    f_lab = f_arg
+        else:
+            f_arg = [None]
+            if f_lab is None:
+                f_lab = ['']
+
+        if isinstance(h, list) is False:
+            h_list = [h]
+            b_list = [b]
+            if len(h_list) != len(f_arg):
+                h_list = [h_list[0]] * len(f_arg)
+            if len(b_list) != len(f_arg):
+                b_list = [b_list[0]] * len(f_arg)
+
+        return f_arg, f_lab, h_list, b_list
+
     @staticmethod
     def _zscore_bootstrap(array, z_score = True, second_array = None, min_max = False):
         """ Calculate the z score of a given array, remove any values +- 3 SD and then perform bootstrapping on the remaining

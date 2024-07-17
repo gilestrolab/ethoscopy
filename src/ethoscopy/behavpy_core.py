@@ -900,7 +900,7 @@ class behavpy_core(pd.DataFrame):
                                                                                                 bin_secs = bin_secs
         )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
-    def remove_first_last_bout(self):
+    def remove_first_last_bout(self, bout_column):
         """
         A method to remove the first and last bout, only use for columns like 'moving' and 'asleep', that have continuous runs of True and False variables.
         For use with plotting and analysis where you are not sure if the starting and ending bouts weren't cut in two when filtering or stopping experiment.
@@ -923,8 +923,8 @@ class behavpy_core(pd.DataFrame):
             return data.iloc[ind1:ind2]
 
         tdf = self.reset_index().copy(deep=True)
-        return self.__class__(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_remove_first_last_bout,
-        )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
+        return self.__class__(tdf.groupby('id', group_keys = False).apply(_wrapped_remove_first_last_bout), 
+                tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
     def _wrapped_motion_detector(data, time_window_length, velocity_correction_coef, masking_duration, optional_columns):
@@ -1100,7 +1100,7 @@ class behavpy_core(pd.DataFrame):
 
         # logprob_list = []
         states_list = []
-        df = pd.DataFrame()
+        df_list = []
 
         for i, t, id in zip(gb, time_list, time_list.index):
             seq_o = np.array(i)
@@ -1114,104 +1114,17 @@ class behavpy_core(pd.DataFrame):
                 label = [id] * len(t)
                 previous_state = np.array(states[:-1], dtype = float)
                 previous_state = np.insert(previous_state, 0, np.nan)
-                all = zip(label, t, states, previous_state, seq_o)
-                all = pd.DataFrame(data = all)
-                df = pd.concat([df, all], ignore_index = False)
-        
+                previous_var = np.array(seq_o[:-1], dtype = float)
+                previous_var = np.insert(previous_var, 0, np.nan)
+                all_ar = zip(label, t, states, previous_state, seq_o, previous_var)
+                df_list.append(pd.DataFrame(data = all_ar))
+
         if return_type == 'array':
             return states_list, time_list #, logprob_list
         if return_type == 'table':
-            df.columns = ['id', 'bin', 'state', 'previous_state', var]
+            df = pd.concat(df_list)
+            df.columns = ['id', 'bin', 'state', 'previous_state', var, f'previous_{var}']
             return df
-
-
-    # Internal methods for checking data/arguments before plotting
-    def _check_hmm_shape(self, hm, lab, col):
-        """
-        Check the colours and labels passed to a plotting method are of equal length. If None then it will be populated with the defaults.
-        """
-        if isinstance(hm, list):
-            hm = hm[0]
-
-        if hm.transmat_.shape[0] == 4 and lab == None and col == None:
-            _labels = self._hmm_labels
-            _colours = self._hmm_colours
-        elif hm.transmat_.shape[0] == 4 and lab == None and col != None:
-            _labels = self._hmm_labels
-            _colours = col
-        elif hm.transmat_.shape[0] == 4 and lab != None and col == None:
-            _labels = lab
-            _colours = self._hmm_colours
-        elif hm.transmat_.shape[0] != 4:
-            if col is None or lab is None:
-                raise RuntimeError('Your trained HMM is not 4 states, please provide the lables and colours for this hmm. See doc string for more info')
-                # give generic names and populate with colours from the given palette 
-                _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
-                _colours = self.get_colours(hm.transmat_)
-            elif len(col) != len(lab):
-                raise RuntimeError('You have more or less states than colours, please rectify so the lists are equal in length')
-            else:
-                _labels = lab
-                _colours = col
-        else:
-            _labels = lab
-            _colours = col
-
-        if len(_labels) != len(_colours):
-            raise RuntimeError('Internal check fail: You have more or less states than colours, please rectify so they are equal in length')
-        
-        return _labels, _colours
-
-    def _check_lists_hmm(self, f_col, f_arg, f_lab, h, b):
-        """
-        Check if the facet arguments match the labels or populate from the column if not.
-        Check if there is more than one HMM object for HMM comparison. Populate hmm and bin lists accordingly.
-        """
-        if isinstance(h, list):
-            assert isinstance(b, list)
-            if len(h) != len(f_arg) or len(b) != len(f_arg):
-                raise RuntimeError('There are not enough hmm models or bin intergers for the different groups or vice versa')
-            else:
-                h_list = h
-                b_list = b
-
-        if f_col is not None:
-            if f_arg is None:
-                f_arg = list(set(self.meta[f_col].tolist()))
-                if f_lab is None:
-                    string_args = []
-                    for i in f_arg:
-                        if i not in self.meta[f_col].tolist():
-                            raise KeyError(f'Argument "{i}" is not in the meta column {f_col}')
-                        string_args.append(str(i))
-                    f_lab = string_args
-                elif len(f_arg) != len(f_lab):
-                    print("The facet labels don't match the length of the variables in the column. Using column variables instead")
-                    f_lab = f_arg
-            else:
-                if f_lab is None:
-                    string_args = []
-                    for i in f_arg:
-                        string_args.append(str(i))
-                    f_lab = string_args
-                elif len(f_arg) != len(f_lab):
-                    print("The facet labels don't match the entered facet arguments in length. Using column variables instead")
-                    f_lab = f_arg
-        else:
-            f_arg = [None]
-            if f_lab is None:
-                f_lab = ['']
-
-        if isinstance(h, list) is False:
-            h_list = [h]
-            b_list = [b]
-            if len(h_list) != len(f_arg):
-                h_list = [h_list[0]] * len(f_arg)
-            if len(b_list) != len(f_arg):
-                b_list = [b_list[0]] * len(f_arg)
-
-        return f_arg, f_lab, h_list, b_list
-
 
     @staticmethod
     def _hmm_table(start_prob, trans_prob, emission_prob, state_names, observable_names):
@@ -1407,7 +1320,7 @@ class behavpy_core(pd.DataFrame):
         """
 
         tdf = self.copy(deep=True)
-        return self.__class__(self._hmm_decode(tdf, hmm, t_bin, variable, func, t_column, return_type= 'table'), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
+        return self.__class__(self._hmm_decode(tdf, hmm, t_bin, variable, func, t_column, return_type= 'table'), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True).drop(columns=['previous_state', f'{variable}', f'previous_{variable}'])
 
     # PERIODOGRAM SECTION
 

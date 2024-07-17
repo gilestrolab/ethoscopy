@@ -21,7 +21,7 @@ def hmm_pct_transition(state_array, total_states):
         return av
 
     for i in total_states:
-        states_dict[f'{i}'] = average(np.where(v == i, 1, 0))
+        states_dict[i] = average(np.where(v == i, 1, 0))
 
     state_list = [states_dict]
     df = pd.DataFrame(state_list)

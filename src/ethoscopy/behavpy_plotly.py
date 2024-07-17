@@ -1336,7 +1336,7 @@ class behavpy_plotly(behavpy_draw):
         Creates a plot of the occurance of each state as a percentage at each time point. The method will decode and augment the dataset to be fed into a plot_overtime method.
 
             Args:
-                hmm (hmmlearn.hmm.MultinomialHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
                 variable (str, optional): The column heading of the variable of interest. Default is "moving"
                 labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
                 colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
@@ -1554,7 +1554,7 @@ class behavpy_plotly(behavpy_draw):
         Creates a quantification plot of how much a predicted state appears per individual. 
 
             Args:
-                hmm (hmmlearn.hmm.MultinomialHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
                 variable (str, optional): The column heading of the variable of interest. Default is "moving"
                 labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
                 colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
@@ -1644,7 +1644,7 @@ class behavpy_plotly(behavpy_draw):
         Creates a quantification plot of the average length of each state per individual. 
 
             Args:
-                hmm (hmmlearn.hmm.MultinomialHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
                 variable (str, optional): The column heading of the variable of interest. Default is "moving"
                 labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
                 colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
@@ -1724,18 +1724,41 @@ class behavpy_plotly(behavpy_draw):
 
         return fig, stats_df
 
-    def plot_hmm_quantify_length_min_max(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
-            
+    def plot_hmm_quantify_length_min_max(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column='t', grids = False):
+        """
+        Creates a quantification plot of the minimum and maximum lengths of each bout. 
+
+            Args:
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                variable (str, optional): The column heading of the variable of interest. Default is "moving"
+                labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
+                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+
+        Returns:
+            returns a Seaborn figure and pandas Dataframe with the mean length of each state per indivdual
+
+        Notes:
+            In processing the first and last bouts of the HMM fed variable are trimmed off to prevent them affecting the result. Any missing data points will also affect the end quantification.
+        """
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
-        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
 
         if facet_col is not None:
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             df_list = [self.copy(deep = True)]
 
-        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func, t_column) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
 
         def analysis(states, t_diff):
             df_lengths = pd.DataFrame()
@@ -1784,18 +1807,40 @@ class behavpy_plotly(behavpy_draw):
         
         return fig, pd.DataFrame.from_dict(stats).set_index(['group', 'state']).unstack().stack()
             
-    def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
+    def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column='t', grids = False):
+        """
+        Creates a quantification plot of the times each state is transitioned into as a percentage of the whole. 
 
+            Args:
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                variable (str, optional): The column heading of the variable of interest. Default is "moving"
+                labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
+                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+
+        Returns:
+            returns a Seaborn figure and pandas Dataframe with the mean length of each state per indivdual
+
+        Notes:
+        """
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         list_states = list(range(len(labels)))
-        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
 
         if facet_col is not None:
             df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
         else:
             df_list = [self.copy(deep = True)]
 
-        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
+        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func, t_column) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
 
         def analysis(states):
             df_trans = pd.DataFrame()
@@ -1807,7 +1852,7 @@ class behavpy_plotly(behavpy_draw):
         analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0]) for n in facet_arg}
 
         fig = go.Figure()
-        self._plot_ylayout(fig, yrange = [0, 1.05], t0 = 0, dtick = 0.2, ylabel = 'Fraction of runs of each state', title = title, grid = grids)
+        self._plot_ylayout(fig, yrange = [0, 1.05], t0 = 0, dtick = 0.2, ylabel = 'Fraction of transitions into each state', title = title, grid = grids)
 
         stats_dict = {}
 
@@ -1816,7 +1861,7 @@ class behavpy_plotly(behavpy_draw):
             for arg, i in zip(facet_arg, facet_labels):
                 
                 try:
-                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][str(state)].to_numpy())  
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy())  
                 except KeyError:
                     mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
 
@@ -1849,66 +1894,33 @@ class behavpy_plotly(behavpy_draw):
 
         return fig, stats_df
 
-    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, bin = 60, mago_df = None, func = 'max', show_movement = False, title = ''):
+    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, t_bin = 60, stim_df = None, func = 'max', show_movement = False, t_column = 't', title = ''):
         """ plots the raw dedoded hmm model per fly (total = num_plots) 
             If hmm is a list of hmm objects, the number of plots will equal the length of that list. Use this to compare hmm models.
             """
 
-        # Get number of states
-        if isinstance(hmm, list):
-            states = hmm[0].transmat_.shape[0]
-        else: 
-            states = hmm.transmat_.shape[0]
-
-        if colours is None:
-            if isinstance(hmm, list):
-                h = hmm[0]
-            else:
-                h = hmm
-
-            if states == 4:
-                colours = self._colours_four
-            else:
-                raise RuntimeError(f'Your trained HMM is not 4 states, please provide the {h.transmat_.shape[0]} colours for this hmm. See doc string for more info')
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = None, col = colours)
 
         colours_index = {c : col for c, col in enumerate(colours)}
 
-        if mago_df is not None:
-            assert isinstance(mago_df, behavpy), 'The mAGO dataframe is not a behavpy class'
+        if stim_df is not None:
+            assert isinstance(stim_df, self.__class__), 'The stim_df dataframe is not behavpy class'
 
         if isinstance(hmm, list):
             num_plots = len(hmm)
             rand_flies = [np.random.permutation(list(set(self.meta.index)))[0]] * num_plots
             h_list = hmm
-            if isinstance(bin, list):
-                b_list = bin 
+            if isinstance(t_bin, list):
+                b_list = t_bin 
             else:
-                b_list = [bin] * num_plots
+                b_list = [t_bin] * num_plots
         else:
             rand_flies = np.random.permutation(list(set(self.meta.index)))[:num_plots]
             h_list = [hmm] * num_plots
-            b_list = [bin] * num_plots
+            b_list = [t_bin] * num_plots
 
         df_list = [self.xmv('id', id) for id in rand_flies]
-        decoded = [self._hmm_decode(d, h, b, variable, func) for d, h, b in zip(df_list, h_list, b_list)]
-
-        def analyse(data, df_variable):
-            states = data[0][0]
-            time = data[1][0]
-            id = df_variable.index.tolist()
-            var = df_variable[variable].tolist()
-            previous_states = np.array(states[:-1], dtype = float)
-            previous_states = np.insert(previous_states, 0, np.nan)
-            previous_var = np.array(var[:-1], dtype = float)
-            previous_var = np.insert(previous_var, 0, np.nan)
-            all_df = pd.DataFrame(data = zip(id, states, time, var, previous_states, previous_var))
-            all_df.columns = ['id','state', 't', 'var','previous_state', 'previous_var']
-            all_df.dropna(inplace = True)
-            all_df['colour'] = all_df['previous_state'].map(colours_index)
-            all_df.set_index('id', inplace = True)
-            return all_df
-
-        analysed = [analyse(i, v) for i, v in zip(decoded, df_list)]
+        decoded = [self._hmm_decode(d, h, b, variable, func, t_column, return_type='table').dropna().set_index('id') for d, h, b in zip(df_list, h_list, b_list)]
 
         fig = make_subplots(
         rows= num_plots, 
@@ -1919,26 +1931,29 @@ class behavpy_plotly(behavpy_draw):
         horizontal_spacing=0.02
         )
 
-        for c, (df, b) in enumerate(zip(analysed, b_list)):
+        for c, (df, b) in enumerate(zip(decoded, b_list)):
+
+            df['colour'] = df['previous_state'].map(colours_index)
             id = df.first_valid_index()
             print(f'Plotting: {id}')
-            if mago_df is not None:
-                df2 = mago_df.xmv('id', id)
+
+            if stim_df is not None:
+                df2 = stim_df.xmv('id', id)
                 df2 = df2[df2['has_interacted'] == 1]
-                df2['t'] = df2['interaction_t'].map(lambda t:  b * floor(t / b))
+                df2['bin'] = df2['interaction_t'].map(lambda t:  b * floor(t / b))
                 df2.reset_index(inplace = True)
-                df = pd.merge(df, df2, how = 'outer', on = ['id', 't'])
+                df = pd.merge(df, df2, how = 'outer', on = ['id', 'bin'])
                 df['colour'] = np.where(df['has_responded'] == True, 'purple', df['colour'])
                 df['colour'] = np.where(df['has_responded'] == False, 'lime', df['colour'])
-                df['t'] = df['t'].map(lambda t: t / (60*60))
+                df['bin'] = df['bin'].map(lambda t: t / (60*60))
             
             else:
-                df['t'] = df['t'].map(lambda t: t / (60*60))
+                df['bin'] = df['bin'].map(lambda t: t / (60*60)) # change time to be a fraction of an hour
 
             trace1 = go.Scatter(
                 showlegend = False,
                 y = df['previous_state'],
-                x = df['t'],
+                x = df['bin'],
                 mode = 'markers+lines', 
                 marker = dict(
                     color = df['colour'],
@@ -1951,11 +1966,11 @@ class behavpy_plotly(behavpy_draw):
             fig.add_trace(trace1, row = c+1, col= 1)
 
             if show_movement == True:
-                df['var'] = np.roll((df['var'] * 2) + 0.5, 1)
+                df[variable] = np.roll((df[variable] * 2) + 0.5, 1)
                 trace2 = go.Scatter(
                     showlegend = False,
-                    y = df['var'],
-                    x = df['t'],
+                    y = df[variable],
+                    x = df['bin'],
                     mode = 'lines', 
                     marker = dict(
                         color = 'black',
@@ -1967,7 +1982,7 @@ class behavpy_plotly(behavpy_draw):
                     )
                 fig.add_trace(trace2, row = c+1, col= 1)
 
-        y_range = [-0.2, states-0.8]
+        y_range = [-0.2, len(labels)-0.8]
         self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = False, ylabel = '', title = title)
 
         fig.update_yaxes(
@@ -2115,7 +2130,7 @@ class behavpy_plotly(behavpy_draw):
 
             Args:
                 mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
-                hmm (hmmlearn.hmm.MultinomialHMM): The accompanying trained hmmlearn model to decode the data.
+                hmm (hmmlearn.hmm.CategoricalHMM): The accompanying trained hmmlearn model to decode the data.
                 variable (str, optional): The name of column that is to be decoded by the HMM. Default is 'moving'.
                 labels (list[string], optional): A list of the names of the decoded states, must match the number of states in the given model and colours. 
                     If left as None and the model is 4 states the names will be ['Deep Sleep', 'Light Sleep', 'Quiet Awake', 'Active Awake']. Default is None
