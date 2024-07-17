@@ -1384,7 +1384,6 @@ class behavpy_plotly(behavpy_draw):
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
 
-        start_colours, end_colours = self._adjust_colours(colours)
 
         if len(labels) <= 2:
             nrows = 1
@@ -1399,13 +1398,19 @@ class behavpy_plotly(behavpy_draw):
         row_list = list([i] * ncols for i in range(1, nrows+1))
         row_list = [item for sublist in row_list for item in sublist]
 
-        colour_range_dict = {}
-        colours_dict = {'start' : start_colours, 'end' : end_colours}
-        for q in range(0,len(labels)):
-            start_color = colours_dict.get('start')[q]
-            end_color = colours_dict.get('end')[q]
-            N = len(facet_arg)
-            colour_range_dict[q] = [x.hex for x in list(Color(start_color).range_to(Color(end_color), N))]
+
+        # start_colours, end_colours = self._adjust_colours(colours)
+        # colour_range_dict = {}
+        # colours_dict = {'start' : start_colours, 'end' : end_colours}
+        # for q in range(0,len(labels)):
+        #     start_color = colours_dict.get('start')[q]
+        #     end_color = colours_dict.get('end')[q]
+        #     N = len(facet_arg)
+        #     colour_range_dict[q] = [x.hex for x in list(Color(start_color).range_to(Color(end_color), N))]
+
+        if facet_col is not None:
+            colours = self._get_colours(facet_labels)
+            colours = [self._check_grey(name, colours[c])[1] for c, name in enumerate(facet_labels)] # change to grey if control
 
         for c, (arg, n, h, b) in enumerate(zip(facet_arg, facet_labels, h_list, b_list)):   
 
@@ -1425,12 +1430,12 @@ class behavpy_plotly(behavpy_draw):
                 analysed_df['t'] = analysed_df['t'].map(lambda t: t % (60*60*day_length))
             analysed_df['t'] = analysed_df['t'] / (60*60)
 
-            if 'control' in n.lower() or 'baseline' in n.lower() or 'ctrl' in n.lower():
-                black_list = ['black'] * len(facet_arg)
-                black_range_dict = {0 : black_list, 1: black_list, 2 : black_list, 3 : black_list}
-                marker_col = black_range_dict
-            else:
-                marker_col = colour_range_dict
+            # if 'control' in n.lower() or 'baseline' in n.lower() or 'ctrl' in n.lower():
+            #     black_list = ['black'] * len(facet_arg)
+            #     black_range_dict = {0 : black_list, 1: black_list, 2 : black_list, 3 : black_list}
+            #     marker_col = black_range_dict
+            # else:
+            #     marker_col = colour_range_dict
 
             t_min = int(12 * floor(analysed_df.t.min() / 12))
             t_max = int(12 * ceil(analysed_df.t.max() / 12))    
@@ -1451,7 +1456,7 @@ class behavpy_plotly(behavpy_draw):
                 gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
                 gb_df = gb_df.reset_index()
 
-                upper, trace, lower = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = marker_col.get(i)[c])
+                upper, trace, lower = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = colours[c])
                 fig.add_trace(upper,row=row, col=col)
                 fig.add_trace(trace, row=row, col=col) 
                 fig.add_trace(lower, row=row, col=col)

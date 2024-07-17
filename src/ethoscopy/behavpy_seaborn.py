@@ -110,6 +110,9 @@ class behavpy_seaborn(behavpy_draw):
 
         if col_list is None:
             col_list = self._get_colours(d_list)
+        else:
+            if len(col_list) != len(facet_labels):
+                raise ValueError("Given col_list is of different length to the facet_arg list")
 
         min_t = []
         max_t = []
@@ -1103,7 +1106,7 @@ class behavpy_seaborn(behavpy_draw):
         return df.plot_overtime(variable='Probability of state', wrapped=wrapped, facet_col='variable', facet_arg=labels, avg_window=avg_window, day_length=day_length, 
                                     lights_off=lights_off, title=title, grids=grids, t_column=t_column, col_list = colours, figsize=figsize)
 
-    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False, figsize=(0,0)):
+    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_col = None, facet_arg = None, facet_labels = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False, figsize=(0,0)):
         """ works for any number of states """
 
         assert isinstance(wrapped, bool)
@@ -1112,14 +1115,15 @@ class behavpy_seaborn(behavpy_draw):
         facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
 
         # make the colours a range for plotting 
-        start_colours, end_colours = self._adjust_colours(colours)
-        colour_range_dict = {}
-        colours_dict = {'start' : start_colours, 'end' : end_colours}
-        for q in range(0,len(labels)):
-            start_color = colours_dict.get('start')[q]
-            end_color = colours_dict.get('end')[q]
-            N = len(facet_arg)
-            colour_range_dict[q] = [x.hex for x in list(Color(start_color).range_to(Color(end_color), N))]
+        # start_colours, end_colours = self._adjust_colours(colours)
+        # colour_range_dict = {}
+        # colours_dict = {'start' : start_colours, 'end' : end_colours}
+        # for q in range(0,len(labels)):
+        #     start_color = colours_dict.get('start')[q]
+        #     end_color = colours_dict.get('end')[q]
+        #     N = len(facet_arg)
+        #     colour_range_dict[q] = [x.hex for x in list(Color(start_color).range_to(Color(end_color), N))]
+
 
         df = self.copy(deep=True)
         # decode the whole dataset
@@ -1168,8 +1172,8 @@ class behavpy_seaborn(behavpy_draw):
             plot_df.rename(columns = {'facet_col' : 'id'}, inplace = True)
             plot_bh = self.__class__(plot_df, plot_m, check=True)
 
-            fig = plot_bh.plot_overtime(variable='Probability of state', wrapped=wrapped, facet_col='facet_col', facet_arg=facet_arg, avg_window=avg_window, day_length=day_length, 
-                                        lights_off=lights_off, title=state, grids=grids, t_column=t_column, col_list = colour_range_dict[c])
+            fig = plot_bh.plot_overtime(variable='Probability of state', wrapped=wrapped, facet_col='facet_col', facet_arg=facet_arg, facet_labels=facet_labels,
+                                        avg_window=avg_window, day_length=day_length, lights_off=lights_off, title=state, grids=grids, t_column=t_column)#, col_list = colour_range_dict[c])
             ax = plt.gca()
             ax.set_ylim([-0.02525, 1])            
             plt.close()
@@ -1183,12 +1187,11 @@ class behavpy_seaborn(behavpy_draw):
         combined_fig = plt.figure(figsize = figsize)
 
         for pos, f in enumerate(figs):
-
             c.append( combined_fig.add_subplot(nrows, ncols, pos+1))
             c[-1].axis('off')  # Turn off axis
             c[-1].imshow( self._fig2img (f) )
 
         # Adjust the layout of the subplots in the combined figure
-        combined_fig.tight_layout()
-
+        combined_fig.subplots_adjust(wspace=0.05, hspace=-0.55)
+        
         return combined_fig
