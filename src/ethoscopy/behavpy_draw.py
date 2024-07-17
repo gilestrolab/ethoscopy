@@ -22,6 +22,57 @@ class behavpy_draw(behavpy_core):
     _hmm_labels = ['Deep sleep', 'Light sleep', 'Quiet awake', 'Active awake']
 
     @staticmethod
+    def _check_boolean(lst):
+        """
+        Checks to see if a column of data (as a list) max and min is 1 and 0, so as to make a appropriately scaled y-axis
+        """
+        if np.nanmax(lst) == 1 and np.nanmin(lst) == 0:
+            y_range = [-0.025, 1.01]
+            dtick = 0.2
+        else:
+            y_range = False
+            dtick = False
+        return y_range, dtick
+
+    @staticmethod
+    def _zscore_bootstrap(array, z_score = True, second_array = None, min_max = False):
+        """ Calculate the z score of a given array, remove any values +- 3 SD and then perform bootstrapping on the remaining
+        returns the mean and then several lists with the confidence intervals and z-scored values
+        """
+        try:
+            if len(array) == 1 or all(array == array[0]):
+                mean = median = q3 = q1 = array[0]
+                zlist = array
+            else:
+                if z_score is True:
+                    zlist = array[np.abs(zscore(array)) < 3]
+                    if second_array is not None:
+                        second_array = second_array[np.abs(zscore(array)) < 3] 
+                else:
+                    zlist = array
+                mean = np.mean(zlist)
+                median = np.median(zlist)
+                boot_array = bootstrap(zlist)
+                q3 = boot_array[1]
+                q1 = boot_array[0]
+
+        except ZeroDivisionError:
+            mean = median = q3 = q1 = 0
+            zlist = array
+
+        if min_max == True:
+            q3 = np.max(array)
+            q1 = np.min(array)
+        
+        if median < q1 or median > q3:
+            median = mean
+
+        if second_array is not None:
+            return mean, median, q3, q1, zlist, second_array
+        else:
+            return mean, median, q3, q1, zlist
+
+    @staticmethod
     def _check_rgb(lst):
         """ checks if the colour list is RGB plotly colours, if it is it changes it to its hex code """
         try:

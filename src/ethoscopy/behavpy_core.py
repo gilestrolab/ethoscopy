@@ -142,54 +142,6 @@ class behavpy_core(pd.DataFrame):
 
         return f_arg, f_lab
 
-    @staticmethod
-    def _check_boolean(lst):
-        """
-        Checks to see if a column of data (as a list) max and min is 1 and 0, so as to make a appropriately scaled y-axis
-        """
-        if np.nanmax(lst) == 1 and np.nanmin(lst) == 0:
-            y_range = [-0.025, 1.01]
-            dtick = 0.2
-        else:
-            y_range = False
-            dtick = False
-        return y_range, dtick
-
-    @staticmethod
-    def _zscore_bootstrap(array, z_score = True, second_array = None, min_max = False):
-        """ Calculate the z score of a given array, remove any values +- 3 SD and then perform bootstrapping on the remaining
-        returns the mean and then several lists with the confidence intervals and z-scored values
-        """
-        try:
-            if len(array) == 1 or all(array == array[0]):
-                mean = median = q3 = q1 = array[0]
-                zlist = array
-            else:
-                if z_score is True:
-                    zlist = array[np.abs(zscore(array)) < 3]
-                    if second_array is not None:
-                        second_array = second_array[np.abs(zscore(array)) < 3] 
-                else:
-                    zlist = array
-                mean = np.mean(zlist)
-                median = np.median(zlist)
-                boot_array = bootstrap(zlist)
-                q3 = boot_array[1]
-                q1 = boot_array[0]
-
-        except ZeroDivisionError:
-            mean = median = q3 = q1 = 0
-            zlist = array
-
-        if min_max == True:
-            q3 = np.max(array)
-            q1 = np.min(array)
-        
-        if second_array is not None:
-            return mean, median, q3, q1, zlist, second_array
-        else:
-            return mean, median, q3, q1, zlist
-
     def display(self):
         """
         Alternative to print(), displays both the metadata and data with corresponding headers
@@ -487,24 +439,32 @@ class behavpy_core(pd.DataFrame):
         Wrapper for the groupby pandas method to split by groups in a column and apply a function to said groups
 
         Args:
-            column (str): The name of the column in the data to pivot by
+            column (str, list[str]): The name of the column or list of columns in the data to pivot by
             function (str or user defined function): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
 
         returns:
             A pandas dataframe with the transformed grouped data with an index
         """
 
-        if column not in self.columns:
-            raise KeyError(f'Column heading, "{column}", is not in the data table')
-            
-        try:
-            parse_name = f'{column}_{function.__name__}' # create new column name if the function is a users own function
-        except AttributeError:
-            parse_name = f'{column}_{function}' # create new column name with string defined function
+        if isinstance(column, str):
+                column = [column]
 
-        pivot = self.groupby(self.index).agg(**{
-            parse_name : (column, function)    
-        })
+        for col in column:
+            if col not in self.columns:
+                raise KeyError(f'Column heading, "{column}", is not in the data table')
+        
+        name_dict = {}
+        for col in column:
+            try:
+                parse_name = f'{col}_{function.__name__}' # create new column name if the function is a users own function
+                name_dict[col] = parse_name
+            except AttributeError:
+                parse_name = f'{col}_{function}' # create new column name with string defined function
+                name_dict[col] = parse_name
+
+        agg_dict = dict.fromkeys(column, function)
+        pivot = self.groupby(self.index).agg(agg_dict)
+        pivot = pivot.rename(name_dict, axis = 1)
 
         return pivot
 
@@ -897,12 +857,13 @@ class behavpy_core(pd.DataFrame):
         index_name = data['id'].iloc[0]
 
         data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
-        output_parse_name = f'{column}_{function}' # create new column name
-    
-        bout_gb = data.groupby(bin_column).agg(**{
-            output_parse_name : (column, function)    
-        })
 
+        agg_dict = dict.fromkeys(column, function)
+        name_dict = {n : f'{n}_{function}' for n in column}
+
+        bout_gb = data.groupby(bin_column).agg(agg_dict)
+
+        bout_gb = bout_gb.rename(name_dict, axis = 1)
         bin_parse_name = f'{bin_column}_bin'
         bout_gb.rename_axis(bin_parse_name, inplace = True)
         bout_gb.reset_index(level=0, inplace=True)
@@ -916,9 +877,9 @@ class behavpy_core(pd.DataFrame):
         A method bin the time series data into a user desired sized bin and further applying a function to a single column of choice across the new bins.
         
         Args:
-            variable (str): The column in the data that you want to the function to be applied to post pivot
+            variable (str | list[string]): The column or list of columns in the data that you want to the function to be applied to post pivot
             bin_secs (int): The amount of time (in seconds) you want in each bin in seconds, e.g. 60 would be bins for every minutes
-            function (str or user defined function, optional): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
+            function (str | user defined function, optional): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
             t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
 
         
@@ -926,8 +887,12 @@ class behavpy_core(pd.DataFrame):
             returns a behavpy object with a single data column
         """
 
-        if variable not in self.columns:
-            raise KeyError('Column heading "{}", is not in the data table'.format(column))
+        if isinstance(variable, str):
+            variable = [variable]
+
+        for var in variable:
+            if var not in self.columns:
+                raise KeyError('Column heading "{}", is not in the data table'.format(var))
 
         tdf = self.reset_index().copy(deep=True)
         return self.__class__(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bin_data,

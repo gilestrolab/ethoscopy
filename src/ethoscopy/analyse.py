@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np 
 from random import shuffle
-import warnings
-warnings.simplefilter(action='ignore', category=FutureWarning)
 import copy
 
 from math import floor
@@ -11,7 +9,7 @@ from scipy.stats import zscore
 from ethoscopy.misc.rle import rle
 
 def max_velocity_detector(data, 
-                        time_window_length,
+                        time_window_length = 10,
                         velocity_correction_coef = 3e-3,
                         masking_duration = 6,
                         optional_columns = 'has_interacted'                        
@@ -30,7 +28,7 @@ def max_velocity_detector(data,
             optional_columns (str, optional): The columns other than ['t', 'x', 'velocity'] that you want included post analysis. Default is 'has_interacted'.
 
     returns:
-        A pandas dataframe object with columns such as 't', 'moving', 'max_velocity', 'mean_velocity' and 'beam_cross'
+        A pandas dataframe object with columns such as 't', 'moving', 'max_velocity', 'mean_velocity' and 'beam_cross'h.emissionprob_
     """
 
     if len(data.index) < 100:
@@ -102,8 +100,7 @@ def prep_data_motion_detector(data,
     """
     
     if all(elem in data.columns.values for elem in needed_columns) is not True:
-        warnings.warn('data from ethoscope should have columns named {}!'.format(needed_columns))
-        exit()
+        raise KeyError('data from ethoscope should have columns named {}!'.format(needed_columns))
 
     # check optional columns input are column headings
     if optional_columns != None:
