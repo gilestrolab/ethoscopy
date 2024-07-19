@@ -9,7 +9,6 @@ from tabulate import tabulate
 from hmmlearn import hmm
 
 from scipy.signal import find_peaks
-from astropy.timeseries import LombScargle
 
 from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.analyse import max_velocity_detector
@@ -1419,7 +1418,8 @@ class behavpy_core(pd.DataFrame):
         ranks = order.argsort() + 1
 
         rank_dict = {k : int(v) for k,v in zip(peaks, ranks)}
-        data['peak'] = data['period'].map(rank_dict).fillna(False)
+        data['peak'] = data['period'].map(rank_dict)#.fillna(False)
+        data['peak'] - data['peak'].fillna(False)
         data['peak'] =  np.where(data['peak'] > num, False, data['peak'])
 
         return data

@@ -681,7 +681,7 @@ class behavpy_plotly(behavpy_draw):
 
         data = self.copy(deep=True)
         data = data.bin_time(mov_variable, bin_window*60, t_column = t_column)
-        data.add_day_phase(time_column = f'{t_column}_bin')
+        data.add_day_phase(t_column = f'{t_column}_bin')
 
         for arg, col, row in zip(facet_arg, col_list, row_list): 
 

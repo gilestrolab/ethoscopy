@@ -502,7 +502,7 @@ class behavpy_seaborn(behavpy_draw):
         """
 
         data = data.bin_time(mov_variable, bin_window*60, t_column = t_column)
-        data.add_day_phase(time_column = f'{t_column}_bin')
+        data.add_day_phase(t_column = f'{t_column}_bin')
         days = data["day"].unique()
 
         data = data.merge(data.meta, left_index=True, right_index=True)

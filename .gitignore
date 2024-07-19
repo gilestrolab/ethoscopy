@@ -5,8 +5,5 @@ dist/
 *vscode
 __pycache__/
 ethoscopy.egg-info/
-test/
-play.ipynb
 .gitignore
 *.pkl
-curate_and_train.ipynb
