@@ -1,15 +1,15 @@
 [tool.poetry]
 name = "ethoscopy"
-version = "1.3.9"
+version = "1.3.10"
 description = "A python based toolkit to download and anlyse data from the Ethoscope hardware system."
 authors = ["Blackhurst Laurence <l.blackhurst19@imperial.ac.uk>"]
 license = "GNU GPLv3"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.8"
-pandas = "^1.4.2"
-numpy = "^1.22.3"
+python = ">=3.9,<3.13"
+pandas = "^1.5.0"
+numpy = "^1.25.1"
 plotly = "^5.7.0"
 scipy = "^1.8.0"
 tabulate = "^0.8.10"
