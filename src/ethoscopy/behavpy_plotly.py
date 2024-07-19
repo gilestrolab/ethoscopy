@@ -2238,10 +2238,13 @@ class behavpy_plotly(behavpy_draw):
 
         data = self.copy(deep = True)
 
+        # Find the peaks if True
         if find_peaks is True:
-            data = data.find_peaks(num_peaks = 2)
+            if 'peak' not in data.columns.tolist():
+                data = data.find_peaks(num_peaks = 2)
         if 'peak' in data.columns.tolist():
             plot_peaks = True
+
 
         root =  self._get_subplots(len(data.meta))
 
@@ -2278,7 +2281,7 @@ class behavpy_plotly(behavpy_draw):
                 ), row = row, col = col)
 
             if plot_peaks is True:                
-                tdf = d[d['peak'] != False]
+                tdf = d[~d['peak'].isna()]
                 fig.append_trace(go.Scatter(
                     showlegend = False,
                     x = tdf['period'],

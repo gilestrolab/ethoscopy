@@ -336,7 +336,7 @@ class behavpy_seaborn(behavpy_draw):
             # Add the specified columns from metadata
             data = data.xmv(facet_col, facet_arg)
 
-        grouped_data = data.groupby([data.index, 'phase']).agg(**data_summary).reset_index(1)
+        grouped_data = data.groupby([data.index, 'phase'], observed = True).agg(**data_summary).reset_index(1)
 
         # BOXPLOT
         # (0,0) means automatic size
@@ -862,8 +862,8 @@ class behavpy_seaborn(behavpy_draw):
 
         # Find the peaks if True
         if find_peaks is True:
-            data = data.find_peaks(num_peaks = 2)
-        
+            if 'peak' not in data.columns.tolist():
+                data = data.find_peaks(num_peaks = 2)
         if 'peak' in data.columns.tolist():
             plot_peaks = True
 
