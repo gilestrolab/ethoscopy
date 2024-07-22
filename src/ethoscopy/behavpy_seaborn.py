@@ -1235,7 +1235,7 @@ class behavpy_seaborn(behavpy_draw):
             data = self.xmv(facet_col, facet_arg)
 
         # Decode the whole dataset, count each state and the length of each individuals dataset to find the total percentage
-        decoded_data = data.get_hmm_raw(hmm, variable=variable, t_bin=t_bin, func=func, t_column=t_column)
+        decoded_data = data._hmm_decode(data, h=hmm, var=variable, b=t_bin, fun=func, t=t_column, return_type = 'table').set_index('id')
         grouped_data = decoded_data.groupby([decoded_data.index, 'state'], sort=False).agg({'bin' : 'count'})
         grouped_data = grouped_data.join(decoded_data.groupby('id', sort=False).agg({'previous_state':'count'}))
         grouped_data['Fraction of time in each State'] = grouped_data['bin'] / grouped_data['previous_state']
@@ -1539,27 +1539,35 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig, grouped_data
 
-    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, t_bin = 60, stim_df = None, func = 'max', show_movement = False, title = '', t_column = 't', grids = False, figsize=(0,0)):
-        """Creates a plot showing the raw output from a hmm decoder.
+    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, t_bin = 60, func = 'max', title = '', t_column = 't', grids = False, day_length=24, figsize=(0,0)):
+        """Creates a plot showing the raw output from a hmm decoder for every row in the data.
 
-        Args:
-            data: The data to be plotted
-            hmm: a trained categorical HMM from hmmlearn with the correct hidden states and emission states for your dataset
-            variable: the name (as a string) of the column with the emussion data
-            colours: the name of the colours you wish to represent the different states, must be the same length as labels
-            tbin: the time in seconds the data should be binned to, Default is 60
-            func: the function to apply to the aggregating column, i.e. "max", "mean", ... . Default is "max"
+            Args:
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                variable (str, optional): The column heading of the variable of interest for decoding. Default is "moving"
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                numm_plots (int, optional): The number of plots as rows in a subplot. If a list of HMMs is given num_plots will be that length. Default is 5.
+                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
+                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
 
         Returns:
-            A seaborn figure
-        """
+            A matplotlib figure that is a combination of scatter and a line plot.
 
+        Note:
+            Plotting with the results of a stimulus experiment is only avaible in the plotly version of plot_hmm_raw.
+            Plotting the movement variable is only available in the plotly version due to how cluttered it makes the plot.
+        """
+        d_copy = self.copy(deep=True)
         labels, colours = self._check_hmm_shape(hm = hmm, lab = None, col = colours)
+        y_ticks = list(range(len(labels)))
 
         colours_index = {c : col for c, col in enumerate(colours)}
-
-        if stim_df is not None:
-            assert isinstance(stim_df, self.__class__), 'The stim_df dataframe is not behavpy class'
 
         if isinstance(hmm, list):
             num_plots = len(hmm)
@@ -1574,50 +1582,60 @@ class behavpy_seaborn(behavpy_draw):
             h_list = [hmm] * num_plots
             b_list = [t_bin] * num_plots
 
+        # BOXPLOT
+        fig_rows = num_plots
+        fig_cols = 1
+
         # (0,0) means automatic size
         if figsize == (0,0):
-            figsize = (12, 4*(num_plots)+2)
-        fig, ax = plt.subplots(figsize=figsize)
+            figsize = (20, 4*(num_plots)+2)
+        fig, axes = plt.subplots(fig_rows, fig_cols, sharex=True, figsize=figsize)
 
+        if fig_rows == 1:
+            axes = [axes]
 
-        states_list, time_list = hmm_decode(data, hmm, tbin, variable, func)
-        time_list = list(time_list)
-        list_states = list(range(len(hmm.transmat_)))
-        if len(list_states) != len(colours):
-            raise RuntimeError(
-                "The number of colours do not match the number of states in the model"
+        df_list = [d_copy.xmv('id', id) for id in rand_flies]
+        decoded = [self._hmm_decode(d, h, b, variable, func, t_column, return_type='table').dropna().set_index('id') for d, h, b in zip(df_list, h_list, b_list)]
+
+        min_t = []
+        max_t = []
+
+        for ax, data in enumerate(decoded):
+            
+            print(f'Plotting: {data.index[0]}')
+
+            data['bin'] = data['bin'] / (60*60)
+            st = data['state'].to_numpy()
+            time = data['bin'].to_numpy()
+
+            for c, i in enumerate(colours):
+                if c == 0:
+                    col = np.where(st == c, colours[c], np.NaN)
+                else:
+                    col = np.where(st == c, colours[c], col)
+
+            axes[ax].scatter(time, st, s=25, marker="o", c=col)
+            axes[ax].plot(
+                time,
+                st,
+                marker="o",
+                markersize=0,
+                mfc="white",
+                mec="white",
+                c="black",
+                lw=0.25,
+                ls="-",
             )
+            min_t.append(int((day_length/2) * floor(data['bin'].min() / (day_length/2))))
+            max_t.append(int((day_length/2) * floor(data['bin'].max() / (day_length/2))))
+            axes[ax].set_yticks(y_ticks) 
 
-        rand_ind = random.choice(list(range(0, len(states_list))))
+        x_ticks = np.arange(np.min(min_t), np.max(max_t), day_length, dtype = int)
+        axes[0].set_xticks(x_ticks) 
+        axes[0].set_xticklabels(x_ticks, fontsize=12)  
 
-        st = states_list[rand_ind]
-        time = time_list[rand_ind]
-        time = np.array(time) / 86400
-
-        for c, i in enumerate(colours):
-            if c == 0:
-                col = np.where(st == c, colours[c], np.NaN)
-            else:
-                col = np.where(st == c, colours[c], col)
-
-        plt.figure(figsize=(80, 10))
-
-        plt.scatter(time, st, s=50 * 2, marker="o", c=col)
-        plt.plot(
-            time,
-            st,
-            marker="o",
-            markersize=0,
-            mfc="white",
-            mec="white",
-            c="black",
-            lw=1,
-            ls="-",
-        )
-
-        plt.xlabel("Time (days)")
-        plt.ylabel("State")
-
+        fig.supxlabel("ZT Hours")
+        fig.supylabel("State")
         return fig
 
     # def plot_hmm_response(self, mov_df, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, t_bin = 60, facet_labels = None, func = 'max', title = '', grids = False):

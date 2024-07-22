@@ -1894,10 +1894,32 @@ class behavpy_plotly(behavpy_draw):
 
         return fig, stats_df
 
-    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, t_bin = 60, stim_df = None, func = 'max', show_movement = False, t_column = 't', title = ''):
-        """ plots the raw dedoded hmm model per fly (total = num_plots) 
-            If hmm is a list of hmm objects, the number of plots will equal the length of that list. Use this to compare hmm models.
-            """
+    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, t_bin = 60, stim_df = None, func = 'max', show_movement = False, t_column = 't', title = '', day_length=24):
+        """Creates a plot showing the raw output from a hmm decoder for every row in the data.
+
+            Args:
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                variable (str, optional): The column heading of the variable of interest for decoding. Default is "moving"
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                numm_plots (int, optional): The number of plots as rows in a subplot. If a list of HMMs is given num_plots will be that length. Default is 5.
+                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
+                stim_df (behavpy df, optional): A corresponding dataframe with responses to stimuli as loaded in by stimulus_response. Default is None.
+                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable.
+                show_movement (bool, optional): If True each plot will be overlayed with the given variable, not decoded, see note below. Default is False.
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+        Returns:
+            A plotly figure that is composed of scatter plots.
+
+        Note:
+            If show_movement is true the categories of your variable must be binary, i.e. 0 and 1. Otherwise it might be plotter
+            off the figure.
+        """
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = None, col = colours)
 
@@ -1945,10 +1967,10 @@ class behavpy_plotly(behavpy_draw):
                 df = pd.merge(df, df2, how = 'outer', on = ['id', 'bin'])
                 df['colour'] = np.where(df['has_responded'] == True, 'purple', df['colour'])
                 df['colour'] = np.where(df['has_responded'] == False, 'lime', df['colour'])
-                df['bin'] = df['bin'].map(lambda t: t / (60*60))
+                df['bin'] = df['bin'] / (60*60)
             
             else:
-                df['bin'] = df['bin'].map(lambda t: t / (60*60)) # change time to be a fraction of an hour
+                df['bin'] = df['bin'] / (60*60) # change time to be a fraction of an hour
 
             trace1 = go.Scatter(
                 showlegend = False,
@@ -2003,6 +2025,7 @@ class behavpy_plotly(behavpy_draw):
             showgrid = False,
             color = 'black',
             linecolor = 'black',
+            dtick = day_length,
             ticks = 'outside',
             tickwidth = 2,
             tickfont = dict(

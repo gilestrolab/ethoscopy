@@ -8,7 +8,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-numpy = "^2.0.0"
+numpy = "^1.26.4"
 pandas = "^2.2.2"
 plotly = "^5.22.0"
 seaborn = "^0.13.2"

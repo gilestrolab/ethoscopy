@@ -1105,7 +1105,6 @@ class behavpy_core(pd.DataFrame):
             seq_o = np.array(i)
             seq = seq_o.reshape(-1, 1)
             logprob, states = h.decode(seq)
-
             #logprob_list.append(logprob)
             if return_type == 'array':
                 states_list.append(states)
