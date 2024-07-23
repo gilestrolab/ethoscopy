@@ -209,6 +209,23 @@ def sleep_annotation(data,
     
     return d_small
 
+# Functions for add_false option in stimulus response
+def _find_runs(mov, time, dt):
+    _, _, l = rle(mov)
+    count_list = np.concatenate([[c] * cnt for c, cnt in enumerate(l)], dtype = int)
+    return pd.DataFrame({'t' : time, 'moving' : mov, 'activity_count' : count_list, 'deltaT' : dt})
+
+def cumsum_delta(dataframe, immobility_int):
+    response_rows = []
+    def internal_sum_delta(data):
+        data['cumsum_delta'] = data['deltaT'].cumsum()
+        for i in np.arange(immobility_int, data['cumsum_delta'].max(), immobility_int):
+            response_dict = data[data['cumsum_delta'] >= i].iloc[0].to_dict()
+            response_dict['new_has_interacted'] = 2
+            response_rows.append(response_dict)
+    dataframe.groupby('activity_count', group_keys=False, sort=False).apply(internal_sum_delta)
+    return pd.DataFrame(response_rows)
+
 def stimulus_response(data, start_response_window = 0, response_window_length = 10, add_false = False, velocity_correction_coef = 3e-3):
     """
     Stimulus_response finds interaction times from raw ethoscope data to detect responses in a given window.
