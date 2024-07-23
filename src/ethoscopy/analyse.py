@@ -28,7 +28,7 @@ def max_velocity_detector(data,
             optional_columns (str, optional): The columns other than ['t', 'x', 'velocity'] that you want included post analysis. Default is 'has_interacted'.
 
     returns:
-        A pandas dataframe object with columns such as 't', 'moving', 'max_velocity', 'mean_velocity' and 'beam_cross'h.emissionprob_
+        A pandas dataframe object with columns such as 't', 'moving', 'max_velocity', 'mean_velocity' and 'beam_cross'
     """
 
     if len(data.index) < 100:
