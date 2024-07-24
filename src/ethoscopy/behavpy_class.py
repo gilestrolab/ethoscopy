@@ -2161,50 +2161,66 @@ class behavpy(pd.DataFrame):
 
         return fig, stats_df
 
-    def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', x_position = 'x', t_column = 't', check = False):
-        """ A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food
+    def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', left_rois = [1,2,3,4,5,6,7,8,9,10], right_rois = [11,12,13,14,15,16,17,18,19,20], add_walk = False, x_position = 'x', t_column = 't'):
+        """ A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food.
+            The default settings are for a standard 20 short tube ethoscope setup. It can be altered to match other tube designs, but will take more thought.
 
         Args:
             food_postion (str): Must be either "outside" or "inside". This signifies the postion of the food in relation to the center of the arena.
-            dist_from_food (float, optional): The distance measured between 0-1, as the x coordinate in the ethoscope, that you classify as being near the food. Default 0.05
+            dist_from_food (float, optional): The distance (as a value between 0-1, with 1 being the other end of the tube) from the food 
+                that consider the space that when they have micromovements they are feeding. Default 0.05. but play around with this value
             micro_mov (str, optional): The name of the column that contains the data for whether micromovements occurs as boolean values. Default is 'mirco'.
+            left_rois (list[int], optional): A list with the roi values for the left-hand side of the ethoscope. Default is values from 1 - 10, as per the standard
+                20 tube ethoscope setup. If changed, have food_position as 'outside' and have these rois be those with food pointing left as seem from the video.
+            right_rois (list[int], optional): A list with the roi values for the right-hand side of the ethoscope. Default is values from 11 - 20, as per the standard
+                20 tube ethoscope setup. If changed, have food_position as 'outside' and have these rois be those with food pointing right as seem from the video.
+            add_walk (bool, optional): If the data isn't a high enough resolution over time micromovements can be lost in walking, thereby underestimating feeding, see Note below.
+                If add_walk is True, the conditional is changed to 'moving' and the function infers feeding from if the fly is moving and near the food. Default is False.
             x_position = string, the name of the column that contains the x postion
             t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
-            check (bool, optional): A check in place to remove the first hours worth of data, as often the tracking is still being honed in at the start. If set to False it will ignore this filter. Default is True.
 
         Returns:
             returns an augmented behavpy object with an addtional column 'feeding' with boolean variables where True equals predicted feeding.
+        Note:
+            This function is not ground truthed and makes assumptions. True only occurs when a fly is within the users distance of the food and also micro movements are True. Given all variables
+            are binned to a time per row (i.e. 10 or 60 seconds) short bursts of micromovemts followed by walking are lost, leading to an underestimataion.
         """
+
         if food_position != 'outside' and food_position != 'inside':
             raise ValueError("Argument for food_position must be 'outside' or 'inside'")
             
         ds = self.copy(deep = True)
         
-        # normalise x values for ROI on the right 11-20
-        ds_r = ds.xmv('region_id', list(range(11,21)))
-        ds_l = ds.xmv('region_id', list(range(1,11)))
+        # normalise x values on the right hand side of the ethoscope
+        roi_list = set(ds.meta['region_id'])
+        # get all rois in the metadata that match the given lists
+        l_roi =  [elem for elem in roi_list if elem in left_rois]
+        r_roi = [elem for elem in roi_list if elem in right_rois]
+        ds_l = ds.xmv('region_id', l_roi)
+        ds_r = ds.xmv('region_id', r_roi)
+        # flip x values so that both have x=0 on the left handside
         ds_r[x_position] = 1 - ds_r[x_position]
         ds = ds_l.concat(ds_r)
         
+        if add_walk is True:
+            micro_mov = 'moving'
+
         def find_feed(d):
             
-            # if there's less than 2 data points just run the check
+            # if there's only 1 data point then add the column and fill with nan value
             if len(d) < 2:
-                if food_position == 'outside':
-                    d['feeding'] = np.where((d[x_position] < d[x_position].min()+dist_from_food) & (d[micro_mov] == True), True, False)
-                elif food_position == 'inside':
-                    d['feeding'] = np.where((d[x_position] > d[x_position].max()-dist_from_food) & (d[micro_mov] == True), True, False)
+                d['feeding'] = [np.nan]
                 return d
             
-            # ignore the first hour in case tracking is wonky and get x min and max
-            if check == True:
-                t_diff = d[t_column].iloc[1] - d[t_column].iloc[0]
-                t_ignore = int(3600 / t_diff)
-                tdf = d.iloc[t_ignore:]
-            else:
-                tdf = d
-            x_min = tdf[x_position].min()
-            x_max = tdf[x_position].max()
+            # remove x position values that are greater than 3 SD from the mean with zscore analysis and get max and min values
+            x_array = d[x_position].to_numpy()
+            mask = np.abs(zscore(x_array, nan_policy='omit')) < 3
+            x_array = x_array[mask]
+            # if the zscore reduces the number below 2, fill with NaNs
+            if len(x_array) < 2:
+                d['feeding'] = [np.nan] * len(d)
+            x_min = np.min(x_array)
+            x_max = np.min(x_array)
             
             # if the fly is near to the food and mirco moving, then they are assumed to be feeding
             if food_position == 'outside':
@@ -2215,7 +2231,7 @@ class behavpy(pd.DataFrame):
             
         ds.reset_index(inplace = True)   
         ds_meta = ds.meta
-        return type(self)(ds.groupby('id', group_keys = False).apply(find_feed).set_index('id'), ds_meta)
+        return self.__class__(ds.groupby('id', group_keys = False).apply(find_feed), ds_meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
 
     def remove_sleep_deprived(self, start_time, end_time, remove = False, sleep_column = 'asleep', t_column = 't'):
