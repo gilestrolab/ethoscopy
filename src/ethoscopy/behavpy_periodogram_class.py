@@ -1,6 +1,5 @@
 from ethoscopy.behavpy_core import behavpy_core
 
-
 class behavpy_periodogram(behavpy_core):
     """
     An inheritor class to aid with backwards compatability prior to version 2.0.0, so that old saved pickles of data can still be loaded
