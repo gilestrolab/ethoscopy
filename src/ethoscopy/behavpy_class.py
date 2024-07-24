@@ -2218,7 +2218,7 @@ class behavpy(pd.DataFrame):
             mask = np.abs(zscore(x_array, nan_policy='omit')) < 3
             x_array = x_array[mask]
             # if the zscore reduces the number below 2, fill with NaNs
-            if len(x_array) < 2:
+            if len(x_array) <= 2:
                 d['feeding'] = [np.nan] * len(d)
             x_min = np.min(x_array)
             x_max = np.min(x_array)
