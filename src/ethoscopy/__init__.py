@@ -4,4 +4,4 @@ from ethoscopy.analyse import max_velocity_detector, sleep_annotation, stimulus_
 
 import importlib.metadata
 
-__version__ = '2.0 Demo' # importlib.metadata.version("ethoscopy")
+__version__ = importlib.metadata.version("ethoscopy")
