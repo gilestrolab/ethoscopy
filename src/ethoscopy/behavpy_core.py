@@ -1034,6 +1034,7 @@ class behavpy_core(pd.DataFrame):
     def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', left_rois = [1,2,3,4,5,6,7,8,9,10], right_rois = [11,12,13,14,15,16,17,18,19,20], add_walk = False, x_position = 'x', t_column = 't'):
         """ A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food.
             The default settings are for a standard 20 short tube ethoscope setup. It can be altered to match other tube designs, but will take more thought.
+            Only call this function once on a dataset, as it permanently flips the right hand x positions.
 
         Args:
             food_postion (str): Must be either "outside" or "inside". This signifies the postion of the food in relation to the center of the arena.
@@ -1087,7 +1088,7 @@ class behavpy_core(pd.DataFrame):
             mask = np.abs(zscore(x_array, nan_policy='omit')) < 3
             x_array = x_array[mask]
             # if the zscore reduces the number below 2, fill with NaNs
-            if len(x_array) < 2:
+            if len(x_array) <= 2:
                 d['feeding'] = [np.nan] * len(d)
             x_min = np.min(x_array)
             x_max = np.min(x_array)
