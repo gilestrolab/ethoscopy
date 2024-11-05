@@ -1380,13 +1380,13 @@ class behavpy_plotly(behavpy_draw):
         return df.plot_overtime(variable='value', wrapped=wrapped, facet_col='variable', facet_arg=labels, avg_window=avg_window, day_length=day_length, 
                                     lights_off=lights_off, title=title, grids=grids, t_column=t_column, col_list = colours)
 
-    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False):
+    def plot_hmm_split(self, hmm, variable = 'moving', labels = None, colours= None, facet_labels = None, facet_col = None, facet_arg = None, wrapped = False, t_bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False):
         """ works for any number of states """
 
         assert isinstance(wrapped, bool)
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
 
 
         if len(labels) <= 2:
@@ -1402,28 +1402,29 @@ class behavpy_plotly(behavpy_draw):
         row_list = list([i] * ncols for i in range(1, nrows+1))
         row_list = [item for sublist in row_list for item in sublist]
 
-
-        # start_colours, end_colours = self._adjust_colours(colours)
-        # colour_range_dict = {}
-        # colours_dict = {'start' : start_colours, 'end' : end_colours}
-        # for q in range(0,len(labels)):
-        #     start_color = colours_dict.get('start')[q]
-        #     end_color = colours_dict.get('end')[q]
-        #     N = len(facet_arg)
-        #     colour_range_dict[q] = [x.hex for x in list(Color(start_color).range_to(Color(end_color), N))]
-
         if facet_col is not None:
             colours = self._get_colours(facet_labels)
             colours = [self._check_grey(name, colours[c])[1] for c, name in enumerate(facet_labels)] # change to grey if control
 
+        df = self.copy(deep=True)
+        if facet_col is None:  # decode the whole dataset
+            df = self.__class__(self._hmm_decode(df, hmm, t_bin, variable, func, t_column, return_type='table'), df.meta, check=True)
+        else:
+            if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
+                df = self.__class__(self._hmm_decode(df, hmm, t_bin, variable, func, t_column, return_type='table'), df.meta, check=True)
+
         for c, (arg, n, h, b) in enumerate(zip(facet_arg, facet_labels, h_list, b_list)):   
 
             if arg != None:
-                d = self.xmv(facet_col, arg)
+                sub_df = df.xmv(facet_col, arg)
             else:
-                d = self.copy(deep = True)
+                sub_df = df
 
-            states_list, time_list = self._hmm_decode(d, h, b, variable, func, t_column)
+            if isinstance(hmm, list) is True: # call the decode here if multiple HMMs
+                states_list, time_list = self._hmm_decode(sub_df, h, b, variable, func, t_column)
+            else:
+                states_list = sub_df.groupby(sub_df.index)['state'].apply(np.array)
+                time_list = sub_df.groupby(sub_df.index)['bin'].apply(list)
 
             analysed_df = pd.DataFrame()
             for l, t in zip(states_list, time_list):
@@ -1433,13 +1434,6 @@ class behavpy_plotly(behavpy_draw):
             if wrapped is True:
                 analysed_df['t'] = analysed_df['t'].map(lambda t: t % (60*60*day_length))
             analysed_df['t'] = analysed_df['t'] / (60*60)
-
-            # if 'control' in n.lower() or 'baseline' in n.lower() or 'ctrl' in n.lower():
-            #     black_list = ['black'] * len(facet_arg)
-            #     black_range_dict = {0 : black_list, 1: black_list, 2 : black_list, 3 : black_list}
-            #     marker_col = black_range_dict
-            # else:
-            #     marker_col = colour_range_dict
 
             t_min = int(12 * floor(analysed_df.t.min() / 12))
             t_max = int(12 * ceil(analysed_df.t.max() / 12))    
@@ -1460,7 +1454,11 @@ class behavpy_plotly(behavpy_draw):
                 gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
                 gb_df = gb_df.reset_index()
 
-                upper, trace, lower = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = colours[c])
+                if facet_col is None:
+                    upper, trace, lower = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = colours[i])
+                else:
+                    upper, trace, lower = self._plot_line(df = gb_df, x_col = 't', name = n, marker_col = colours[c])
+
                 fig.add_trace(upper,row=row, col=col)
                 fig.add_trace(trace, row=row, col=col) 
                 fig.add_trace(lower, row=row, col=col)
@@ -2045,7 +2043,6 @@ class behavpy_plotly(behavpy_draw):
             row = ceil(num_plots/2),
             col = 1
         )
-
         fig.update_xaxes(
             title = dict(
                 text = 'ZT Hours',
@@ -2060,92 +2057,92 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
     
-    def plot_hmm_response(self, mov_df, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, t_bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
+    def plot_hmm_response(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column = 't', col_uniform = True, grids = False):
         """
-        
+        Generates a plot to explore the response rate to a stimulus per hidden state from a Hidden markov Model. Y-axis is the average response rate per group / state / True or mock interactions
+
+            Args:
+                mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
+                hmm (hmmlearn.hmm.CategoricalHMM): The accompanying trained hmmlearn model to decode the data.
+                variable (str, optional): The name of column that is to be decoded by the HMM. Default is 'moving'.
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
+                labels (list[string], optional): A list of the names of the decoded states, must match the number of states in the given model and colours. 
+                    If left as None and the model is 4 states the names will be ['Deep Sleep', 'Light Sleep', 'Quiet Awake', 'Active Awake'], else it will be ['state_0', 'state_1', ...]. Default is None
+                colours (list[string], optional): A list of colours for the decoded states, must match length of labels. If left as None and the 
+                    model is 4 states the colours will be ['Dark Blue', 'Light Blue', 'Red', 'Dark Red'], else it will be the colour palette choice. Default is None.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                t_bin (int, optional): The time in seconds to bin the time series data to. Default is 60,
+                func (str, optional): When binning the time what function to apply the variable column. Default is 'max'.
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                col_uniform (bool, optional): Unique to the plotly version of this plot. When True the true interaction response is coloured by the state colour choice even with multiple
+                    groups. When false the colour palette is used instead as in the Seaborn version. Default is True.
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+
+        Returns:
+            returns a plotly figure object
+
+        Note:
+            This function must be called on a behavpy dataframe that is populated by data loaded in with the stimulus_response
+            analysing function.
         """
+
+        if response_col not in self.columns.tolist():
+            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analysed the dataset with stimulus_response')
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-        list_states = list(range(len(labels)))
         facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
+        plot_column = f'{response_col}_mean'
 
-        if facet_col is not None:
-            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
-            mov_df_list = [mov_df.xmv(facet_col, arg) for arg in facet_arg]
-        else:
-            df_list = [self.copy(deep = True)]
-            mov_df_list = [mov_df.copy(deep = True)]
+        grouped_data, palette_dict, h_order = self.hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, colours = colours, 
+                                            facet_col = facet_col, facet_arg = facet_arg, facet_labels = facet_labels, t_bin = t_bin, func = func, t_column = t_column)
+        if facet_col is None:
+            facet_col = ''
 
-        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func, return_type = 'table') for n, d, h, b in zip(facet_arg, mov_df_list, h_list, b_list)}
-        puff_dict = {f'pdf{n}' : d for n, d in zip(facet_arg, df_list)}
-
-        def alter_merge(data, puff):
-            puff['bin'] = puff['interaction_t'].map(lambda t:  t_bin * floor(t / t_bin))
-            puff.reset_index(inplace = True)
-
-            merged = pd.merge(data, puff, how = 'inner', on = ['id', 'bin'])
-            merged['t_check'] = merged.interaction_t + merged.t_rel
-            merged['t_check'] = merged['t_check'].map(lambda t:  t_bin * floor(t / t_bin))
-
-            merged['previous_state'] = np.where(merged['t_check'] > merged['bin'], merged['state'], merged['previous_state'])
-
-            interaction_dict = {}
-            for i in list(set(merged.has_interacted)):
-                filt_merged = merged[merged['has_interacted'] == i]
-                big_gb = filt_merged.groupby(['id', 'previous_state']).agg(**{
-                            'prop_respond' : ('has_responded', 'mean')
-                    })
-                interaction_dict[f'int_{int(i)}'] = big_gb.groupby('previous_state')['prop_respond'].apply(np.array)
-
-            return interaction_dict
-
-        analysed_dict = {f'df{n}' : alter_merge(decoded_dict[f'df{n}'], puff_dict[f'pdf{n}']) for n in facet_arg}
-        
         fig = go.Figure()
         self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Response Rate', title = title, grid = grids)
 
         stats_dict = {}
 
-        for state, col, st_lab in zip(list_states, colours, labels):
+        for c, (col, st_lab) in enumerate(zip(colours, labels)):
+            sub_df = grouped_data[grouped_data['state'] == st_lab]
 
-            for arg, i in zip(facet_arg, facet_labels):
+            for lab in h_order:
 
-                for q in [2, 1]:
-                    try:
-                        mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][f'int_{q}'][state])
-                    except KeyError:
-                        continue
+                sub_np = sub_df[plot_column][sub_df[facet_col] == lab].to_numpy()
+                try:
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_np)
+                except KeyError:
+                    continue
 
-                    if q == 2:
-                        lab = f'{i} Spon. mov.'
-                    else:
-                        lab = i
-
-                    stats_dict[f'{i}: {st_lab}'] = zlist
-
-                    if 'baseline' in lab.lower() or 'control' in lab.lower() or 'ctrl' in lab.lower():
-                            marker_col = 'black'
-                    elif 'spon. mov.' in lab.lower():
-                            marker_col = 'grey'
+                stats_dict[f'{st_lab}: {lab}'] = zlist
+                
+                if col_uniform == True:
+                    if 'Spon. Mov.' in lab:
+                        marker_col = palette_dict[lab]
                     else:
                         marker_col = col
+                else:
+                    marker_col = palette_dict[lab]
+                 
+                fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
+                x = [lab], colour =  marker_col, showlegend = False, name = lab, xaxis = f'x{c+1}'))
 
-                    fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
-                    x = [lab], colour =  marker_col, showlegend = False, name = lab, xaxis = f'x{state+1}'))
-
-                    label_list = [lab] * len(zlist)
-                    fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
-                    showlegend = False, name = lab, xaxis = f'x{state+1}'))
+                label_list = [lab] * len(zlist)
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
+                showlegend = False, name = lab, xaxis = f'x{c+1}'))
 
             domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
-            axis = f'xaxis{state+1}'
-            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = st_lab, domains = domains[state:state+2], axis = axis)
+            axis = f'xaxis{c+1}'
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = st_lab, domains = domains[c:c+2], axis = axis)
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
         
         return fig, stats_df
 
-    def plot_response_hmm_bouts(self, mov_df, hmm, variable = 'moving', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't'):
+    def plot_response_hmm_bouts_response(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't'):
         """ 
         Generates a plot showing the response rate per time stamp in each HMM bout. Y-axis is between 0-1 and the response rate, the x-axis is the time point
         in each state as per the time the dataset is binned to when decoded.
@@ -2155,6 +2152,7 @@ class behavpy_plotly(behavpy_draw):
                 mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
                 hmm (hmmlearn.hmm.CategoricalHMM): The accompanying trained hmmlearn model to decode the data.
                 variable (str, optional): The name of column that is to be decoded by the HMM. Default is 'moving'.
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
                 labels (list[string], optional): A list of the names of the decoded states, must match the number of states in the given model and colours. 
                     If left as None and the model is 4 states the names will be ['Deep Sleep', 'Light Sleep', 'Quiet Awake', 'Active Awake']. Default is None
                 colours (list[string], optional): A list of colours for the decoded states, must match length of labels. If left as None and the 
@@ -2174,73 +2172,24 @@ class behavpy_plotly(behavpy_draw):
             analysing function.
         """
 
-        labels, colours = df._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-        list_states = list(range(len(labels)))
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
 
-        data = mov_df.copy(deep=True)
-        pdata = self.copy(deep=True)
-
-        decode_df = df._hmm_decode(df, hmm, t_bin, variable, func, t_column, return_type='table')
-
-        # take the states and time per specimen and find the runs of states
-        st_gb = decode_df.groupby('id')['state'].apply(np.array)
-        time_gb = decode_df.groupby('id')['bin'].apply(np.array)
-        all_runs = []
-        for m, t, ids in zip(st_gb, time_gb, st_gb.index):
-            spec_run = df._find_runs(m, t, ids)
-            all_runs.append(spec_run)
-        # take the arrays and make a dataframe for merging
-        counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
-        # _find_runs returns the column of interest as 'moving', so changing them for better clarity 
-        counted_df.rename(columns = {'moving' : 'state', 'previous_moving' : 'previous_state'}, inplace = True)
-
-        # change the time column to reflect the timing of counted_df
-        pdata['t'] = pdata['interaction_t'].map(lambda t:  t_bin * floor(t / t_bin))
-        pdata.reset_index(inplace = True)
-
-        # merge the two dataframes on the id and time column and check the response is in the same time bin or the next
-        merged = pd.merge(counted_df, pdata, how = 'inner', on = ['id', 't'])
-        merged['t_check'] = merged.interaction_t + merged.t_rel
-        merged['t_check'] = merged['t_check'].map(lambda t:  t_bin * floor(t / t_bin))
-        merged['previous_state'] = np.where(merged['t_check'] > merged['t'], merged['state'], merged['previous_state'])
-        merged = merged[merged['previous_activity_count'] <= x_limit]
+        grouped_data, palette_dict, h_order = self.hmm_bouts_response(mov_df=mov_df, hmm=hmm, variable=variable, response_col=response_col, labels=labels, colours=colours, 
+                                            x_limit=x_limit, t_bin=t_bin, func=func, t_column=t_column)
 
         # create and style plot
         fig = go.Figure() 
-        df._plot_ylayout(fig, yrange = [0, 1], t0 = 0, dtick = 0.2, ylabel = 'Response Rate', title = title, grid = grids)
-        df._plot_xlayout(fig, xrange = False, t0 = 0, dtick = t_bin/60, xlabel = f'Consecutive minutes in state')
+        self._plot_ylayout(fig, yrange = [0, 1], t0 = 0, dtick = 0.2, ylabel = 'Response Rate', title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = t_bin/60, xlabel = f'Consecutive minutes in state')
+
+        for hue in h_order:
+            sub_df = grouped_data[grouped_data['label_col'] == hue]
+
+            upper, trace, lower = self._plot_line(df = sub_df, x_col = 'previous_activity_count', name = hue, marker_col = palette_dict[hue])
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
         
-        for state, col, st_lab in zip(list_states, colours, labels):
-
-            loop_df = merged[merged['previous_state'] == state]
-
-            for q in [1, 2]:
-
-                inner_loop = loop_df[loop_df['has_interacted'] == q]
-
-                if q == 2:
-                    st_lab = f'{st_lab} spon. mov.'
-                    col = 'grey'
-
-                if len(inner_loop) == 0:
-                    print(f"No data for {st_lab}")
-                    continue
-
-                big_gb = inner_loop.groupby('previous_activity_count').agg(**{
-                                        'mean' : ('has_responded', 'mean'),
-                                        'count' : ('has_responded', 'count'),
-                                        'ci' : ('has_responded', bootstrap)
-                            })
-                big_gb[['y_max', 'y_min']] = pd.DataFrame(big_gb['ci'].tolist(), index = big_gb.index)
-                big_gb.drop('ci', axis = 1, inplace = True)
-                big_gb.reset_index(inplace=True)
-                big_gb['previous_activity_count'] = big_gb['previous_activity_count'].astype(int)
-
-                upper, trace, lower, _ = self._plot_line(df = big_gb, x_col = 'previous_activity_count', name = st_lab, marker_col = col)
-                fig.add_trace(upper)
-                fig.add_trace(trace) 
-                fig.add_trace(lower)
-
         return fig
 
     # Ploty Periodograms

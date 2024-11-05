@@ -17,6 +17,7 @@ from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
 from ethoscopy.misc.bootstrap_CI import bootstrap
 from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
+from ethoscopy.misc.static_functions import concat
 
 class behavpy_seaborn(behavpy_draw):
     """
@@ -363,8 +364,8 @@ class behavpy_seaborn(behavpy_draw):
             # Customise legend values
             handles, _ = ax.get_legend_handles_labels()
             ax.legend(handles=handles, labels=facet_labels)
-        else:
 
+        else:
             sns.stripplot(data=grouped_data, x='phase', y=plot_column, order=['light', 'dark'], ax=ax, hue ='phase', palette={"light" : "gold", "dark" : "darkgrey"}, alpha=0.5, legend=False)
             sns.pointplot(data=grouped_data, x='phase', y=plot_column, order=['light', 'dark'], ax=ax, hue ='phase', palette={"light" : "gold", "dark" : "darkgrey"}, estimator = 'mean',
                             linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3)
@@ -777,7 +778,7 @@ class behavpy_seaborn(behavpy_draw):
         """
         """
         if response_col not in self.columns.tolist():
-            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with puff_mago')
+            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with stimulus_response')
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -817,10 +818,10 @@ class behavpy_seaborn(behavpy_draw):
 
             map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
             grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
-
-            sns.stripplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette={"Spon. Mov" : "grey", "True Stimulus" : palette[0]}, alpha=0.5, legend=False, dodge = True)
+            h_order = ["Spon. Mov", "True Stimulus"]
+            sns.stripplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette={"Spon. Mov" : "grey", "True Stimulus" : palette[0]}, alpha=0.5, legend=False, dodge = 0.8 - 0.8 / len(h_order))
             sns.pointplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette={"Spon. Mov" : "grey", "True Stimulus" : palette[0]}, estimator = 'mean',
-                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.2) 
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.8 - 0.8 / len(h_order)) 
             
             # ax.set_xticklabels(facet_labels)
 
@@ -1118,27 +1119,35 @@ class behavpy_seaborn(behavpy_draw):
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
 
-        # make the colours a range for plotting 
-        # start_colours, end_colours = self._adjust_colours(colours)
-        # colour_range_dict = {}
-        # colours_dict = {'start' : start_colours, 'end' : end_colours}
-        # for q in range(0,len(labels)):
-        #     start_color = colours_dict.get('start')[q]
-        #     end_color = colours_dict.get('end')[q]
-        #     N = len(facet_arg)
-        #     colour_range_dict[q] = [x.hex for x in list(Color(start_color).range_to(Color(end_color), N))]
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            # takes subselection of df that contains the specified facet columns
+            df = self.xmv(facet_col, facet_arg)
+        else:
+            df = self.copy(deep=True)
+            mdata = mov_df
 
-
-        df = self.copy(deep=True)
-        # decode the whole dataset
-        df = self.__class__(self._hmm_decode(self, hmm, bin, variable, func, t_column, return_type='table'), self.meta, check=True)
+        if facet_col is None:  # decode the whole dataset
+            df = self.__class__(self._hmm_decode(df, hmm, t_bin, variable, func, t_column, return_type='table'), df.meta, check=True)
+        else:
+            if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
+                df = self.__class__(self._hmm_decode(df, hmm, t_bin, variable, func, t_column, return_type='table'), df.meta, check=True)
 
         states_dict = {k : [] for k in labels}
 
         # iterate over the faceted column. Decode and augment to be ready to plot
-        for arg in facet_arg:
+        for c, arg in enumerate(facet_arg):
 
-            sub_df = df.xmv(facet_col, arg)
+            if arg != None:
+                sub_df = df.xmv(facet_col, arg)
+            else:
+                sub_df = df
+                arg = ' '
+                facet_arg = [' ']
+
+            if isinstance(hmm, list) is True: # call the decode here if multiple HMMs
+                sub_df = self._hmm_decode(sub_df, h_list[c], b_list[c], variable, func, t_column, return_type='table').set_index('id')
+
             states_list = sub_df.groupby(sub_df.index)['state'].apply(np.array)
             time_list = sub_df.groupby(sub_df.index)['bin'].apply(list)
 
@@ -1162,7 +1171,7 @@ class behavpy_seaborn(behavpy_draw):
         # calculate rows and columns, maximum 2 rows and then more columns as more states
         if len(labels) <= 2:
             nrows = 1
-            ncols =2
+            ncols = 2
         else:
             nrows =  2
             ncols = round(len(labels) / 2)
@@ -1176,8 +1185,12 @@ class behavpy_seaborn(behavpy_draw):
             plot_df.rename(columns = {'facet_col' : 'id'}, inplace = True)
             plot_bh = self.__class__(plot_df, plot_m, check=True)
 
-            fig = plot_bh.plot_overtime(variable='Probability of state', wrapped=wrapped, facet_col='facet_col', facet_arg=facet_arg, facet_labels=facet_labels,
-                                        avg_window=avg_window, day_length=day_length, lights_off=lights_off, title=state, grids=grids, t_column=t_column)#, col_list = colour_range_dict[c])
+            if facet_col is None: # add colours to each state if no facet
+                fig = plot_bh.plot_overtime(variable='Probability of state', wrapped=wrapped, facet_col='facet_col', facet_arg=facet_arg, facet_labels=facet_labels,
+                                        avg_window=avg_window, day_length=day_length, lights_off=lights_off, title=state, grids=grids, t_column=t_column, col_list = [colours[c]])
+            else:
+                fig = plot_bh.plot_overtime(variable='Probability of state', wrapped=wrapped, facet_col='facet_col', facet_arg=facet_arg, facet_labels=facet_labels,
+                                        avg_window=avg_window, day_length=day_length, lights_off=lights_off, title=state, grids=grids, t_column=t_column) #, col_list = [colours[c]])             
             ax = plt.gca()
             ax.set_ylim([-0.02525, 1])            
             plt.close()
@@ -1638,6 +1651,133 @@ class behavpy_seaborn(behavpy_draw):
         fig.supylabel("State")
         return fig
 
-    # def plot_hmm_response(self, mov_df, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, t_bin = 60, facet_labels = None, func = 'max', title = '', grids = False):
+    def plot_hmm_response(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column = 't', grids = False, figsize = (0,0)):
+        """
+        Generates a plot to explore the response rate to a stimulus per hidden state from a Hidden markov Model. Y-axis is the average response rate per group / state / True or mock interactions
 
-    # def plot_response_hmm_bouts(self, mov_df, hmm, variable = 'moving', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't'):
+            Args:
+                mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
+                hmm (hmmlearn.hmm.CategoricalHMM): The accompanying trained hmmlearn model to decode the data.
+                variable (str, optional): The name of column that is to be decoded by the HMM. Default is 'moving'.
+                labels (list[string], optional): A list of the names of the decoded states, must match the number of states in the given model and colours. 
+                    If left as None and the model is 4 states the names will be ['Deep Sleep', 'Light Sleep', 'Quiet Awake', 'Active Awake'], else it will be ['state_0', 'state_1', ...]. Default is None
+                colours (list[string], optional): A list of colours for the decoded states, must match length of labels. If left as None and the 
+                    model is 4 states the colours will be ['Dark Blue', 'Light Blue', 'Red', 'Dark Red'], else it will be the colour palette choice. Default is None.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                t_bin (int, optional): The time in seconds to bin the time series data to. Default is 60,
+                func (str, optional): When binning the time what function to apply the variable column. Default is 'max'.
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+
+        Returns:
+            returns a Seaborn figure object
+
+        Note:
+            This function must be called on a behavpy dataframe that is populated by data loaded in with the stimulus_response
+            analysing function.
+        """
+
+        if response_col not in self.columns.tolist():
+            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analysed the dataset with stimulus_response')
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = None)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
+        plot_column = f'{response_col}_mean'
+
+        grouped_data, palette_dict, h_order = self.hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, colours = colours, 
+                                            facet_col = facet_col, facet_arg = facet_arg, facet_labels = facet_labels, t_bin = t_bin, func = func, t_column = t_column)
+        # (0,0) means automatic size
+        if figsize == (0,0):
+            figsize = (4*len(facet_arg)+2, 8)
+        
+        fig, ax = plt.subplots(figsize=figsize)
+        plt.ylim([0, 1.01])
+
+        if facet_col:
+            sns.stripplot(data=grouped_data, x='state', y=plot_column, order=labels, hue=facet_col, hue_order=h_order, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge = 0.8 - 0.8 / len(h_order))
+            sns.pointplot(data=grouped_data, x='state', y=plot_column, order=labels, hue=facet_col, hue_order=h_order, ax=ax, palette=palette_dict, estimator = 'mean',
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.8 - 0.8 / len(h_order))
+
+            # Customise legend values
+            handles, _ = ax.get_legend_handles_labels()
+            ax.legend(handles=handles, labels=h_order)
+
+        else:
+            sns.stripplot(data=grouped_data, x='state', y=plot_column, order=labels, ax=ax, hue = '', hue_order = h_order, palette=palette_dict, alpha=0.5, legend=False, dodge = 0.8 - 0.8 / len(h_order))
+            sns.pointplot(data=grouped_data, x='state', y=plot_column, order=labels, ax=ax, hue = '', hue_order = h_order, palette=palette_dict, estimator = 'mean',
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.8 - 0.8 / len(h_order))
+
+        plt.title(title)
+        if grids: plt.grid(axis='y')
+
+        # reorder dataframe for stats output
+        if facet_col: 
+            grouped_data = grouped_data.sort_values(facet_col)
+        grouped_data.drop(columns=['previous_state'], inplace=True)
+        return fig, grouped_data
+
+    def plot_response_hmm_bouts_response(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't', figsize = (0,0)):
+        """ 
+        Generates a plot showing the response rate per time stamp in each HMM bout. Y-axis is between 0-1 and the response rate, the x-axis is the time point
+        in each state as per the time the dataset is binned to when decoded.
+
+            Args:
+                mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
+                hmm (hmmlearn.hmm.CategoricalHMM): The accompanying trained hmmlearn model to decode the data.
+                variable (str, optional): The name of column that is to be decoded by the HMM. Default is 'moving'.
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
+                labels (list[string], optional): A list of the names of the decoded states, must match the number of states in the given model and colours. 
+                    If left as None and the model is 4 states the names will be ['Deep Sleep', 'Light Sleep', 'Quiet Awake', 'Active Awake']. Default is None
+                colours (list[string], optional): A list of colours for the decoded states, must match length of labels. If left as None and the 
+                    model is 4 states the colours will be ['Dark Blue', 'Light Blue', 'Red', 'Dark Red']. Default is None.
+                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 30 would be 30 minutes or less. Default 30.
+                t_bin (int, optional): The time in seconds to bin the time series data to. Default is 60,
+                func (str, optional): When binning the time what function to apply the variable column. Default is 'max'.
+                title (str, optional): The title of the plot. Default is an empty string.
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+        Note:
+            This function must be called on a behavpy dataframe that is populated by data loaded in with the stimulus_response
+            analysing function.
+        """
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+
+        grouped_data, palette_dict, h_order = self.hmm_bouts_response(mov_df=mov_df, hmm=hmm, variable=variable, response_col=response_col, labels=labels, colours=colours, 
+                                            x_limit=x_limit, t_bin=t_bin, func=func, t_column=t_column)
+
+        if figsize == (0,0):
+            figsize = (4*(x_limit / 2), 8)
+
+        fig, ax = plt.subplots(figsize=figsize)
+        plt.ylim([0, 1.01])
+        plt.xlim([1, x_limit])
+
+        for hue in h_order:
+
+            sub_df = grouped_data[grouped_data['label_col'] == hue]
+
+            plt.plot(sub_df["previous_activity_count"], sub_df["mean"], label = hue, color = palette_dict[hue])
+            plt.fill_between(
+            sub_df["previous_activity_count"], sub_df["y_min"], sub_df["y_max"], alpha = 0.25, color = palette_dict[hue]
+            )
+
+        # Customise legend values
+        handles, _ = ax.get_legend_handles_labels()
+        ax.legend(handles=handles, labels=h_order)
+
+        plt.xlabel("Consecutive minutes in state")
+        plt.ylabel("Response rate")
+
+        plt.title(title)
+
+        if grids:
+            plt.grid(axis='y')
+
+        return fig

@@ -44,24 +44,31 @@ class behavpy_draw(behavpy_core):
         if isinstance(hm, list):
             hm = hm[0]
 
-        if hm.transmat_.shape[0] == 4 and lab == None and col == None:
-            _labels = self._hmm_labels
-            _colours = self._hmm_colours
-        elif hm.transmat_.shape[0] == 4 and lab == None and col != None:
-            _labels = self._hmm_labels
-            _colours = col
-        elif hm.transmat_.shape[0] == 4 and lab != None and col == None:
-            _labels = lab
-            _colours = self._hmm_colours
+        if hm.transmat_.shape[0] == 4:
+            if lab == None and col == None:
+                _labels = self._hmm_labels
+                _colours = self._hmm_colours
+            elif lab == None and col != None:
+                _labels = self._hmm_labels
+                _colours = col
+            elif lab != None and col == None:
+                _labels = lab
+                _colours = self._hmm_colours
+
         elif hm.transmat_.shape[0] != 4:
-            if col is None or lab is None:
-                raise RuntimeError('Your trained HMM is not 4 states, please provide the lables and colours for this hmm. See doc string for more info')
+            if lab == None and col == None:
                 # give generic names and populate with colours from the given palette 
                 _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
                 _colours = self.get_colours(hm.transmat_)
-            elif len(col) != len(lab):
-                raise RuntimeError('You have more or less states than colours, please rectify so the lists are equal in length')
+            elif lab != None and col == None:
+                _colours = self.get_colours(hm.transmat_)
+                _labels = lab
+            elif lab == None and col != None:
+                _colours = col
+                _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
             else:
+                if len(col) != len(lab):
+                    raise RuntimeError('You have more or less states than colours, please rectify so the lists are equal in length')
                 _labels = lab
                 _colours = col
         else:
@@ -79,7 +86,7 @@ class behavpy_draw(behavpy_core):
         Check if there is more than one HMM object for HMM comparison. Populate hmm and bin lists accordingly.
         """
         if isinstance(h, list):
-            assert isinstance(b, list)
+            assert isinstance(b, list), "If providing a list of HMMs, also provide a list of ints to bin the time by (t_bin)"
             if len(h) != len(f_arg) or len(b) != len(f_arg):
                 raise RuntimeError('There are not enough hmm models or bin intergers for the different groups or vice versa')
             else:
@@ -279,12 +286,29 @@ class behavpy_draw(behavpy_core):
         return int(sqrt(closest[1]))
 
     @staticmethod
-    def _check_grey(name, col):
-        if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
-            col = 'grey'
+    def _check_grey(name, col, response = False):
+        if response is False:
+            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower() or 'spon. mov' in name.lower():
+                col = 'grey'
+        else:
+            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+                col = 'black'    
+            elif 'spon. mov' in name.lower():
+                col = 'grey'
         return name, col
 
     # GENERAL PLOT HELPERS
+
+    def facet_merge(self, data, facet_col, facet_arg, facet_labels, hmm_labels = None):
+        # merge the facet_col column and replace with the labels
+        data = data.join(self.meta[[facet_col]])
+        data[facet_col] = data[facet_col].astype('category')
+        map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
+        data[facet_col] = data[facet_col].map(map_dict)
+        if hmm_labels is not None:
+            hmm_dict = {k : v for k, v in zip(range(len(hmm_labels)), hmm_labels)}
+            data['state'] = data['state'].map(hmm_dict)
+        return data
 
     def _generate_overtime_plot(self, data, name, col, var, avg_win, wrap, day_len, light_off, t_col, canvas):
 
@@ -409,13 +433,126 @@ class behavpy_draw(behavpy_core):
         
         return ant_df
 
-    def facet_merge(self, data, facet_col, facet_arg, facet_labels, hmm_labels = None):
-        # merge the facet_col column and replace with the labels
-        data = data.join(self.meta[[facet_col]])
-        data[facet_col] = data[facet_col].astype('category')
-        map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
-        data[facet_col] = data[facet_col].map(map_dict)
-        if hmm_labels is not None:
-            hmm_dict = {k : v for k, v in zip(range(len(hmm_labels)), hmm_labels)}
-            data['state'] = data['state'].map(hmm_dict)
-        return data
+    def hmm_response(self, mov_df, hmm, variable, response_col, labels, colours, facet_col, facet_arg, t_bin, facet_labels, func, t_column):
+
+        data_summary = {
+            "%s_mean" % response_col : (response_col, 'mean'),
+            "%s_std" % response_col : (response_col, 'std'),
+            }
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            # takes subselection of df that contains the specified facet columns
+            data = self.xmv(facet_col, facet_arg)
+            mdata = mov_df.xmv(facet_col, facet_arg)
+        else:
+            data = self.copy(deep=True)
+            mdata = mov_df
+
+        if facet_col is None:  # decode the whole dataset
+            mdata = self.__class__(self._hmm_decode(mdata, hmm, t_bin, variable, func, t_column, return_type='table'), mdata.meta, check=True)
+        else:
+            if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
+                mdata = self.__class__(self._hmm_decode(mdata, hmm, t_bin, variable, func, t_column, return_type='table'), mdata.meta, check=True)
+            else:
+                mdata = concat(*[self.__class__(self._hmm_decode(mdata.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
+
+        # merge the two df's and check if the interaction happened in the right time point
+        def alter_merge(response, mov, tb):
+            response['bin'] = response['interaction_t'].map(lambda t:  tb * floor(t / tb))
+            response.reset_index(inplace = True)
+
+            merged = pd.merge(mov, response, how = 'inner', on = ['id', 'bin'])
+            merged['t_check'] = merged.interaction_t + merged.t_rel
+            merged['t_check'] = merged['t_check'].map(lambda t:  tb * floor(t / tb))
+
+            merged['previous_state'] = np.where(merged['t_check'] > merged['bin'], merged['state'], merged['previous_state'])
+            return merged
+
+        if isinstance(t_bin, list) is False: # if only 1 bin but is faceted, apply to whole df
+            data = self.__class__(alter_merge(data, mdata, t_bin), data.meta, check=True)
+        else:
+            data = concat(*[self.__class__(alter_merge(data.xmv(facet_col, arg), mdata.xmv(facet_col, arg), b), data.meta, check=True) for arg, b in zip(facet_arg, b_list)])
+
+        grouped_data = data.groupby([data.index, 'previous_state', 'has_interacted']).agg(**data_summary)
+        grouped_data = grouped_data.reset_index()
+        grouped_data = grouped_data.set_index('id')
+        grouped_data['state'] = grouped_data['previous_state']
+
+        map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov.'}
+        grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
+
+        if facet_col is not None:
+            h_order = [f'{lab} {ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]
+            palette = self._get_colours(facet_labels)
+        else:
+            h_order = ['Spon. Mov.', 'True Stimulus']
+        palette = self._get_colours(facet_labels)
+        palette = [x for xs in [[col, col] for col in palette] for x in xs]
+        palette_dict = {name : self._check_grey(name, palette[c], response = True)[1] for c, name in enumerate(h_order)} # change to grey if control
+        
+        if facet_col is None:
+            hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
+            grouped_data['state'] = grouped_data['state'].map(hmm_dict)
+            grouped_data[''] = grouped_data['has_interacted']
+        else:
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels)
+            grouped_data[facet_col] = grouped_data[facet_col].astype('str')
+            grouped_data[facet_col] = grouped_data[facet_col] + " " + grouped_data['has_interacted']
+
+        return grouped_data, palette_dict, h_order
+    
+    def hmm_bouts_response(self, mov_df, hmm, variable, response_col, labels, colours, x_limit, t_bin, func, t_column):
+
+        data_summary = {
+            "mean" : (response_col, 'mean'),
+            "count" : (response_col, 'count'),
+            "ci" : (response_col, bootstrap),
+            }
+
+        # copy and decode the dataset
+        data = self.copy(deep=True)
+        mdata = mov_df
+        mdata = self.__class__(self._hmm_decode(mdata, hmm, t_bin, variable, func, t_column, return_type='table'), mdata.meta, check=True)
+
+        # take the states and time per specimen and find the runs of states
+        st_gb = mdata.groupby('id')['state'].apply(np.array)
+        time_gb = mdata.groupby('id')['bin'].apply(np.array)
+        all_runs = []
+        for m, t, ids in zip(st_gb, time_gb, st_gb.index):
+            spec_run = self._find_runs(m, t, ids)
+            all_runs.append(spec_run)
+        # take the arrays and make a dataframe for merging
+        counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
+        # _find_runs returns the column of interest as 'moving', so changing them for better clarity 
+        counted_df.rename(columns = {'moving' : 'state', 'previous_moving' : 'previous_state'}, inplace = True)
+
+        # change the time column to reflect the timing of counted_df
+        data['t'] = data['interaction_t'].map(lambda t:  t_bin * floor(t / t_bin))
+        data.reset_index(inplace = True)
+
+        # merge the two dataframes on the id and time column and check the response is in the same time bin or the next
+        merged = pd.merge(counted_df, data, how = 'inner', on = ['id', 't'])
+        merged['t_check'] = merged.interaction_t + merged.t_rel
+        merged['t_check'] = merged['t_check'].map(lambda t:  t_bin * floor(t / t_bin))
+        merged['previous_state'] = np.where(merged['t_check'] > merged['t'], merged['state'], merged['previous_state'])
+        merged = merged[merged['previous_activity_count'] <= x_limit]
+
+        grouped_data = merged.groupby(['previous_state', 'previous_activity_count', 'has_interacted']).agg(**data_summary)
+        grouped_data = grouped_data.reset_index()
+        grouped_data[['y_max', 'y_min']] = pd.DataFrame(grouped_data['ci'].tolist(), index =  grouped_data.index)
+        grouped_data.drop('ci', axis = 1, inplace = True)
+        grouped_data['state'] = grouped_data['previous_state']
+
+        map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov.'}
+        grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
+        hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
+        grouped_data['state'] = grouped_data['state'].map(hmm_dict)
+        grouped_data['label_col'] =  grouped_data['state'] + " " + grouped_data['has_interacted']
+
+        h_order = [f'{lab} {ty}' for lab in labels for ty in ["Spon. Mov.", "True Stimulus"]]
+        palette = colours
+        palette = [x for xs in [[col, col] for col in palette] for x in xs]
+        palette_dict = {name : self._check_grey(name, palette[c], response = True)[1] for c, name in enumerate(h_order)} # change to grey if control
+
+        return grouped_data, palette_dict, h_order

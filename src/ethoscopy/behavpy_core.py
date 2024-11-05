@@ -358,34 +358,35 @@ class behavpy_core(pd.DataFrame):
         m = self.meta.join(new_column, on = 'id')
         self.meta = m
 
-    def concat(self, *args):
-        """
-        Wrapper for pd.concat that also concats metadata of multiple behavpy objects
+    # Moved concat to be a function rather than a method. Access it by etho.concat(df, df2, ...)
+    # def concat(self, *args):
+    #     """
+    #     Wrapper for pd.concat that also concats metadata of multiple behavpy objects
 
-        Args:
-            args (behvapy): Behavpy tables to be concatenated to the original behavpy table, each behavpy object should be entered as its own argument and not a list.
+    #     Args:
+    #         args (behvapy): Behavpy tables to be concatenated to the original behavpy table, each behavpy object should be entered as its own argument and not a list.
 
-        returns:
-            A new instance of a combined behavpy object
-        """
+    #     returns:
+    #         A new instance of a combined behavpy object
+    #     """
 
-        meta_list = [self.meta]
-        data_list = [self]
+    #     meta_list = [self.meta]
+    #     data_list = [self]
 
-        for df in args:
+    #     for df in args:
 
-            if isinstance(df, self.__class__) is not True:
-                raise TypeError('Object(s) to concat are not the same behavpy class')
+    #         if isinstance(df, self.__class__) is not True:
+    #             raise TypeError('Object(s) to concat are not the same behavpy class')
 
-            meta_list.append(df.meta)
-            data_list.append(df)
+    #         meta_list.append(df.meta)
+    #         data_list.append(df)
 
-        meta = pd.concat(meta_list)
-        new = pd.concat(data_list)
+    #     meta = pd.concat(meta_list)
+    #     new = pd.concat(data_list)
 
-        new.meta = meta
+    #     new.meta = meta
 
-        return new
+    #     return new
 
     def stitch_consecutive(self, machine_name_col = 'machine_name', region_id_col = 'region_id', date_col = 'date'):
         """ 
@@ -713,7 +714,7 @@ class behavpy_core(pd.DataFrame):
             raise KeyError(f'Column heading "{sleep_column}", is not in the data table')
 
         tdf = self.reset_index().copy(deep = True)
-        return self.__class__(self)(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
+        return self.__class__(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
                                                                                                 var_name = sleep_column, 
                                                                                                 as_hist = as_hist, 
                                                                                                 bin_size = bin_size, 
@@ -855,6 +856,7 @@ class behavpy_core(pd.DataFrame):
     @staticmethod
     def _wrapped_bin_data(data, column, bin_column, function, bin_secs):
         """ a method that will bin all data poits to a larger time bin and then summarise a column """
+        # print(data)
         index_name = data['id'].iloc[0]
 
         data[bin_column] = data[bin_column].map(lambda t: bin_secs * floor(t / bin_secs))
@@ -1339,7 +1341,7 @@ class behavpy_core(pd.DataFrame):
         """
 
         tdf = self.copy(deep=True)
-        return self.__class__(self._hmm_decode(tdf, hmm, t_bin, variable, func, t_column, return_type= 'table'), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True).drop(columns=['previous_state', f'{variable}', f'previous_{variable}'])
+        return self.__class__(self._hmm_decode(tdf, hmm, t_bin, variable, func, t_column, return_type= 'table'), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True).drop(columns=[f'previous_{variable}'])
 
     # PERIODOGRAM SECTION
 
