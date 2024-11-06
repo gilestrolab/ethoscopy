@@ -193,7 +193,8 @@ def sleep_annotation(data,
                 fs (int): The sampling frequency (Hz) to scale minimum length to time in seconds
                 min_valid_time (int): The minimum amount immobile time that counts as sleep, default is 300 (i.e 5 mins) 
         
-        returns a list object to be added to a pandas dataframe
+        returns: 
+            A list to be added to a pandas dataframe
         """
         min_len = fs * min_valid_time
         r_sleep =  rle(np.logical_not(moving)) 

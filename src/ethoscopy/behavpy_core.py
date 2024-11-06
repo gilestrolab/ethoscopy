@@ -632,8 +632,8 @@ class behavpy_core(pd.DataFrame):
             return _wrapped_time_alive(df, name)
         else:
             tmp = pd.DataFrame()
-            for rep in set(df.meta[repeat].tolist()):
-                tdf = df.xmv(repeat, rep)
+            for rep in set(df[repeat].tolist()):
+                tdf = df[df[repeat] == rep]
                 tmp = pd.concat([tmp, _wrapped_time_alive(tdf, name)])
             return tmp
 

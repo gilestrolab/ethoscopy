@@ -310,7 +310,7 @@ class behavpy_draw(behavpy_core):
             data['state'] = data['state'].map(hmm_dict)
         return data
 
-    def _generate_overtime_plot(self, data, name, col, var, avg_win, wrap, day_len, light_off, t_col, canvas):
+    def _generate_overtime_plot(self, data, name, col, var, avg_win, wrap, day_len, light_off, t_col):
 
         if len(data) == 0:
             print(f'Group {name} has no values and cannot be plotted')
@@ -347,10 +347,10 @@ class behavpy_draw(behavpy_core):
         gb_df['y_max'] = gb_df['mean'] + gb_df['SE']
         gb_df['y_min'] = gb_df['mean'] - gb_df['SE']
 
-        if canvas == 'seaborn':
+        if self.canvas == 'seaborn':
             return gb_df, t_min, t_max, col, None
-        elif canvas == 'plotly':
-            upper, trace, lower = data._plot_line(df = gb_df, x_col = t_col, name = name, marker_col = col)
+        elif self.canvas == 'plotly':
+            upper, trace, lower = self._plot_line(df = gb_df, x_col = t_col, name = name, marker_col = col)
             return upper, trace, lower, t_min, t_max
         else:
             KeyError(f'Wrong plot type in back end: {plot_type}')

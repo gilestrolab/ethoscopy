@@ -287,10 +287,10 @@ class behavpy_plotly(behavpy_draw):
             title (str, optional): The title of the plot. Default is an empty string.
             grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
             t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+            col_list (list, optioanl): Provide a list of colours to override the previous chose palette. Default is None.
 
-        
         Returns:
-            returns a plotly figure object
+            fig (plotly.figure.Figure): Figure object of the plot.
 
         Note:
             For accurate results, the data should be appropriately preprocessed to ensure that 't' values are
@@ -350,7 +350,7 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
 
-    def plot_quantify(self, variable:str, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, fun:str = 'mean', title:str = '', z_score = True, grids:bool = False):
+    def plot_quantify(self, variable:str, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, fun:str = 'mean', title:str = '', z_score:bool = True, grids:bool = False):
         """
         A plot that finds the average (default mean) for a given variable per specimen. The plots will show each specimens average 
         and a box representing the mean and 95% confidence intervals.
@@ -364,10 +364,12 @@ class behavpy_plotly(behavpy_draw):
                 will be those from the metadata. Default is None.
             fun (str, optional): The function that is applied to the data. Must be one of 'mean', 'median', 'max', 'count'.
             title (str, optional): The title of the plot. Default is an empty string.
+            z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
             grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
 
         Returns:
-            returns a plotly figure object and a pandas DataFrame
+            fig (plotly.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
 
         Note:
             Whilst this uses the boxplot functions from plotly, it uses it for formatting and actually plots the mean (dotted line)
@@ -486,26 +488,25 @@ class behavpy_plotly(behavpy_draw):
         """
         A plot that shows the average of a varaible split between the day (lights on) and night (lights off).
         Addtionally, a pandas dataframe is generated that contains the averages per specimen per group for users to perform statistics with.
-        Args:
-            variable (str): The name of the column you wish to plot from your data. 
-            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
-            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
-            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
-            fun (str, optional): The average function that is applied to the data. Must be one of 'mean', 'median', 'count'.
-            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
-            lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
-            title (str, optional): The title of the plot. Default is an empty string.
-            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+           
+            Args:
+                variable (str): The name of the column you wish to plot from your data. 
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                fun (str, optional): The average function that is applied to the data. Must be one of 'mean', 'median', 'count'.
+                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
 
-        returns:
-            returns a plotly figure object and a pandas DataFrame
+        Returns:
+            fig (plotly.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
         """
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
-        # if facet_col is not None:
-        #     d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
-        # else:
-        #     d_list = [self.copy(deep = True)]
 
         # takes subset of data if requested
         if facet_col and facet_arg:
@@ -532,7 +533,7 @@ class behavpy_plotly(behavpy_draw):
             d1 = data[data['phase'] == phase]
 
             for c2, label in enumerate(facet_labels):
-                # print(d1[d1[facet_col]=='1'])
+
                 if facet_col:
                     d2 = d1[d1[facet_col] == label]
                     if len(d2) == 0:
@@ -565,7 +566,25 @@ class behavpy_plotly(behavpy_draw):
         return fig, stats_df
 
     def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', z_score = True, grids = False):
+        """
+        Plots the anticipation scores for lights on and off periods, separately for each category defined by facet_col.
+        This function calculates the anticipation scores for lights off and on conditions and then plots a seaborn boxplot. 
 
+            Args:
+                mov_variable (str, optional): The name of the column you wish to plot from your data. 
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+                title (str, optional): The title of the plot. Default is an empty string.
+                z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+
+        Returns:
+            fig (plotly.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
+        """
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
         # takes subset of data if requested
@@ -663,7 +682,40 @@ class behavpy_plotly(behavpy_draw):
             ), row = row, col = col)
 
     def plot_actogram(self, mov_variable = 'moving', bin_window = 5, t_column = 't', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = ''):
-        
+        """
+        This function creates actogram plots from the provided data. Actograms are useful for visualizing 
+        patterns in activity data (like movement or behavior) over time, often with an emphasis on daily 
+        (24-hour) rhythms. 
+
+        Args:
+            mov_variable (str, optional): The name of the column in the dataframe representing movement 
+                data. Default is 'moving'.
+            bin_window (int, optional): The bin size for data aggregation in minutes. Default is 5.
+            t_column (str, optional): The name of the column in the dataframe representing time data.
+                Default is 't'.
+            facet_col (str, optional): The name of the column to be used for faceting. If None, no faceting 
+                is applied. Default is None.
+            facet_arg (list, optional): List of arguments to be used for faceting. If None and if 
+                facet_col is not None, all unique values in the facet_col are used. Default is None.
+            facet_labels (list, optional): List of labels to be used for the facets. If None and if 
+                facet_col is not None, all unique values in the facet_col are used as labels. Default is None.
+            day_length (int, optional): The length of the day in hours. Default is 24.
+            title (str, optional): The title of the plot. Default is an empty string.
+            figsize (tuple, optional): The size of the figure to be plotted as (width, height). If set to 
+                (0,0), the size is determined automatically. Default is (0,0).
+
+        Returns:
+            plotly.figure.Figure: If facet_col is provided, returns a figure that contains subplots for each 
+            facet. If facet_col is not provided, returns a single actogram plot.
+
+        Raises:
+            ValueError: If facet_arg is provided but facet_col is None.
+            SomeOtherException: If some other condition is met.
+
+        Example:
+            >>> instance.plot_actogram(mov_variable='movement', bin_window=10, 
+            ...                        t_column='time', facet_col='activity_type')
+        """
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
         title_list = facet_labels
 
@@ -740,7 +792,40 @@ class behavpy_plotly(behavpy_draw):
         return fig
     
     def plot_actogram_tile(self, mov_variable = 'moving', bin_window = 15, t_column = 't', labels = None, day_length = 24, title = ''):
-        
+        """
+        This function creates a grid or tile actogram plot of all specimens in the provided data. Actograms are useful for visualizing 
+        patterns in activity data (like movement or behavior) over time, often with an emphasis on daily 
+        (24-hour) rhythms. 
+
+        Args:
+            mov_variable (str, optional): The name of the column in the dataframe representing movement 
+                data. Default is 'moving'.
+            bin_window (int, optional): The bin size for data aggregation in minutes. Default is 5.
+            t_column (str, optional): The name of the column in the dataframe representing time data.
+                Default is 't'.
+            facet_col (str, optional): The name of the column to be used for faceting. If None, no faceting 
+                is applied. Default is None.
+            facet_arg (list, optional): List of arguments to be used for faceting. If None and if 
+                facet_col is not None, all unique values in the facet_col are used. Default is None.
+            facet_labels (list, optional): List of labels to be used for the facets. If None and if 
+                facet_col is not None, all unique values in the facet_col are used as labels. Default is None.
+            day_length (int, optional): The length of the day in hours. Default is 24.
+            title (str, optional): The title of the plot. Default is an empty string.
+            figsize (tuple, optional): The size of the figure to be plotted as (width, height). If set to 
+                (0,0), the size is determined automatically. Default is (0,0).
+
+        Returns:
+            Plotly.figure.Figure: If facet_col is provided, returns a figure that contains subplots for each 
+            facet. If facet_col is not provided, returns a single actogram plot.
+
+        Raises:
+            ValueError: If facet_arg is provided but facet_col is None.
+            SomeOtherException: If some other condition is met.
+
+        Example:
+            >>> instance.plot_actogram_tile(mov_variable='movement', bin_window=10, 
+            ...                        t_column='time', facet_col='activity_type')
+        """  
         if labels is not None:
             if labels not in self.meta.columns.tolist():
                 raise KeyError(f'{labels} is not a column in the metadata')
@@ -805,21 +890,98 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
 
+    def survival_plot(self, facet_col = None, facet_arg = None, facet_labels = None, repeat = False, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't'):
+        """
+        Generates a plot of the percentage of animals in a group present / alive over the course of an experiment. This method does not calculate or remove flies that are dead. It is 
+            recommended you use the method .curate_dead_animals() to do this. If you have repeats, signposted in the metadata, call the column in the repeat parameter and the standard error
+            will be plotted.
+        
+            Args:
+                facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. Default is None.
+                facet_labels (list, optional): The labels to use for faceting. Default is None.
+                repeat (bool/str, optional): If False the function won't look for a repeat column. If wanted the user should change the argument to the column in the metadata that contains repeat information. Default is False
+                day_length (int, optional): The length of the day in hours for wrapping. Default is 24.
+                lights_off (int, optional): The time of "lights off" in hours. Default is 12.
+                title (str, optional): The title of the plot. Default is an empty string.
+                grids (bool, optional): If True, horizontal grid lines will be displayed on the plot. Default is False.
+                t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
+        
+        Returns:
+            fig (plotly.figure.Figure): Figure object of the plot.
+        """
+
+        if repeat is True:
+            if repeat not in self.meta.columns:
+                raise KeyError(f'Column "{repeat}" is not a metadata column, please check and add if you want repeat data')
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg and repeat:
+            data = self.xmv(facet_col, facet_arg).merge(self.meta[[facet_col, repeat]], left_index=True, right_index=True)
+            sur_df = data.groupby(facet_col, group_keys = False).apply(partial(self._time_alive, facet_col = facet_col, repeat = repeat, t_column = t_column))
+        elif facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg).merge(self.meta[[facet_col]], left_index=True, right_index=True)
+            sur_df = data.groupby(facet_col, group_keys = False).apply(partial(self._time_alive, facet_col = facet_col, repeat = repeat, t_column = t_column))
+        else:
+            data = self.copy(deep=True)
+            sur_df = self._time_alive(df = data, facet_col = facet_col, repeat = repeat, t_column = t_column)
+
+        x_ticks = np.arange(0, sur_df['hour'].max() + day_length, day_length)
+
+        fig = go.Figure() 
+        self._plot_ylayout(fig, yrange = [0,105], t0 = 0, dtick = 20, ylabel = "Survival (%)", title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = day_length, xlabel = 'ZT (Hours)')
+
+        palette = self._get_colours(facet_labels)
+        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+
+        if facet_col is not None:
+            map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
+            sur_df['label'] = sur_df['label'].map(map_dict)
+            for lab in facet_labels:
+                tdf = sur_df[sur_df['label'] == lab]
+                upper, trace, lower, _, _ = self._generate_overtime_plot(data = sur_df, var = 'survived', name = lab, col = palette_dict[lab], avg_win = False,
+                                                                    wrap = False, day_len = False, light_off = False, t_col = 'hour')
+                fig.add_trace(upper)
+                fig.add_trace(trace) 
+                fig.add_trace(lower)
+        else:
+            upper, trace, lower, _, _ = self._generate_overtime_plot(data = sur_df, var = 'survived', name = facet_labels[0], col = palette_dict[facet_labels[0]], avg_win = False,
+                                                                wrap = False, day_len = False, light_off = False, t_col = 'hour')
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
+
+        # Light-Dark annotaion bars
+        bar_shapes, min_bar = circadian_bars(np.nanmin(x_ticks), np.nanmax(x_ticks), min_y = 0, max_y = 100, day_length = day_length, lights_off = lights_off)
+        fig.update_layout(shapes=list(bar_shapes.values()))
+
+        fig['layout']['xaxis']['range'] = [np.min(x_ticks), np.max(x_ticks)]
+
+        return fig
+
     # Response AGO/mAGO section
 
-    def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False): 
-        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
-        A augmented version of plot_quanitfy that looks for true and false (spontaneous movement) interactions.
+    def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', z_score = True, grids = False): 
+        """ 
+        A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
+        A augmented version of plot_quanitfy that looks finds the average response to a stimulus and the average response
+        from a mock stimulus. Must contain the column 'has_interacted' with 1 = True stimulus, 2 = Mock stimulus.
         
-        Params:
-        @response_col = string, the name of the column in the data with the response per interaction, column data should be in boolean form
-        @facet_col = string, the name of the column in the metadata you wish to filter the data by
-        @facet_arg = list, if not None then a list of items from the column given in facet_col that you wish to be plotted
-        @facet_labels = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items are used
-        @title = string, a title for the plotted figure
-        @grids = bool, true/false whether the resulting figure should have grids
+            Args:
+                response_col = string, the name of the column in the data with the response per interaction, column data should be in boolean form
+                facet_col = string, the name of the column in the metadata you wish to filter the data by
+                facet_arg = list, if not None then a list of items from the column given in facet_col that you wish to be plotted
+                facet_labels = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items are used
+                title = string, a title for the plotted figure
+                z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
+                grids = bool, true/false whether the resulting figure should have grids
 
-        returns a plotly figure object and a pandas Dataframe with the plotted data
+        Returns:
+            fig (plotly.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
         """
 
         if response_col not in self.columns.tolist():
@@ -869,7 +1031,7 @@ class behavpy_plotly(behavpy_draw):
                 filtered = filtered.dropna(subset = [response_col])
                 gdf = filtered.analyse_column(column = response_col, function = 'mean')
 
-                mean, median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{response_col}_mean'].to_numpy())
+                mean, median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{response_col}_mean'].to_numpy(), zscore = zscore)
                 stats_dict[lab] = zlist
 
                 fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
@@ -904,7 +1066,7 @@ class behavpy_plotly(behavpy_draw):
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
         
         Returns:
-            returns a plotly figure object
+            fig (plotly.figure.Figure): Figure object of the plot.
         """
 
         plot_types = ['time', 'number']
@@ -1055,17 +1217,17 @@ class behavpy_plotly(behavpy_draw):
         """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
         Plot function to measure the response rate of flies to a stimulus from a mAGO or AGO experiment over the consecutive minutes active or inactive
 
-        Params:
-        @response_df = behavpy, behapy dataframe intially analysed by the stimulus_response loading function
-        @activity = string, the choice to display reponse rate for continuous bounts of inactivity, activity, or both. Choice one of ['inactive', 'active', 'both']
-        @mov_variable = string, the name of the column that contains the response per each interaction, should be boolean values
-        @bin = int, the value in seconds time should be binned to and then count consecutive bouts
-        @title = string, a title for the plotted figure
-        @grids = bool, true/false whether the resulting figure should have grids
+            Args:
+                @response_df = behavpy, behapy dataframe intially analysed by the stimulus_response loading function
+                @activity = string, the choice to display reponse rate for continuous bounts of inactivity, activity, or both. Choice one of ['inactive', 'active', 'both']
+                @mov_variable = string, the name of the column that contains the response per each interaction, should be boolean values
+                @bin = int, the value in seconds time should be binned to and then count consecutive bouts
+                @title = string, a title for the plotted figure
+                @grids = bool, true/false whether the resulting figure should have grids
 
-        returns a plotly figure object
-        """
-        
+        Returns:
+            fig (plotly.figure.Figure): Figure object of the plot.
+        """        
         activity_choice = ['inactive', 'active', 'both']
         if activity not in activity_choice:
             raise KeyError(f'activity argument must be one of {*activity_choice,}')
@@ -1218,7 +1380,7 @@ class behavpy_plotly(behavpy_draw):
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
         
         Returns:
-            returns a plotly figure object
+            fig (plotly.figure.Figure): Figure object of the plot.
         """
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
@@ -1328,6 +1490,277 @@ class behavpy_plotly(behavpy_draw):
         fig['layout']['xaxis']['range'] = [1, np.nanmax(max_t)]
 
         return fig
+
+    # Ploty Periodograms
+
+    def plot_periodogram_tile(self, labels = None, find_peaks = False, title = '', grids = False):
+        """ Create a tile plot of all the periodograms in a periodogram dataframe"""
+
+        self._validate()
+
+        if labels is not None:
+            if labels not in self.meta.columns.tolist():
+                raise AttributeError(f'{labels} is not a column in the metadata')
+            title_list = self.meta[labels].tolist() 
+        else:
+            title_list = self.meta.index.tolist()
+        
+        facet_arg = self.meta.index.tolist()
+
+        data = self.copy(deep = True)
+
+        # Find the peaks if True
+        if find_peaks is True:
+            if 'peak' not in data.columns.tolist():
+                data = data.find_peaks(num_peaks = 2)
+        if 'peak' in data.columns.tolist():
+            plot_peaks = True
+
+
+        root =  self._get_subplots(len(data.meta))
+
+        # make a square subplot domain
+        fig = make_subplots(rows=root, cols=root, shared_yaxes = True, shared_xaxes = True, vertical_spacing = 0.8/root, subplot_titles = title_list)
+        col_list = list(range(1, root+1)) * root
+        row_list = list([i] * root for i in range(1, root+1))
+        row_list = [item for sublist in row_list for item in sublist]
+        
+        for arg, col, row in zip(facet_arg, col_list, row_list): 
+
+            d = data.xmv('id', arg)
+
+            fig.append_trace(go.Scatter(
+                    showlegend = False,
+                    x = d['period'],
+                    y = d['power'],
+                    mode = 'lines',
+                    line = dict(
+                    shape = 'spline',
+                    color = 'blue'
+                ),
+                ), row = row, col = col)
+
+            fig.append_trace(go.Scatter(
+                    showlegend = False,
+                    x = d['period'],
+                    y = d['sig_threshold'],
+                    mode = 'lines',
+                    line = dict(
+                    shape = 'spline',
+                    color = 'red'
+                ),
+                ), row = row, col = col)
+
+            if plot_peaks is True:                
+                tdf = d[~d['peak'].isna()]
+                fig.append_trace(go.Scatter(
+                    showlegend = False,
+                    x = tdf['period'],
+                    y = tdf['power'],
+                    mode = 'markers',
+                    marker_symbol = 'x-dot',
+                    marker_color = 'gold',
+                    marker_size = 8
+                ), row = row, col = col)
+
+        tick_6 = np.arange(0,200*6,6)
+
+        fig.update_xaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            tickmode = 'array', 
+            tickvals = tick_6,
+            ticktext = tick_6,
+            range = [int(min(data['period'])), int(max(data['period']))],
+            ticks = 'outside',
+            showgrid = False
+        )
+
+        fig.update_yaxes(
+            zeroline = False,
+            color = 'black',
+            linecolor = 'black',
+            gridcolor = 'black',
+            range = [int(min(data['power'])), int(max(data['power']))],
+            ticks = 'outside',
+            showgrid = grids,
+        )
+        
+        fig.update_annotations(font_size=8)
+        fig['layout']['title'] = title
+        fig['layout']['plot_bgcolor'] = 'white'
+        fig.update_layout(height=150*root, width=250*6)
+
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = 'Period Frequency (Hours)',
+                    x = 0.5,
+                    xanchor = 'center',
+                    xref = 'paper',
+                    y = 0,
+                    yanchor = 'top',
+                    yref = 'paper',
+                    yshift = -30
+                )
+        fig.add_annotation(
+                    font = {'size': 18, 'color' : 'black'},
+                    showarrow = False,
+                    text = 'Power',
+                    x = 0,
+                    xanchor = 'left',
+                    xref = 'paper',
+                    y = 0.5,
+                    yanchor = 'middle',
+                    yref = 'paper',
+                    xshift =  -85,
+                    textangle =  -90
+        )
+
+        return fig
+
+    def plot_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
+        """ 
+        This function plot the averaged periodograms of the whole dataset or faceted by a metadata column.
+        This function should only be used after calling the periodogram function as it needs columns populated
+        from the analysis. 
+        Periodograms are a good way to quantify through signal analysis the ryhthmicity of your dataset.
+        
+            Args:
+                facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. Default is None.
+                facet_labels (list, optional): The labels to use for faceting. Default is None.
+                title (str, optional): The title of the plot. Default is an empty string.
+                grids (bool, optional): True/False to whether the resulting figure should have grids. Default is False.
+
+        Returns:
+            fig (plotly.figure.Figure): Figure object of the plot.
+        """
+        # check if the dataset has the needed columns from .periodogram()
+        self._validate()
+        # check the facet_col and args are in the dataset, populate if not
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # takes subset of data if requested
+        if facet_col is not None:
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            d_list = [self.copy(deep = True)]
+
+        col_list = self._get_colours(d_list)
+
+        power_var = 'power'
+        period_var = 'period'        
+        
+        max_var = []
+        y_range, dtick = self._check_boolean(list(self[power_var].dropna()))
+        if y_range is False:
+            max_var.append(1)
+        
+        fig = go.Figure() 
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Power', title = title, grid = grids)
+        tick_6 = np.arange(0,200*6,6)
+        self._plot_xlayout(fig, xrange = [min(self[period_var]), max(self[period_var])], tickvals = tick_6, ticktext = tick_6, xlabel = 'Period Frequency (Hours)')
+
+        for data, name, col in zip(d_list, facet_labels, col_list):
+
+            if len(data) == 0:
+                print(f'Group {name} has no values and cannot be plotted')
+                continue
+
+            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
+                col = 'grey'
+
+            upper, trace, lower, _, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = power_var, avg_win = False, wrap = False, day_len = False, light_off = False, canvas = 'plotly', t_col = period_var)
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
+
+        return fig
+    
+    def plot_quantify_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
+        """
+        Creates a boxplot and swarmplot of the peaks in circadian rythymn according to a computed periodogram.
+        At its core it is just a wrapper of plot_quantify, with some data augmented before being sent to the method.
+
+            Args:
+                facet_col (str, optional): The column name used for faceting. Defaults to None.
+                facet_arg (list, optional): List of values used for faceting. Defaults to None.
+                facet_labels (list, optional): List of labels used for faceting. Defaults to None.
+                title (str, optional): Title of the plot. Defaults to ''.
+                grids (bool, optional): If True, add a grid to the plot. Defaults to False.
+
+        Returns:
+            fig (plotly.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
+
+        Note:
+            This function uses seaborn to create a boxplot and swarmplot. It allows to facet the data by a specific column.
+            The function to be applied on the data is specified by the `fun` parameter.
+        """
+        # check it has the right periodogram columns
+        self._validate()
+        # name for plotting
+        power_var = 'period'
+        y_label = 'Period (Hours)'
+        # find period peaks for plotting
+        if 'peak' not in self.columns.tolist():
+            self = self.find_peaks(num_peaks = 1)
+        # filter by these plot
+        self = self[self['peak'] == 1]
+        self = self.rename(columns = {power_var : y_label})
+    
+        return self.plot_quantify(variable = y_label, facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, 
+                                    fun='max', title=title, grids=grids)
+
+    def plot_wavelet(self, mov_variable, sampling_rate = 15, scale = 156, wavelet_type = 'morl', t_col = 't', title = '', grids = False):
+        """ A formatter and plotter for a wavelet function.
+        Wavelet analysis is a windowed fourier transform that yields a two-dimensional plot, both period and time.
+        With this you can see how rhythmicity changes in an experimemnt overtime.
+
+            Args:
+                mov_variable (str):The name of the column containting the movement data
+                sampling_rate (int, optional): The time in minutes the data should be augmented to. Default is 15 minutes
+                scale (int optional): The scale facotr, the smaller the scale the more stretched the plot. Default is 156.
+                wavelet_type (str, optional): The wavelet family to be used to decompose the sequences. Default is 'morl'.
+                t_col (str, optional): The name of the time column in the DataFrame. Default is 't'.
+                title (str, optional): The title of the plot. Default is an empty string.
+
+        Returns:
+            A plotly figure
+        """
+        fun, avg_data = self._format_wavelet(mov_variable, sampling_rate, wavelet_type, t_col)
+
+        fig = go.Figure()
+        yticks = [1,2,4,6,12,24,36]
+        self._plot_ylayout(fig, yrange = np.log2([2,38]), tickvals = np.log2(yticks), ticktext = yticks, title = title, ylabel = 'Period Frequency (Hours)', grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = False, dtick = 12, xlabel = 'ZT (Hours)')
+
+        t, per, power = fun(avg_data, t_col = t_col, var = mov_variable, scale = scale, wavelet_type = wavelet_type)
+
+        trace = go.Contour(
+                z=power,
+                x=t, 
+                y=per,
+                contours=dict(
+                    start= -3,
+                    end= 3,
+                    size= 1,
+                    # type = 'constraint'
+                ),
+                colorscale='jet',
+                colorbar=dict(nticks=7, ticks='outside',
+                        ticklen=5, tickwidth=1,
+                        showticklabels=True,
+                        tickangle=0, tickfont_size=12)
+            )
+        fig.add_trace(trace)
+        # config = {'staticPlot': True} 
+        
+        return fig
+
 
     # HMM section
 
@@ -2142,7 +2575,7 @@ class behavpy_plotly(behavpy_draw):
         
         return fig, stats_df
 
-    def plot_response_hmm_bouts_response(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't'):
+    def plot_response_hmm_bouts(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't'):
         """ 
         Generates a plot showing the response rate per time stamp in each HMM bout. Y-axis is between 0-1 and the response rate, the x-axis is the time point
         in each state as per the time the dataset is binned to when decoded.
@@ -2189,273 +2622,6 @@ class behavpy_plotly(behavpy_draw):
             fig.add_trace(upper)
             fig.add_trace(trace) 
             fig.add_trace(lower)
-        
-        return fig
-
-    # Ploty Periodograms
-
-    def plot_periodogram_tile(self, labels = None, find_peaks = False, title = '', grids = False):
-        """ Create a tile plot of all the periodograms in a periodogram dataframe"""
-
-        self._validate()
-
-        if labels is not None:
-            if labels not in self.meta.columns.tolist():
-                raise AttributeError(f'{labels} is not a column in the metadata')
-            title_list = self.meta[labels].tolist() 
-        else:
-            title_list = self.meta.index.tolist()
-        
-        facet_arg = self.meta.index.tolist()
-
-        data = self.copy(deep = True)
-
-        # Find the peaks if True
-        if find_peaks is True:
-            if 'peak' not in data.columns.tolist():
-                data = data.find_peaks(num_peaks = 2)
-        if 'peak' in data.columns.tolist():
-            plot_peaks = True
-
-
-        root =  self._get_subplots(len(data.meta))
-
-        # make a square subplot domain
-        fig = make_subplots(rows=root, cols=root, shared_yaxes = True, shared_xaxes = True, vertical_spacing = 0.8/root, subplot_titles = title_list)
-        col_list = list(range(1, root+1)) * root
-        row_list = list([i] * root for i in range(1, root+1))
-        row_list = [item for sublist in row_list for item in sublist]
-        
-        for arg, col, row in zip(facet_arg, col_list, row_list): 
-
-            d = data.xmv('id', arg)
-
-            fig.append_trace(go.Scatter(
-                    showlegend = False,
-                    x = d['period'],
-                    y = d['power'],
-                    mode = 'lines',
-                    line = dict(
-                    shape = 'spline',
-                    color = 'blue'
-                ),
-                ), row = row, col = col)
-
-            fig.append_trace(go.Scatter(
-                    showlegend = False,
-                    x = d['period'],
-                    y = d['sig_threshold'],
-                    mode = 'lines',
-                    line = dict(
-                    shape = 'spline',
-                    color = 'red'
-                ),
-                ), row = row, col = col)
-
-            if plot_peaks is True:                
-                tdf = d[~d['peak'].isna()]
-                fig.append_trace(go.Scatter(
-                    showlegend = False,
-                    x = tdf['period'],
-                    y = tdf['power'],
-                    mode = 'markers',
-                    marker_symbol = 'x-dot',
-                    marker_color = 'gold',
-                    marker_size = 8
-                ), row = row, col = col)
-
-        tick_6 = np.arange(0,200*6,6)
-
-        fig.update_xaxes(
-            zeroline = False,
-            color = 'black',
-            linecolor = 'black',
-            gridcolor = 'black',
-            tickmode = 'array', 
-            tickvals = tick_6,
-            ticktext = tick_6,
-            range = [int(min(data['period'])), int(max(data['period']))],
-            ticks = 'outside',
-            showgrid = False
-        )
-
-        fig.update_yaxes(
-            zeroline = False,
-            color = 'black',
-            linecolor = 'black',
-            gridcolor = 'black',
-            range = [int(min(data['power'])), int(max(data['power']))],
-            ticks = 'outside',
-            showgrid = grids,
-        )
-        
-        fig.update_annotations(font_size=8)
-        fig['layout']['title'] = title
-        fig['layout']['plot_bgcolor'] = 'white'
-        fig.update_layout(height=150*root, width=250*6)
-
-        fig.add_annotation(
-                    font = {'size': 18, 'color' : 'black'},
-                    showarrow = False,
-                    text = 'Period Frequency (Hours)',
-                    x = 0.5,
-                    xanchor = 'center',
-                    xref = 'paper',
-                    y = 0,
-                    yanchor = 'top',
-                    yref = 'paper',
-                    yshift = -30
-                )
-        fig.add_annotation(
-                    font = {'size': 18, 'color' : 'black'},
-                    showarrow = False,
-                    text = 'Power',
-                    x = 0,
-                    xanchor = 'left',
-                    xref = 'paper',
-                    y = 0.5,
-                    yanchor = 'middle',
-                    yref = 'paper',
-                    xshift =  -85,
-                    textangle =  -90
-        )
-
-        return fig
-
-    def plot_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
-        """ This function plot the averaged periodograms of the whole dataset or faceted by a metadata column.
-        This function should only be used after calling the periodogram function as it needs columns populated
-        from the analysis. 
-        Periodograms are a good way to quantify through signal analysis the ryhthmicity of your dataset.
-        
-            Args:
-                facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
-                facet_arg (list, optional): The arguments to use for faceting. Default is None.
-                facet_labels (list, optional): The labels to use for faceting. Default is None.
-                title (str, optional): The title of the plot. Default is an empty string.
-                grids (bool, optional): True/False to whether the resulting figure should have grids. Default is False.
-
-        Returns:
-            A plotly.figure 
-        
-        """
-
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
-        d_list = []
-        if facet_col is not None:
-            for arg in facet_arg:
-                d_list.append(self.xmv(facet_col, arg))
-        else:
-            d_list = [self.copy(deep = True)]
-            facet_labels = ['']
-
-        col_list = self._get_colours(d_list)
-
-        variable = 'power'
-        max_var = []
-        y_range, dtick = self._check_boolean(list(self[variable].dropna()))
-        if y_range is False:
-            max_var.append(1)
-        
-        fig = go.Figure() 
-        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Power', title = title, grid = grids)
-        tick_6 = np.arange(0,200*6,6)
-        self._plot_xlayout(fig, xrange = [min(self['period']), max(self['period'])], tickvals = tick_6, ticktext = tick_6, xlabel = 'Period Frequency (Hours)')
-
-        for data, name, col in zip(d_list, facet_labels, col_list):
-
-            if len(data) == 0:
-                print(f'Group {name} has no values and cannot be plotted')
-                continue
-
-            if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
-                col = 'grey'
-
-            upper, trace, lower, _, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = 'power', avg_win = False, wrap = False, day_len = False, light_off = False, canvas = 'plotly', t_col = 'period')
-            fig.add_trace(upper)
-            fig.add_trace(trace) 
-            fig.add_trace(lower)
-
-        return fig
-    
-    def plot_quantify_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
-        """
-        Creates a boxplot and swarmplot of the peaks in circadian rythymn according to a computed periodogram.
-        At its core it is just a wrapper of plot_quantify, with some data augmented before being sent to the method.
-
-        Args:
-            facet_col (str, optional): The column name used for faceting. Defaults to None.
-            facet_arg (list, optional): List of values used for faceting. Defaults to None.
-            facet_labels (list, optional): List of labels used for faceting. Defaults to None.
-            title (str, optional): Title of the plot. Defaults to ''.
-            grids (bool, optional): If True, add a grid to the plot. Defaults to False.
-        Returns:
-            fig (plotly.figure.Figure): Figure object of the plot.
-            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
-
-        Note:
-            This function uses seaborn to create a boxplot and swarmplot. It allows to facet the data by a specific column.
-            The function to be applied on the data is specified by the `fun` parameter.
-        """
-        # check it has the right periodogram columns
-        self._validate()
-        # name for plotting
-        power_var = 'period'
-        y_label = 'Period (Hours)'
-        # find period peaks for plotting
-        if 'peak' not in self.columns.tolist():
-            self = self.find_peaks(num_peaks = 1)
-        # filter by these plot
-        self = self[self['peak'] == 1]
-        self = self.rename(columns = {power_var : y_label})
-    
-        return self.plot_quantify(variable = y_label, facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, 
-                                    fun='max', title=title, grids=grids)
-
-    def plot_wavelet(self, mov_variable, sampling_rate = 15, scale = 156, wavelet_type = 'morl', t_col = 't', title = '', grids = False):
-        """ A formatter and plotter for a wavelet function.
-        Wavelet analysis is a windowed fourier transform that yields a two-dimensional plot, both period and time.
-        With this you can see how rhythmicity changes in an experimemnt overtime.
-
-            Args:
-                mov_variable (str):The name of the column containting the movement data
-                sampling_rate (int, optional): The time in minutes the data should be augmented to. Default is 15 minutes
-                scale (int optional): The scale facotr, the smaller the scale the more stretched the plot. Default is 156.
-                wavelet_type (str, optional): The wavelet family to be used to decompose the sequences. Default is 'morl'.
-                t_col (str, optional): The name of the time column in the DataFrame. Default is 't'.
-                title (str, optional): The title of the plot. Default is an empty string.
-
-        Returns:
-            A plotly figure
-        """
-        fun, avg_data = self._format_wavelet(mov_variable, sampling_rate, wavelet_type, t_col)
-
-        fig = go.Figure()
-        yticks = [1,2,4,6,12,24,36]
-        self._plot_ylayout(fig, yrange = np.log2([2,38]), tickvals = np.log2(yticks), ticktext = yticks, title = title, ylabel = 'Period Frequency (Hours)', grid = grids)
-        self._plot_xlayout(fig, xrange = False, t0 = False, dtick = 12, xlabel = 'ZT (Hours)')
-
-        t, per, power = fun(avg_data, t_col = t_col, var = mov_variable, scale = scale, wavelet_type = wavelet_type)
-
-        trace = go.Contour(
-                z=power,
-                x=t, 
-                y=per,
-                contours=dict(
-                    start= -3,
-                    end= 3,
-                    size= 1,
-                    # type = 'constraint'
-                ),
-                colorscale='jet',
-                colorbar=dict(nticks=7, ticks='outside',
-                        ticklen=5, tickwidth=1,
-                        showticklabels=True,
-                        tickangle=0, tickfont_size=12)
-            )
-        fig.add_trace(trace)
-        # config = {'staticPlot': True} 
         
         return fig
 

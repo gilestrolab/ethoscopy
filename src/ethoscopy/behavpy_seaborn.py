@@ -36,8 +36,9 @@ class behavpy_seaborn(behavpy_draw):
             t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
             title (str, optional): The title of the plot. Default is an empty string.
             figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+        
         Returns:
-            matplotlib.figure.Figure: The created figure.
+            fig (matplotlib.figure.Figure): Figure object of the plot.
 
         Note:
             For accurate results, the data should be appropriately preprocessed to ensure that 't' values are
@@ -91,10 +92,11 @@ class behavpy_seaborn(behavpy_draw):
             title (str, optional): The title of the plot. Default is an empty string.
             grids (bool, optional): If True, horizontal grid lines will be displayed on the plot. Default is False.
             t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
+            col_list (list, optioanl): Provide a list of colours to override the previous chose palette. Default is None.
             figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
 
         Returns:
-            matplotlib.figure.Figure: The created figure.
+            fig (matplotlib.figure.Figure): Figure object of the plot.
 
         Note:
             For accurate results, the data should be appropriately preprocessed to ensure that 't' values are
@@ -196,6 +198,7 @@ class behavpy_seaborn(behavpy_draw):
             title (str, optional): Title of the plot. Defaults to ''.
             grids (bool, optional): If True, add a grid to the plot. Defaults to False.
             figsize (tuple, optional): Tuple specifying the figure size. Default is (0, 0) which auto-adjusts the size.
+
         Returns:
             fig (matplotlib.figure.Figure): Figure object of the plot.
             data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
@@ -299,24 +302,23 @@ class behavpy_seaborn(behavpy_draw):
 
     def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False, figsize=(0,0)):
         """
-        Plot day and night data.
+        A plot that shows the average of a varaible split between the day (lights on) and night (lights off).
 
-        Parameters:
-            variable (str): The variable to plot.
-            facet_col (str, optional): The column to facet the data by. Default is None.
-            facet_arg (list, optional): The list of values to use for faceting. Default is None.
-            facet_labels (list, optional): The list of labels for the facet_arg values. Default is None.
-            day_length (int, optional): The length of the day in hours. Default is 24.
-            lights_off (int, optional): The hour when lights are turned off. Default is 12.
-            title (str, optional): The title of the plot. Default is an empty string.
-            grids (bool, optional): Whether to display grid lines. Default is False.
-            figsize (tuple, optional): The size of the figure. Default is (0, 0) which auto-adjusts the size.
+            Args:
+                variable (str): The name of the column you wish to plot from your data. 
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                fun (str, optional): The average function that is applied to the data. Must be one of 'mean', 'median', 'count'.
+                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+                title (str, optional): The title of the plot. Default is an empty string.
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+                figsize (tuple, optional): The size of the figure. Default is (0, 0) which auto-adjusts the size.
 
         Returns:
-            tuple: A tuple containing the figure object and the processed data.
-
-        Raises:
-            None
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
 
         """
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
@@ -382,36 +384,23 @@ class behavpy_seaborn(behavpy_draw):
     def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, figsize=(0,0)):
         """
         Plots the anticipation scores for lights on and off periods, separately for each category defined by facet_col.
-        
-        This function calculates the anticipation scores for lights off and on conditions and then plots a seaborn boxplot.
+        This function calculates the anticipation scores for lights off and on conditions and then plots a seaborn boxplot. 
 
-        Parameters
-        ----------
-        mov_variable : str, optional
-            The movement variable to consider for calculating the anticipation score, by default 'moving'.
-        facet_col : str, optional
-            The column name to be used for faceting, by default None.
-        facet_arg : list, optional
-            List of arguments to consider for faceting, by default None.
-        facet_labels : list, optional
-            Labels for the facet arguments, by default None.
-        day_length : int, optional
-            The length of the day in hours, by default 24.
-        lights_off : int, optional
-            The time in hours when the lights are turned off, by default 12.
-        title : str, optional
-            The title of the plot, by default ''.
-        grids : bool, optional
-            If True, the grid is displayed on the plot, by default False.
-        figsize : tuple, optional
-            Tuple indicating the size of the figure (width, height), by default (0,0) which indicates automatic size.
+            Args:
+                mov_variable (str, optional): The name of the column you wish to plot from your data. 
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+                title (str, optional): The title of the plot. Default is an empty string.
+                z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
 
-        Returns
-        -------
-        tuple
-            A tuple containing the figure and the dataset used for plotting.
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
         """
-
 
         # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
@@ -696,7 +685,9 @@ class behavpy_seaborn(behavpy_draw):
 
     def survival_plot(self, facet_col = None, facet_arg = None, facet_labels = None, repeat = False, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't', figsize=(0,0)):
         """
-        Currently only returns a data frame that can be used with seaborn to plot whilst we go through the changes
+        Generates a plot of the percentage of animals in a group present / alive over the course of an experiment. This method does not calculate or remove flies that are dead. It is 
+        recommended you use the method .curate_dead_animals() to do this. If you have repeats, signposted in the metadata, call the column in the repeat parameter and the standard error
+        will be plotted.
         
             Args:
                 facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
@@ -710,9 +701,8 @@ class behavpy_seaborn(behavpy_draw):
                 t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
                 figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
         
-        returns:
-            A Pandas DataFrame with columns hour, survived, and label. It is formatted to fit a Seaborn plot
-
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
         """
 
         if repeat is True:
@@ -724,12 +714,13 @@ class behavpy_seaborn(behavpy_draw):
         # takes subset of data if requested
         if facet_col and facet_arg and repeat:
             data = self.xmv(facet_col, facet_arg).merge(self.meta[[facet_col, repeat]], left_index=True, right_index=True)
+            sur_df = data.groupby(facet_col, group_keys = False).apply(partial(self._time_alive, facet_col = facet_col, repeat = repeat, t_column = t_column))
         elif facet_col and facet_arg:
             data = self.xmv(facet_col, facet_arg).merge(self.meta[[facet_col]], left_index=True, right_index=True)
+            sur_df = data.groupby(facet_col, group_keys = False).apply(partial(self._time_alive, facet_col = facet_col, repeat = repeat, t_column = t_column))
         else:
             data = self.copy(deep=True)
-
-        sur_df = data.groupby(facet_col, group_keys = False).apply(partial(self._time_alive, facet_col = facet_col, repeat = repeat, t_column = t_column))
+            sur_df = self._time_alive(df = data, facet_col = facet_col, repeat = repeat, t_column = t_column)
 
         x_ticks = np.arange(0, sur_df['hour'].max() + day_length, day_length)
 
@@ -740,13 +731,17 @@ class behavpy_seaborn(behavpy_draw):
                         )
 
         fig, ax = plt.subplots(figsize=figsize)
+        palette = self._get_colours(facet_labels)
+        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
 
         # sns.set_style("ticks")
-        sns.lineplot(data = sur_df, x = "hour", y = "survived", errorbar = self.error, hue = 'label', hue_order = facet_arg, ax=ax, palette = self._palette) # add a style option too to differentiate multiple controls from exp
+        if facet_col is not None:
+            map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
+            sur_df['label'] = sur_df['label'].map(map_dict)
+            sns.lineplot(data = sur_df, x = "hour", y = "survived", hue = 'label', hue_order = facet_labels, ax=ax, palette = palette_dict, errorbar = self.error)
+        else:
+            sns.lineplot(data = sur_df, x = "hour", y = "survived", ax=ax, palette = palette, errorbar = self.error)
 
-        # x_major_locator=MultipleLocator(day_length) 
-        # ax=plt.gca() #ax is an instance of two coordinate axes
-        # ax.xaxis.set_major_locator(x_major_locator) #Set the main scale of the x-axis to a multiple of 1
         plt.xlim(np.min(x_ticks), np.max(x_ticks))
         plt.xticks(ticks=x_ticks, labels=x_ticks, rotation=0)
 
@@ -775,8 +770,25 @@ class behavpy_seaborn(behavpy_draw):
     # Response AGO/mAGO section
 
     def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize = (0,0)):
+        """ 
+        A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
+        A augmented version of plot_quanitfy that looks finds the average response to a stimulus and the average response
+        from a mock stimulus. Must contain the column 'has_interacted' with 1 = True stimulus, 2 = Mock stimulus.
+        
+            Args:
+                response_col = string, the name of the column in the data with the response per interaction, column data should be in boolean form
+                facet_col = string, the name of the column in the metadata you wish to filter the data by
+                facet_arg = list, if not None then a list of items from the column given in facet_col that you wish to be plotted
+                facet_labels = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items are used
+                title = string, a title for the plotted figure
+                grids = bool, true/false whether the resulting figure should have grids
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
         """
-        """
+
         if response_col not in self.columns.tolist():
             raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with stimulus_response')
 
@@ -812,7 +824,7 @@ class behavpy_seaborn(behavpy_draw):
         grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
 
         palette = self._get_colours(facet_labels)
-        # palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
 
         if facet_col:
 
@@ -842,6 +854,12 @@ class behavpy_seaborn(behavpy_draw):
             grouped_data = grouped_data.sort_values(facet_col)
 
         return fig, grouped_data
+
+    # def plot_habituation(self, plot_type, bin_time = 1, num_dtick = 10, response_col =  'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, display = 'continuous', secondary = True, title = '', t_column = 't', grids = False):
+
+    # def plot_response_over_bouts(self, response_df, activity = 'inactive', mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', t_column = 't', grids = False):
+
+    # def plot_response_overtime(self, bin_time = 1, wrapped = False, response_col = 'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, title = '', day_length = 24, lights_off = 12, secondary = True, t_column = 't', grids = False):
 
     # Seaborn Periodograms
 
@@ -902,7 +920,8 @@ class behavpy_seaborn(behavpy_draw):
         return fig
 
     def plot_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize=(0,0)):
-        """ This function plot the averaged periodograms of the whole dataset or faceted by a metadata column.
+        """ 
+        This function plot the averaged periodograms of the whole dataset or faceted by a metadata column.
         This function should only be used after calling the periodogram function as it needs columns populated
         from the analysis. 
         Periodograms are a good way to quantify through signal analysis the ryhthmicity of your dataset.
@@ -916,6 +935,8 @@ class behavpy_seaborn(behavpy_draw):
                 figsize (tuple, optional): The size of the figure to be plotted as (width, height). If set to 
                     (0,0), the size is determined automatically. Default is (0,0).
         
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
         """
 
         # check if the dataset has the needed columns from .periodogram()
@@ -979,6 +1000,7 @@ class behavpy_seaborn(behavpy_draw):
             title (str, optional): Title of the plot. Defaults to ''.
             grids (bool, optional): If True, add a grid to the plot. Defaults to False.
             figsize (tuple, optional): Tuple specifying the figure size. Default is (0, 0) which auto-adjusts the size.
+        
         Returns:
             fig (matplotlib.figure.Figure): Figure object of the plot.
             data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
@@ -1002,7 +1024,6 @@ class behavpy_seaborn(behavpy_draw):
         return self.plot_quantify(variable = y_label, facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, 
                                     fun='max', title=title, grids=grids, figsize=figsize)
 
-
     def plot_wavelet(self, mov_variable, sampling_rate = 15, scale = 156, wavelet_type = 'morl', t_col = 't', title = '', grids = False, figsize = (0,0)):
         """ A formatter and plotter for a wavelet function.
         Wavelet analysis is a windowed fourier transform that yields a two-dimensional plot, both period and time.
@@ -1017,7 +1038,7 @@ class behavpy_seaborn(behavpy_draw):
                 title (str, optional): The title of the plot. Default is an empty string.
                 
         Returns:
-            A matplotlib,figure
+            fig (matplotlib.figure.Figure): Figure object of the plot.
         """
         # format the data for the wavelet function
         fun, avg_data = self._format_wavelet(mov_variable, sampling_rate, wavelet_type, t_col)
@@ -1084,7 +1105,8 @@ class behavpy_seaborn(behavpy_draw):
                 figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
 
         Returns:
-            returns a Seaborn figure made by the .plot_overtime() method
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+                Generated by the .plot_overtime() method
         """
         assert isinstance(wrapped, bool)
 
@@ -1247,8 +1269,15 @@ class behavpy_seaborn(behavpy_draw):
             # takes subselection of df that contains the specified facet columns
             data = self.xmv(facet_col, facet_arg)
 
-        # Decode the whole dataset, count each state and the length of each individuals dataset to find the total percentage
-        decoded_data = data._hmm_decode(data, h=hmm, var=variable, b=t_bin, fun=func, t=t_column, return_type = 'table').set_index('id')
+        if facet_col is None:  # decode the whole dataset
+            decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+        else:
+            if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
+                decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+            else:
+                decoded_data = concat(*[self.__class__(self._hmm_decode(data.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
+
+        # Count each state and find its fraction
         grouped_data = decoded_data.groupby([decoded_data.index, 'state'], sort=False).agg({'bin' : 'count'})
         grouped_data = grouped_data.join(decoded_data.groupby('id', sort=False).agg({'previous_state':'count'}))
         grouped_data['Fraction of time in each State'] = grouped_data['bin'] / grouped_data['previous_state']
@@ -1267,9 +1296,9 @@ class behavpy_seaborn(behavpy_draw):
         if facet_col:
             # merge the facet_col column and replace with the labelsBinned
             grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels)
-            sns.stripplot(data=grouped_data, x='state', y='Fraction of time in each State', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge = True)
+            sns.stripplot(data=grouped_data, x='state', y='Fraction of time in each State', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge =  0.8 - 0.8 / len(facet_labels))
             sns.pointplot(data=grouped_data, x='state', y='Fraction of time in each State', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, estimator = 'mean',
-                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.4)
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge =  0.8 - 0.8 / len(facet_labels))
 
             # Customise legend values
             handles, _ = ax.get_legend_handles_labels()
@@ -1324,8 +1353,14 @@ class behavpy_seaborn(behavpy_draw):
             # takes subselection of df that contains the specified facet columns
             data = self.xmv(facet_col, facet_arg)
 
-        # Decode the whole dataset, count each state and the length of each individuals dataset to find the total percentage
-        decoded_data = data.get_hmm_raw(hmm, variable=variable, t_bin=t_bin, func=func, t_column=t_column)
+        if facet_col is None:  # decode the whole dataset
+            decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+        else:
+            if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
+                decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+            else:
+                decoded_data = concat(*[self.__class__(self._hmm_decode(data.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
+
         states = decoded_data.groupby(decoded_data.index, sort=False)['state'].apply(list)
 
         df_lengths = []
@@ -1352,9 +1387,9 @@ class behavpy_seaborn(behavpy_draw):
         if facet_col:
             # merge the facet_col column and replace with the labelsBinned
             grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels)
-            sns.stripplot(data=grouped_data, x='state', y='Length of state bout (mins)', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge = True)
+            sns.stripplot(data=grouped_data, x='state', y='Length of state bout (mins)', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge =  0.8 - 0.8 / len(facet_labels))
             sns.pointplot(data=grouped_data, x='state', y='Length of state bout (mins)', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, estimator = 'mean',
-                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.4)
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge =  0.8 - 0.8 / len(facet_labels))
 
             # Customise legend values
             handles, _ = ax.get_legend_handles_labels()
@@ -1414,8 +1449,15 @@ class behavpy_seaborn(behavpy_draw):
             # takes subselection of df that contains the specified facet columns
             data = self.xmv(facet_col, facet_arg)
 
-        # Decode the whole dataset, count each state and the length of each individuals dataset to find the total percentage
-        decoded_data = data.get_hmm_raw(hmm, variable=variable, t_bin=t_bin, func=func, t_column=t_column)
+        if facet_col is None:  # decode the whole dataset
+            decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+        else:
+            if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
+                decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+            else:
+                decoded_data = concat(*[self.__class__(self._hmm_decode(data.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
+
+
         states = decoded_data.groupby(decoded_data.index, sort=False)['state'].apply(list)
 
         df_lengths = []
@@ -1442,9 +1484,9 @@ class behavpy_seaborn(behavpy_draw):
         if facet_col:
             # merge the facet_col column and replace with the labelsBinned
             grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels)
-            sns.stripplot(data=grouped_data, x='state', y='Length of state bout (mins)', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge = True)
+            sns.stripplot(data=grouped_data, x='state', y='Length of state bout (mins)', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge =  0.8 - 0.8 / len(facet_labels))
             sns.boxplot(data=grouped_data, x='state', y='Length of state bout (mins)', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict,
-                            showcaps=False, showfliers=False, whiskerprops={'linewidth':0}, dodge = 0.4)
+                            showcaps=False, showfliers=False, whiskerprops={'linewidth':0}, dodge =  0.8 - 0.8 / len(facet_labels))
 
             # Customise legend values
             handles, _ = ax.get_legend_handles_labels()
@@ -1502,8 +1544,14 @@ class behavpy_seaborn(behavpy_draw):
             # takes subselection of df that contains the specified facet columns
             data = self.xmv(facet_col, facet_arg)
 
-        # Decode the whole dataset, count each state and the length of each individuals dataset to find the total percentage
-        decoded_data = data.get_hmm_raw(hmm, variable=variable, t_bin=t_bin, func=func, t_column=t_column)
+        if facet_col is None:  # decode the whole dataset
+            decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+        else:
+            if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
+                decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+            else:
+                decoded_data = concat(*[self.__class__(self._hmm_decode(data.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
+
         states = decoded_data.groupby(decoded_data.index, sort=False)['state'].apply(list)
 
         df_list = []
@@ -1529,9 +1577,9 @@ class behavpy_seaborn(behavpy_draw):
         if facet_col:
             # merge the facet_col column and replace with the labels 
             grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels)
-            sns.stripplot(data=grouped_data, x='state', y='Fraction of transitions into each state', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge = True)
+            sns.stripplot(data=grouped_data, x='state', y='Fraction of transitions into each state', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge =  0.8 - 0.8 / len(facet_labels))
             sns.pointplot(data=grouped_data, x='state', y='Fraction of transitions into each state', order=labels, hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, estimator = 'mean',
-                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.4)
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.8 - 0.8 / len(facet_labels))
 
             # Customise legend values
             handles, _ = ax.get_legend_handles_labels()
