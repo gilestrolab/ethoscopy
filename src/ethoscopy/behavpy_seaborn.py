@@ -855,9 +855,79 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig, grouped_data
 
-    # def plot_habituation(self, plot_type, bin_time = 1, num_dtick = 10, response_col =  'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, display = 'continuous', secondary = True, title = '', t_column = 't', grids = False):
+    def plot_response_over_activity(self, mov_df, activity, variable = 'moving', response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, x_limit = 30, t_bin = 60, title = '', t_column = 't', grids = False, figsize = (0,0)):
+        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
+            Generate a plot which shows how the response response rate changes over time inactive or active.
 
-    # def plot_response_over_bouts(self, response_df, activity = 'inactive', mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', t_column = 't', grids = False):
+            Args:
+                mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
+                activity (str): A choice to display reponse rate for continuous bounts of inactivity, activity, or both. Choice one of ['inactive', 'active', 'both']
+                variable (str, optional): The name of column in the movement dataframe that has the boolean movement values. Default is 'moving'.
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 30 would be 30 minutes or less if t_bin is 60. Default 30.
+                t_bin (int, optional): The time in seconds to bin the time series data to. Default is 60.
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'.
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+            
+        Notes:
+            This plotting method can show the response rate for both active and inactive bouts for the 
+                whole dataset, but only for one or the other if you want to facet by a column, i.e. facet_col.
+            This function must be called on a behavpy dataframe that is populated with data loaded with the stimulus_response
+                analysing function.
+        """        
+
+        # call the internal method to curate and analse data, see behavpy_draw
+        grouped_data, h_order, palette_dict, act_choice = self._internal_bout_activity(mov_df=mov_df, activity=activity, variable=variable, response_col=response_col, 
+                                    facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, x_limit=x_limit, t_bin=t_bin, t_column=t_column)
+                                    
+        fig, ax = plt.subplots(figsize=figsize)
+        plt.ylim([0, 1.01])
+        plt.xlim([1, x_limit])
+        x_ticks = np.arange(1, x_limit+1, 1, dtype = int)
+
+        if figsize == (0,0):
+            figsize = ( 6 + 1/2 * len(x_ticks), 
+                        8
+                        )
+            fig.set_size_inches(figsize)
+
+        for hue in h_order:
+
+            sub_df = grouped_data[grouped_data['label_col'] == hue]
+            # if no data, such as no false stimuli, skip the plotting
+            if len(sub_df) == 0:
+                continue
+
+            plt.plot(sub_df["previous_activity_count"], sub_df["mean"], label = hue, color = palette_dict[hue])
+            plt.fill_between(
+            sub_df["previous_activity_count"], sub_df["y_min"], sub_df["y_max"], alpha = 0.25, color = palette_dict[hue]
+            )
+
+        # # Customise legend values
+        handles, _ = ax.get_legend_handles_labels()
+        ax.legend(handles=handles)#, labels=h_order)
+
+        plt.xticks(ticks=x_ticks, labels=x_ticks, rotation=0)
+        plt.xlabel(f'Consecutive minutes in behavioural bout ({act_choice})')
+        plt.ylabel("Response rate")
+
+        plt.title(title)
+
+        if grids:
+            plt.grid(axis='y')
+
+        return fig
+
+
+    # def plot_habituation(self, plot_type, bin_time = 1, num_dtick = 10, response_col =  'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, display = 'continuous', secondary = True, title = '', t_column = 't', grids = False):
 
     # def plot_response_overtime(self, bin_time = 1, wrapped = False, response_col = 'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, title = '', day_length = 24, lights_off = 12, secondary = True, t_column = 't', grids = False):
 
@@ -1707,6 +1777,7 @@ class behavpy_seaborn(behavpy_draw):
                 mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
                 hmm (hmmlearn.hmm.CategoricalHMM): The accompanying trained hmmlearn model to decode the data.
                 variable (str, optional): The name of column that is to be decoded by the HMM. Default is 'moving'.
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
                 labels (list[string], optional): A list of the names of the decoded states, must match the number of states in the given model and colours. 
                     If left as None and the model is 4 states the names will be ['Deep Sleep', 'Light Sleep', 'Quiet Awake', 'Active Awake'], else it will be ['state_0', 'state_1', ...]. Default is None
                 colours (list[string], optional): A list of colours for the decoded states, must match length of labels. If left as None and the 
@@ -1723,7 +1794,7 @@ class behavpy_seaborn(behavpy_draw):
 
 
         Returns:
-            returns a Seaborn figure object
+            fig (matplotlib.figure.Figure): Figure object of the plot.
 
         Note:
             This function must be called on a behavpy dataframe that is populated by data loaded in with the stimulus_response
@@ -1737,7 +1808,7 @@ class behavpy_seaborn(behavpy_draw):
         facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
         plot_column = f'{response_col}_mean'
 
-        grouped_data, palette_dict, h_order = self.hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, colours = colours, 
+        grouped_data, palette_dict, h_order = self._hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, colours = colours, 
                                             facet_col = facet_col, facet_arg = facet_arg, facet_labels = facet_labels, t_bin = t_bin, func = func, t_column = t_column)
         # (0,0) means automatic size
         if figsize == (0,0):
@@ -1769,7 +1840,7 @@ class behavpy_seaborn(behavpy_draw):
         grouped_data.drop(columns=['previous_state'], inplace=True)
         return fig, grouped_data
 
-    def plot_response_hmm_bouts_response(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't', figsize = (0,0)):
+    def plot_response_over_hmm_bouts(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't', figsize = (0,0)):
         """ 
         Generates a plot showing the response rate per time stamp in each HMM bout. Y-axis is between 0-1 and the response rate, the x-axis is the time point
         in each state as per the time the dataset is binned to when decoded.
@@ -1783,29 +1854,37 @@ class behavpy_seaborn(behavpy_draw):
                     If left as None and the model is 4 states the names will be ['Deep Sleep', 'Light Sleep', 'Quiet Awake', 'Active Awake']. Default is None
                 colours (list[string], optional): A list of colours for the decoded states, must match length of labels. If left as None and the 
                     model is 4 states the colours will be ['Dark Blue', 'Light Blue', 'Red', 'Dark Red']. Default is None.
-                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 30 would be 30 minutes or less. Default 30.
+                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 30 would be 30 minutes or less if t_bin is 60. Default 30.
                 t_bin (int, optional): The time in seconds to bin the time series data to. Default is 60,
                 func (str, optional): When binning the time what function to apply the variable column. Default is 'max'.
                 title (str, optional): The title of the plot. Default is an empty string.
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
                 figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
 
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+
         Note:
-            This function must be called on a behavpy dataframe that is populated by data loaded in with the stimulus_response
-            analysing function.
+            This function must be called on a behavpy dataframe that is populated with data loaded with the stimulus_response
+                analysing function.
         """
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
 
-        grouped_data, palette_dict, h_order = self.hmm_bouts_response(mov_df=mov_df, hmm=hmm, variable=variable, response_col=response_col, labels=labels, colours=colours, 
+        grouped_data, palette_dict, h_order = self._bouts_response(mov_df=mov_df, hmm=hmm, variable=variable, response_col=response_col, labels=labels, colours=colours, 
                                             x_limit=x_limit, t_bin=t_bin, func=func, t_column=t_column)
-
-        if figsize == (0,0):
-            figsize = (4*(x_limit / 2), 8)
 
         fig, ax = plt.subplots(figsize=figsize)
         plt.ylim([0, 1.01])
         plt.xlim([1, x_limit])
+        x_ticks = np.arange(1, x_limit+1, 1, dtype = int)
+
+        if figsize == (0,0):
+            figsize = ( 6 + 1/2 * x_limit, 
+                        8
+                        )
+            fig.set_size_inches(figsize)
 
         for hue in h_order:
 

@@ -433,7 +433,7 @@ class behavpy_draw(behavpy_core):
         
         return ant_df
 
-    def hmm_response(self, mov_df, hmm, variable, response_col, labels, colours, facet_col, facet_arg, t_bin, facet_labels, func, t_column):
+    def _hmm_response(self, mov_df, hmm, variable, response_col, labels, colours, facet_col, facet_arg, t_bin, facet_labels, func, t_column):
 
         data_summary = {
             "%s_mean" % response_col : (response_col, 'mean'),
@@ -502,57 +502,106 @@ class behavpy_draw(behavpy_core):
 
         return grouped_data, palette_dict, h_order
     
-    def hmm_bouts_response(self, mov_df, hmm, variable, response_col, labels, colours, x_limit, t_bin, func, t_column):
+    def _bouts_response(self, mov_df, hmm, variable, response_col, labels, colours, x_limit, t_bin, func, t_col):
 
         data_summary = {
             "mean" : (response_col, 'mean'),
             "count" : (response_col, 'count'),
             "ci" : (response_col, bootstrap),
             }
-
-        # copy and decode the dataset
         data = self.copy(deep=True)
-        mdata = mov_df
-        mdata = self.__class__(self._hmm_decode(mdata, hmm, t_bin, variable, func, t_column, return_type='table'), mdata.meta, check=True)
+        mdata = mov_df.copy(deep=True)
+
+        if hmm is not False:
+            # copy and decode the dataset
+            mdata = self.__class__(self._hmm_decode(mdata, hmm, t_bin, variable, func, t_col, return_type='table'), mdata.meta, check=True)
+            var, newT, m_var_1, m_var_2 = 'state', 'bin', 'moving', 'previous_moving'
+        else:
+            mdata = mdata.bin_time(variable, t_bin, function = func, t_column = t_col)
+            var, newT, m_var_1, m_var_2 = f'{variable}_{func}', f'{t_col}_bin', 'activity_count', 'previous_activity_count'
 
         # take the states and time per specimen and find the runs of states
-        st_gb = mdata.groupby('id')['state'].apply(np.array)
-        time_gb = mdata.groupby('id')['bin'].apply(np.array)
+        st_gb = mdata.groupby('id')[var].apply(np.array)
+        time_gb = mdata.groupby('id')[newT].apply(np.array)
         all_runs = []
         for m, t, ids in zip(st_gb, time_gb, st_gb.index):
             spec_run = self._find_runs(m, t, ids)
+
             all_runs.append(spec_run)
         # take the arrays and make a dataframe for merging
         counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
-        # _find_runs returns the column of interest as 'moving', so changing them for better clarity 
-        counted_df.rename(columns = {'moving' : 'state', 'previous_moving' : 'previous_state'}, inplace = True)
 
         # change the time column to reflect the timing of counted_df
-        data['t'] = data['interaction_t'].map(lambda t:  t_bin * floor(t / t_bin))
+        data[t_col] = data['interaction_t'].map(lambda t:  t_bin * floor(t / t_bin))
         data.reset_index(inplace = True)
 
         # merge the two dataframes on the id and time column and check the response is in the same time bin or the next
-        merged = pd.merge(counted_df, data, how = 'inner', on = ['id', 't'])
+        merged = pd.merge(counted_df, data, how = 'inner', on = ['id', t_col])
         merged['t_check'] = merged.interaction_t + merged.t_rel
         merged['t_check'] = merged['t_check'].map(lambda t:  t_bin * floor(t / t_bin))
-        merged['previous_state'] = np.where(merged['t_check'] > merged['t'], merged['state'], merged['previous_state'])
+        # change both previous if the interaction to stimulus happens in the next time bin
+        merged['previous_activity_count'] = np.where(merged['t_check'] > merged[t_col], merged['activity_count'], merged['previous_activity_count'])
+        merged['previous_moving'] = np.where(merged['t_check'] > merged[t_col], merged['moving'], merged['previous_moving'])
         merged = merged[merged['previous_activity_count'] <= x_limit]
-
-        grouped_data = merged.groupby(['previous_state', 'previous_activity_count', 'has_interacted']).agg(**data_summary)
+        merged.dropna(subset = ['previous_moving', 'previous_activity_count'], inplace=True)
+        merged['previous_activity_count'] = merged['previous_activity_count'].astype(int)
+        # groupby the columns of interest, and find the mean and bootstrapped 95% CIs
+        grouped_data = merged.groupby(['previous_moving', 'previous_activity_count', 'has_interacted']).agg(**data_summary)
         grouped_data = grouped_data.reset_index()
         grouped_data[['y_max', 'y_min']] = pd.DataFrame(grouped_data['ci'].tolist(), index =  grouped_data.index)
         grouped_data.drop('ci', axis = 1, inplace = True)
-        grouped_data['state'] = grouped_data['previous_state']
-
+        grouped_data['moving'] = grouped_data['previous_moving']
         map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov.'}
         grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
+
+        if hmm is False:
+            grouped_data['facet_col'] = [labels] * len(grouped_data)
+            return grouped_data
+
         hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
         grouped_data['state'] = grouped_data['state'].map(hmm_dict)
         grouped_data['label_col'] =  grouped_data['state'] + " " + grouped_data['has_interacted']
-
+        # create the order of plotting and double the colours to assign grey to false stimuli
         h_order = [f'{lab} {ty}' for lab in labels for ty in ["Spon. Mov.", "True Stimulus"]]
-        palette = colours
-        palette = [x for xs in [[col, col] for col in palette] for x in xs]
+        palette = [x for xs in [[col, col] for col in colours] for x in xs]
         palette_dict = {name : self._check_grey(name, palette[c], response = True)[1] for c, name in enumerate(h_order)} # change to grey if control
 
         return grouped_data, palette_dict, h_order
+
+    def _internal_bout_activity(self, mov_df, activity, variable, response_col, facet_col, facet_arg, facet_labels, x_limit, t_bin, t_column):
+        """ The beginning code for plot_response_over_activity for both plotly and seaborn """
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        activity_choice = {'inactive' : 0, 'active' : 1, 'both' : (0, 1)}
+        if activity not in activity_choice.keys():
+            raise KeyError(f'activity argument must be one of {*activity_choice.keys(),}')
+        if activity == 'both' and facet_col is not None:
+            print('When plotting both inactive and active runs you can not use facet_col. Reverted to None')
+            facet_col, facet_arg, facet_labels = None, [None], ['inactive', 'active']
+
+        if facet_col and facet_arg:
+            rdata = self.xmv(facet_col, facet_arg)
+            # iterate over the filters and call the analysing function
+            dfs = [rdata._bouts_response(mov_df=mov_df.xmv(facet_col, arg), hmm = False,
+                    variable=variable, response_col=response_col, labels=lab, colours=[], 
+                    x_limit=x_limit, t_bin=t_bin, func='max', t_col=t_column) for arg, lab in zip(facet_arg, facet_labels)]
+            grouped_data = pd.concat(dfs)
+        else:
+            grouped_data = self._bouts_response(mov_df=mov_df, hmm = False,
+                                                variable=variable, response_col=response_col, labels=[], colours=[], 
+                                                x_limit=x_limit, t_bin=t_bin, func='max', t_col=t_column)
+            inverse_dict = {v: k for k, v in activity_choice.items()}
+            grouped_data['facet_col'] = grouped_data['previous_moving'].map(inverse_dict)
+
+        # Get colours and labels, syncing them together and replacing False Stimuli with a grey colour
+        grouped_data['label_col'] =  grouped_data['facet_col'] + " " + grouped_data['has_interacted']
+        palette = [x for xs in [[col, col] for col in self._get_colours(facet_labels)] for x in xs]
+        h_order = [f'{lab} {ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]
+        palette_dict = {name : self._check_grey(name, palette[c], response = True)[1] for c, name in enumerate(h_order)} # change to grey if control
+
+        # If not both filter the dataset
+        if isinstance(activity_choice[activity], int):
+            grouped_data = grouped_data[grouped_data['previous_moving'] == activity_choice[activity]]
+        
+        return grouped_data, h_order, palette_dict, activity_choice[activity]

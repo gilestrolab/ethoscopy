@@ -1213,149 +1213,55 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
 
-    def plot_response_over_bouts(self, response_df, activity = 'inactive', mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, title = '', t_column = 't', grids = False):
+    def plot_response_over_activity(self, mov_df, activity, variable = 'moving', response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, x_limit = 30, t_bin = 60, title = '', t_column = 't', grids = False):
         """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
-        Plot function to measure the response rate of flies to a stimulus from a mAGO or AGO experiment over the consecutive minutes active or inactive
+            Generate a plot which shows how the response response rate changes over time inactive or active.
 
             Args:
-                @response_df = behavpy, behapy dataframe intially analysed by the stimulus_response loading function
-                @activity = string, the choice to display reponse rate for continuous bounts of inactivity, activity, or both. Choice one of ['inactive', 'active', 'both']
-                @mov_variable = string, the name of the column that contains the response per each interaction, should be boolean values
-                @bin = int, the value in seconds time should be binned to and then count consecutive bouts
-                @title = string, a title for the plotted figure
-                @grids = bool, true/false whether the resulting figure should have grids
+                mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
+                activity (str): A choice to display reponse rate for continuous bounts of inactivity, activity, or both. Choice one of ['inactive', 'active', 'both']
+                variable (str, optional): The name of column in the movement dataframe that has the boolean movement values. Default is 'moving'.
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 30 would be 30 minutes or less if t_bin is 60. Default 30.
+                t_bin (int, optional): The time in seconds to bin the time series data to. Default is 60.
+                title (str, optional): The title of the plot. Default is an empty string.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'.
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
 
         Returns:
             fig (plotly.figure.Figure): Figure object of the plot.
+            
+        Notes:
+            This plotting method can show the response rate for both active and inactive bouts for the 
+                whole dataset, but only for one or the other if you want to facet by a column, i.e. facet_col.
+            This function must be called on a behavpy dataframe that is populated with data loaded with the stimulus_response
+                analysing function.
         """        
-        activity_choice = ['inactive', 'active', 'both']
-        if activity not in activity_choice:
-            raise KeyError(f'activity argument must be one of {*activity_choice,}')
 
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+        # call the internal method to curate and analse data, see behavpy_draw
+        grouped_data, h_order, palette_dict, act_choice = self._internal_bout_activity(mov_df=mov_df, activity=activity, variable=variable, response_col=response_col, 
+                                    facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, x_limit=x_limit, t_bin=t_bin, t_column=t_column)
 
-        if facet_col is not None:
-            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
-        else:
-            d_list = [self.copy(deep = True)]
-            facet_labels = ['']
-
-        if activity == 'inactive':
-            col_list = [['blue'], ['black']]
-            plot_list = ['0_1', '0_2']
-            label_list = ['Inactive', 'Inactive Spon. Mov.']
-        elif activity == 'active':
-            col_list = [['red'], ['grey']]
-            plot_list = ['1_1', '1_2']
-            label_list = ['Active', 'Active Spon. Mov.']
-        else:
-            col_list = [['blue'], ['black'], ['red'], ['grey']]
-            plot_list = ['0_1', '0_2', '1_1', '1_2']
-            label_list = ['Inactive', 'Inactive Spon. Mov.', 'Active', 'Active Spon. Mov.']
-
-        if facet_col is not None:
-            
-            if activity == 'both':
-                start_colours, end_colours = self._adjust_colours([col[0] for col in col_list])
-                col_list = []
-                colours_dict = {'start' : start_colours, 'end' : end_colours}
-                for c in range(len(plot_list)):
-                    start_color = colours_dict.get('start')[c]
-                    end_color = colours_dict.get('end')[c]
-                    N = len(facet_arg)
-                    col_list.append([x.hex for x in list(Color(start_color).range_to(Color(end_color), N))])
-            
-            else:
-                col_list = self._get_colours(facet_arg)#[tuple(np.array(eval(col[3:])) / 255) for col in ]
-                end_colours, start_colours = self._adjust_colours(col_list)
-                col_list = [start_colours, end_colours]
-
+        # create and style plot
         fig = go.Figure() 
-        y_range, dtick = self._check_boolean(list(self[mov_variable]))
+        self._plot_ylayout(fig, yrange = [0, 1], t0 = 0, dtick = 0.2, ylabel = 'Response Rate', title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = 1, xlabel = f'Consecutive minutes in behavioural bout ({act_choice})')
 
-        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Response Rate', title = title, grid = grids)
-        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = 1, xlabel = f'Consecutive Minutes {activity}')
+        for hue in h_order:
 
-        def activity_count(df, puff_df):
-            puff_df = puff_df.copy(deep=True)
-            df[mov_variable] = np.where(df[mov_variable] == True, 1, 0)
-            bin_df = df.bin_time(mov_variable, 60, function = 'max', t_column = t_column)
-            mov_gb = bin_df.groupby(bin_df.index)[f'{mov_variable}_max'].apply(np.array)
-            time_gb = bin_df.groupby(bin_df.index)[f'{t_column}_bin'].apply(np.array)
-            zip_gb = zip(mov_gb, time_gb, mov_gb.index)
-
-            all_runs = []
-
-            for m, t, id in zip_gb:
-                spec_run = self._find_runs(m, t, id)
-                all_runs.append(spec_run)
-
-            counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
-
-            # puff_df[t_column] = puff_df['interaction_t'] % 86400
-            puff_df[t_column] = puff_df['interaction_t'].map(lambda t:  60 * floor(t / 60))
-            puff_df.reset_index(inplace = True)
-
-            merged = pd.merge(counted_df, puff_df, how = 'inner', on = ['id', t_column])
-            merged['t_check'] = merged.interaction_t + merged.t_rel
-            merged['t_check'] = merged['t_check'].map(lambda t:  60 * floor(t / 60))            
-            merged['previous_activity_count'] = np.where(merged['t_check'] > merged[t_column], merged['activity_count'], merged['previous_activity_count'])
-            merged.dropna(subset = ['previous_activity_count'], inplace=True)
-
-            interaction_dict = {}
-            for i in [0, 1]:
-                first_filter = merged[merged['previous_moving'] == i]
-                if len(first_filter) == 0:
-                    for q in [1, 2]:
-                        interaction_dict[f'{i}_{int(q)}'] = None
-                        continue
-                # for q in list(set(first_filter.has_interacted)):
-                for q in [1, 2]:
-                    second_filter = first_filter[first_filter['has_interacted'] == q]
-                    if len(second_filter) == 0:
-                        interaction_dict[f'{i}_{int(q)}'] = None
-                        continue
-                    big_gb = second_filter.groupby('previous_activity_count').agg(**{
-                                    'mean' : ('has_responded', 'mean'),
-                                    'count' : ('has_responded', 'count'),
-                                    'ci' : ('has_responded', bootstrap)
-                        })
-                    big_gb[['y_max', 'y_min']] = pd.DataFrame(big_gb['ci'].tolist(), index =  big_gb.index)
-                    big_gb.drop('ci', axis = 1, inplace = True)
-                    big_gb.reset_index(inplace=True)
-                    big_gb['previous_activity_count'] = big_gb['previous_activity_count'].astype(int)
-                    interaction_dict[f'{i}_{int(q)}'] = big_gb
-
-            return interaction_dict
-
-        max_x = []
-
-        for c1, (data, name) in enumerate(zip(d_list, facet_labels)):
-
-            if len(data) == 0:
-                print(f'Group {name} has no values and cannot be plotted')
+            sub_df = grouped_data[grouped_data['label_col'] == hue]
+            # if no data, such as no false stimuli, skip the plotting
+            if len(sub_df) == 0:
                 continue
+
+            upper, trace, lower = self._plot_line(df = sub_df, x_col = 'previous_activity_count', name = hue, marker_col = palette_dict[hue])
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
         
-            response_dict = activity_count(data, response_df)
-
-            for c2, (plot, label) in enumerate(zip(plot_list, label_list)):
-
-                col = col_list[c2][c1]
-                small_data = response_dict[plot]
-
-                label = f'{name} {label}'
-                if small_data is None:
-                    print(f'Group {label} has no values and cannot be plotted')
-                    continue
-
-                max_x.append(np.nanmax(small_data['previous_activity_count']))
-                upper, trace, lower = self._plot_line(df = small_data, x_col = 'previous_activity_count', name = label, marker_col = col)
-                fig.add_trace(upper)
-                fig.add_trace(trace) 
-                fig.add_trace(lower)
-                
-        fig['layout']['xaxis']['range'] = [1, np.nanmax(max_x)]
-
         return fig
 
     def plot_response_overtime(self, bin_time = 1, wrapped = False, response_col = 'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, title = '', day_length = 24, lights_off = 12, secondary = True, t_column = 't', grids = False):
@@ -2529,7 +2435,7 @@ class behavpy_plotly(behavpy_draw):
         facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
         plot_column = f'{response_col}_mean'
 
-        grouped_data, palette_dict, h_order = self.hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, colours = colours, 
+        grouped_data, palette_dict, h_order = self._hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, colours = colours, 
                                             facet_col = facet_col, facet_arg = facet_arg, facet_labels = facet_labels, t_bin = t_bin, func = func, t_column = t_column)
         if facet_col is None:
             facet_col = ''
@@ -2575,11 +2481,10 @@ class behavpy_plotly(behavpy_draw):
         
         return fig, stats_df
 
-    def plot_response_hmm_bouts(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't'):
+    def plot_response_over_hmm_bouts(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't'):
         """ 
         Generates a plot showing the response rate per time stamp in each HMM bout. Y-axis is between 0-1 and the response rate, the x-axis is the time point
         in each state as per the time the dataset is binned to when decoded.
-        This plot is generated through the plotly package.
 
             Args:
                 mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
@@ -2590,24 +2495,24 @@ class behavpy_plotly(behavpy_draw):
                     If left as None and the model is 4 states the names will be ['Deep Sleep', 'Light Sleep', 'Quiet Awake', 'Active Awake']. Default is None
                 colours (list[string], optional): A list of colours for the decoded states, must match length of labels. If left as None and the 
                     model is 4 states the colours will be ['Dark Blue', 'Light Blue', 'Red', 'Dark Red']. Default is None.
-                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 30 would be 30 minutes or less. Default 30.
+                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 30 would be 30 minutes or less if t_bin is 60. Default 30.
                 t_bin (int, optional): The time in seconds to bin the time series data to. Default is 60,
                 func (str, optional): When binning the time what function to apply the variable column. Default is 'max'.
                 title (str, optional): The title of the plot. Default is an empty string.
-                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
                 t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
 
         Returns:
-            returns a plotly figure object
+            fig (plotly.figure.Figure): Figure object of the plot.
 
         Note:
-            This function must be called on a behavpy dataframe that is populated by data loaded in with the stimulus_response
-            analysing function.
+            This function must be called on a behavpy dataframe that is populated with data loaded with the stimulus_response
+                analysing function.
         """
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
 
-        grouped_data, palette_dict, h_order = self.hmm_bouts_response(mov_df=mov_df, hmm=hmm, variable=variable, response_col=response_col, labels=labels, colours=colours, 
+        grouped_data, palette_dict, h_order = self._bouts_response(mov_df=mov_df, hmm=hmm, variable=variable, response_col=response_col, labels=labels, colours=colours, 
                                             x_limit=x_limit, t_bin=t_bin, func=func, t_column=t_column)
 
         # create and style plot
