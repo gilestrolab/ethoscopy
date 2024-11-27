@@ -125,7 +125,7 @@ class behavpy_core(pd.DataFrame):
                 string_args = []
                 for i in f_arg:
                     if i not in self.meta[f_col].tolist():
-                        print(self.meta[f_col].tolist())
+                        # print(set(self.meta[f_col].tolist()))
                         raise KeyError(f'Argument "{i}" is not in the meta column {f_col}')
                     string_args.append(str(i))
                 if f_lab is None:

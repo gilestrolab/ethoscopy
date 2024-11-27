@@ -126,13 +126,13 @@ class behavpy_seaborn(behavpy_draw):
 
             gb_df, t_min, t_max, col, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = variable, 
                                                                                     avg_win = int((avg_window * 60)/self[t_column].diff().median()), wrap = wrapped, day_len = day_length, 
-                                                                                    light_off= lights_off, t_col = t_column, canvas = 'seaborn')
+                                                                                    light_off= lights_off, t_col = t_column)
             if gb_df is None:
                 continue
 
-            plt.plot(gb_df["t"], gb_df["mean"], label=name, color=col)
+            plt.plot(gb_df[t_column], gb_df["mean"], label=name, color=col)
             plt.fill_between(
-            gb_df["t"], gb_df["y_min"], gb_df["y_max"], alpha = 0.25, color=col
+            gb_df[t_column], gb_df["y_min"], gb_df["y_max"], alpha = 0.25, color=col
             )
 
             min_t.append(t_min)
@@ -929,7 +929,40 @@ class behavpy_seaborn(behavpy_draw):
 
     # def plot_habituation(self, plot_type, bin_time = 1, num_dtick = 10, response_col =  'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, display = 'continuous', secondary = True, title = '', t_column = 't', grids = False):
 
-    # def plot_response_overtime(self, bin_time = 1, wrapped = False, response_col = 'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, title = '', day_length = 24, lights_off = 12, secondary = True, t_column = 't', grids = False):
+    def plot_response_overtime(self, t_bin_hours = 1, wrapped = False, response_col = 'has_responded', interaction_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, func = 'mean', t_column = 't', title = '', grids = False, figsize = (0,0)):
+        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
+            Generate a plot which shows how the response response rate changes over a day (wrapped) or the course of the experiment.
+            If false stimuli are given and represented in the interaction_id column, they will be plotted seperately.
+
+            Args:
+                t_bin_hours (int, optional): The number of hours you want to bin the response rate to per specimen. Default is 1 (hour).
+                wrapped (bool, optional): If true the data is augmented to represent one day, combining data of the same time on consequtive days.
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
+                interaction_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+                func (str, optional): When binning the time what function to apply the variable column. Default is 'max'.                
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'.
+                title (str, optional): The title of the plot. Default is an empty string.
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+            
+        Notes:
+            This function must be called on a behavpy dataframe that is populated with data loaded with the stimulus_response
+                analysing function. Contain columns such as 'has_responded' and 'has_interacted'.
+        """  
+        df, h_order, palette = self._internal_plot_response_overtime(t_bin_hours=t_bin_hours, response_col=response_col, interaction_id_col=interaction_id_col, 
+                                                facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, func=func, t_column=t_column)
+
+        return df.plot_overtime(variable='Response Rate', wrapped=wrapped, facet_col='new_facet', facet_arg=h_order, facet_labels=h_order,
+                                avg_window=5, day_length=day_length, lights_off=lights_off, title=title, grids=grids, t_column='t_bin', 
+                                col_list = palette, figsize=(0,0))
 
     # Seaborn Periodograms
 
@@ -966,7 +999,7 @@ class behavpy_seaborn(behavpy_draw):
             figsize = (2*len(facet_arg), 4*root)
         # create the subplot
         fig, axes = plt.subplots(root, root, figsize=figsize)
-        # print(data)
+
         for subplot, col, row, label in zip(facet_arg, col_list, row_list, title_list): 
             # filter by index for subplot
             dt = data.loc[data.index == subplot]
@@ -1029,7 +1062,7 @@ class behavpy_seaborn(behavpy_draw):
 
             gb_df, t_min, t_max, col, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = power_var, 
                                                                                     avg_win = False, wrap = False, day_len = False, 
-                                                                                    light_off= False, t_col = period_var, canvas = 'seaborn')
+                                                                                    light_off= False, t_col = period_var)
             if gb_df is None:
                 continue
 

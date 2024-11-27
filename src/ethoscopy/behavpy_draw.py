@@ -14,6 +14,7 @@ import PIL
 
 from ethoscopy.behavpy_core import behavpy_core
 from ethoscopy.misc.bootstrap_CI import bootstrap
+from ethoscopy.misc.static_functions import concat
 
 class behavpy_draw(behavpy_core):
     """
@@ -526,7 +527,6 @@ class behavpy_draw(behavpy_core):
         all_runs = []
         for m, t, ids in zip(st_gb, time_gb, st_gb.index):
             spec_run = self._find_runs(m, t, ids)
-
             all_runs.append(spec_run)
         # take the arrays and make a dataframe for merging
         counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
@@ -605,3 +605,65 @@ class behavpy_draw(behavpy_core):
             grouped_data = grouped_data[grouped_data['previous_moving'] == activity_choice[activity]]
         
         return grouped_data, h_order, palette_dict, activity_choice[activity]
+
+    def _internal_plot_response_overtime(self, t_bin_hours, response_col, interaction_id_col, facet_col, facet_arg, facet_labels, func, t_column):
+        """ An internal method to curate and analyse the data for both plotly and seaborn versions of plot_response_overtime """
+
+        data_summary = {
+            "mean" : (f'{response_col}_{func}', 'mean'),
+            "count" : (f'{response_col}_{func}', 'count')
+            }
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg)
+            h_order = [f'{lab}-{ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]
+        else:
+            data = self.copy(deep=True)
+
+        if len(set(data[interaction_id_col])) == 1: # if only stimulus type in the dataset
+            # get colours
+            palette = self._get_colours(facet_labels)
+            # find the average response per hour per specimen
+            data = data.bin_time(response_col, (60*60) * t_bin_hours, function = 'mean', t_column = t_column)
+            if facet_col and facet_arg:
+                data.meta['new_facet'] = data.meta[facet_col] + '-' + 'True Stimulus'
+            else:
+                data.meta['new_facet'] = '-True Stimulus'
+            h_order = [f'{lab}-{ty}' for lab in facet_labels for ty in ["True Stimulus"]]
+
+        else:
+            # get colours and double them to change to grey later
+            palette = [x for xs in [[col, col] for col in self._get_colours(facet_labels)] for x in xs]
+
+            # filter into two stimulus and find average per hour per specimen
+            data1 = self.__class__(data[data[interaction_id_col]==1].bin_time(response_col, (60*60) * t_bin_hours, function = func, t_column = t_column), data.meta)
+            data2 = data[data[interaction_id_col]==2].bin_time(response_col, (60*60) * t_bin_hours, function = func, t_column = t_column)
+
+            # change the id of the false stimuli
+            meta2 = data.meta.copy(deep=True)
+            meta2['ref_id'] = meta2.index + '_2'
+            map_dict = meta2[['ref_id']].to_dict()['ref_id']
+            meta2.rename(columns={'ref_id' : 'id'}, inplace=True)
+            meta2.index = meta2['id']
+            data2.index = data2.index.map(map_dict)
+
+            if facet_col and facet_arg:
+                data1.meta['new_facet'] = data1.meta[facet_col] + '-' + 'True Stimulus'
+                meta2['new_facet'] = meta2[facet_col] + '-' + 'Spon. Mov.'  
+            else:
+                data1.meta['new_facet'] = '-True Stimulus'
+                meta2['new_facet'] = '-Spon. Mov.'  
+            h_order = [f'{lab}-{ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]
+
+            data = concat(data1, self.__class__(data2, meta2))
+
+        palette= [self._check_grey(name, palette[c], response = True)[1] for c, name in enumerate(h_order)] # change to grey if control
+
+        grouped_data = data.groupby([data.index, 't_bin']).agg(**data_summary).reset_index(level=1)
+        df = self.__class__(grouped_data, data.meta)
+        df.rename(columns={'mean' : 'Response Rate'}, inplace=True)
+
+        return df, h_order, palette

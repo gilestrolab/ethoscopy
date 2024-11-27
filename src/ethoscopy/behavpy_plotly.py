@@ -315,7 +315,7 @@ class behavpy_plotly(behavpy_draw):
         for data, name, col in zip(d_list, facet_labels, col_list):
             upper, trace, lower, t_min, t_max = self._generate_overtime_plot(data = data, name = name, col = col, var = variable, 
                                                                                     avg_win = int((avg_window * 60)/self[t_column].diff().median()), wrap = wrapped, day_len = day_length, 
-                                                                                    light_off= lights_off, t_col = t_column, canvas = 'plotly')
+                                                                                    light_off= lights_off, t_col = t_column)
             if upper is None:
                 continue
 
@@ -1264,138 +1264,61 @@ class behavpy_plotly(behavpy_draw):
         
         return fig
 
-    def plot_response_overtime(self, bin_time = 1, wrapped = False, response_col = 'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, title = '', day_length = 24, lights_off = 12, secondary = True, t_column = 't', grids = False):
-        """
-        A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response. 
-        A plot to view the response rate to a puff over the time of day. Interactions will be binned to a users input (default is 1 hour) and plotted over a ZT hours x-axis. The plot can be the full length of an experiment or wrapped to a singular day.
+    def plot_response_overtime(self, t_bin_hours = 1, wrapped = False, response_col = 'has_responded', interaction_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, func = 'mean', t_column = 't', title = '', grids = False):
+        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
+            Generate a plot which shows how the response response rate changes over a day (wrapped) or the course of the experiment.
+            If false stimuli are given and represented in the interaction_id column, they will be plotted seperately.
 
             Args:
-                bin_time (int, optional): The number of hours you want to bin the response rate to, default is 1 (hour).
+                t_bin_hours (int, optional): The number of hours you want to bin the response rate to per specimen. Default is 1 (hour).
                 wrapped (bool, optional): If true the data is augmented to represent one day, combining data of the same time on consequtive days.
-                num_dtick (int, optional): The dtick for the x-axis (the number spacing) for when plot_type 'number is chosen. Default is 10.
-                response_col (str, optional): The name of the column that contains the boolean response data.
-                int_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
+                interaction_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
                 facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
                 facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
                 facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
-                title (str, optional): The title of the plot. Default is an empty string.
                 day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
                 lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
-                sceondary (bool, optional): If true then a secondary y-axis is added that contains either the puff cound for 'time' or percentage of flies recieving the puff in 'number'. Default is True
-                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                func (str, optional): When binning the time what function to apply the variable column. Default is 'max'.                
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'.
+                title (str, optional): The title of the plot. Default is an empty string.
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
-        
+
         Returns:
             fig (plotly.figure.Figure): Figure object of the plot.
-        """
+            
+        Notes:
+            This function must be called on a behavpy dataframe that is populated with data loaded with the stimulus_response
+                analysing function. Contain columns such as 'has_responded' and 'has_interacted'.
+        """  
+        df, h_order, palette = self._internal_plot_response_overtime(t_bin_hours=t_bin_hours, response_col=response_col, interaction_id_col=interaction_id_col, 
+                                                facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, func=func, t_column=t_column)
 
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+        return df.plot_overtime(variable='Response Rate', wrapped=wrapped, facet_col='new_facet', facet_arg=h_order, facet_labels=h_order,
+                                avg_window=5, day_length=day_length, lights_off=lights_off, title=title, grids=grids, t_column='t_bin', 
+                                col_list = palette)
 
-        if facet_col is not None:
-            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
-        else:
-            d_list = [self.copy(deep = True)]
-            facet_labels = ['']
+    # Possibly add the puff count on the secondary access in the future 
 
-        fig = make_subplots(specs=[[{ "secondary_y" : True}]])
+    #         fig = make_subplots(specs=[[{ "secondary_y" : True}]])
+    #         self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = False, ylabel = 'Puff Count', title = title, secondary = True, xdomain = 'x1', grid = grids)
 
-        max_var = []
-        y_range, dtick = self._check_boolean(list(self[response_col]))
-        if y_range is not False:
-            max_var.append(1)
-
-        if secondary is False:
-            fig = go.Figure() 
-        else:
-            fig = make_subplots(specs=[[{ "secondary_y" : True}]])
-            self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = False, ylabel = 'Puff Count', title = title, secondary = True, xdomain = 'x1', grid = grids)
-
-        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Response Rate', title = title, secondary = False, grid = grids)
-
-        col_list = self._get_colours(d_list)
-        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = day_length/4, xlabel = 'ZT (Hours)')
-
-        def get_hourly_response(data, time_window_length):
-            data['bin_time'] = data[t_column].map(lambda t: time_window_length * floor(t / time_window_length)) 
-            gb = data.groupby(['bin_time', 'has_interacted']).agg(**{
-                        'response_rate' : (response_col, 'mean'),
-                        'puff_count' : (response_col, 'count')
-
-            })
-            return gb
-
-        max_x = []
-        min_t = []
-        max_t = []
-
-        for data, name, col in zip(d_list, facet_labels, col_list):
-
-            if len(data) == 0:
-                print(f'Group {name} has no values and cannot be plotted')
-                continue
-
-            if wrapped is True:
-                data[t_column] = data[t_column] % (60*60*day_length)
-            data[t_column] = data[t_column] / (60*60)
-                
-            min_t.append(int(lights_off * floor(data[t_column].min() / lights_off)))
-            max_t.append(int(12 * ceil(data[t_column].max() / 12)) )
-
-            if len(list(set(data.has_interacted))) == 1:
-                loop_itr = list(set(data.has_interacted))
-            else:
-                loop_itr = [2, 1]
-
-            for q in loop_itr:
-
-                if q == 1:
-                    qcol = col
-                    lab = name
-                elif q == 2:
-                    qcol = 'grey'
-                    lab = f'{name} Spon. Mov'
-                
-                tdf = data[data[int_id_col] == q].reset_index()
-                rdf = tdf.groupby('id', group_keys = False).apply(partial(get_hourly_response, time_window_length = bin_time))
-
-                filt_gb = rdf.groupby('bin_time').agg(**{
-                            'mean' : ('response_rate', 'mean'),
-                            'count' : ('puff_count', 'sum'),
-                            'ci' : ('response_rate', bootstrap)
-                })
-                filt_gb[['y_max', 'y_min']] = pd.DataFrame(filt_gb['ci'].tolist(), index =  filt_gb.index)
-                filt_gb.drop('ci', axis = 1, inplace = True)
-                filt_gb.reset_index(inplace = True)
-
-                max_x.append(np.nanmax(filt_gb['bin_time']))
-
-                upper, trace, lower = self._plot_line(df = filt_gb, x_col = 'bin_time', name = lab, marker_col = qcol)
-                fig.add_trace(upper)
-                fig.add_trace(trace) 
-                fig.add_trace(lower)
-
-                if secondary is True:
-                    fig.add_trace(
-                    go.Scatter(
-                        legendgroup = lab,
-                        x = filt_gb['bin_time'],
-                        y = filt_gb['count'],
-                        mode = 'lines',
-                        name = f'{lab} count',
-                        line = dict(
-                            dash = 'longdashdot',
-                            shape = 'spline',
-                            color = qcol
-                            ),
-                        ),
-                    secondary_y = True
-                    )
-        # Light-Dark annotaion bars
-        bar_shapes, min_bar = circadian_bars(np.nanmin(min_t), np.nanmax(max_t), max_y = np.nanmax(max_var), day_length = day_length, lights_off = lights_off)
-        fig.update_layout(shapes=list(bar_shapes.values()))
-        fig['layout']['xaxis']['range'] = [1, np.nanmax(max_t)]
-
-        return fig
+    #             if secondary is True:
+    #                 fig.add_trace(
+    #                 go.Scatter(
+    #                     legendgroup = lab,
+    #                     x = filt_gb['bin_time'],
+    #                     y = filt_gb['count'],
+    #                     mode = 'lines',
+    #                     name = f'{lab} count',
+    #                     line = dict(
+    #                         dash = 'longdashdot',
+    #                         shape = 'spline',
+    #                         color = qcol
+    #                         ),
+    #                     ),
+    #                 secondary_y = True
+    #                 )
 
     # Ploty Periodograms
 
@@ -1579,7 +1502,7 @@ class behavpy_plotly(behavpy_draw):
             if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower():
                 col = 'grey'
 
-            upper, trace, lower, _, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = power_var, avg_win = False, wrap = False, day_len = False, light_off = False, canvas = 'plotly', t_col = period_var)
+            upper, trace, lower, _, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = power_var, avg_win = False, wrap = False, day_len = False, light_off = False, t_col = period_var)
             fig.add_trace(upper)
             fig.add_trace(trace) 
             fig.add_trace(lower)
