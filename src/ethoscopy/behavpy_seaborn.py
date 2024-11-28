@@ -926,13 +926,92 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig
 
+    def plot_habituation(self, plot_type, t_bin_hours = 1, response_col = 'has_responded', interaction_id_col = 'has_interacted', stim_count = True, facet_col = None, facet_arg = None, facet_labels = None,  x_limit = False, t_column = 't', title = '', grids = False, figsize = (0,0)):
+        """ Generate a plot which shows how the response response rate changes over either repeated stimuli (number) or hours post first stimuli (time).
+            If false stimuli are given and represented in the interaction_id column, they will be plotted seperately in grey.
 
-    # def plot_habituation(self, plot_type, bin_time = 1, num_dtick = 10, response_col =  'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, display = 'continuous', secondary = True, title = '', t_column = 't', grids = False):
+            Args:
+                plot_type (str): The type of habituation being plotter, either 'number' (the response rate for every stimuli in sequence, i.e. 1st, 2nd, 3rd, ..)
+                    or 'time' (the response rate per hour(s) post the first stimuli.)
+                t_bin_hours (int, optional): The number of hours you want to bin the response rate to. Default is 1 (hour).
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
+                interaction_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
+                stim_count (bool, optional): If True statistics for the stimuli are plotted on the secondary y_axis. For 'number' the percentage of specimen revieving
+                    that number of stimuli is plotted. If 'time', the raw number of stimuli per hour(s) is plotted. False Stimuli are discarded. Default is True
+                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 50 would be 50 stimuli for 'number'. Default False.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'.
+                title (str, optional): The title of the plot. Default is an empty string.
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+            
+        Notes:
+            This function must be called on a behavpy dataframe that is populated with data loaded with the stimulus_response
+                analysing function. Contain columns such as 'has_responded' and 'has_interacted'.
+        """  
+
+        seconday_label = {'time' : f'No. of stimulus (absolute)', 'number' : '% recieving stimulus'}
+
+        # call the internal method to curate and analse data, see behavpy_draw
+        grouped_data, h_order, palette_dict, x_max, plot_choice = self._internal_plot_habituation(plot_type=plot_type, t_bin_hours=t_bin_hours, response_col=response_col, interaction_id_col=interaction_id_col,
+                                                                                        facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, x_limit=x_limit, t_column=t_column)
+
+        fig, ax = plt.subplots(figsize=figsize)
+        if stim_count is True:
+            ax2 = ax.twinx()  
+        ax.set_ylim([0, 1.01])
+        plt.xlim([0, x_max])
+
+        if figsize == (0,0):
+            figsize = ( 6 + 1/2 * x_max, 
+                        8
+                        )
+            fig.set_size_inches(figsize)
+
+        for hue in h_order:
+            sub_df = grouped_data[grouped_data.index == hue]
+            ax.plot(sub_df[plot_choice], sub_df["mean"], label = hue, color = palette_dict[hue])
+            ax.fill_between(
+            sub_df[plot_choice], sub_df["y_min"], sub_df["y_max"], alpha = 0.25, color = palette_dict[hue]
+            )
+
+            if stim_count is True and '-True Stimulus' in hue:
+                if plot_type == 'number':
+                    sub_df['count'] = (sub_df['count'] / np.max(sub_df['count'])) * 100
+                else:
+                    sub_df['count'] = sub_df['stim_count']
+
+                ax2.plot(sub_df[plot_choice], sub_df["count"], label = hue, color = palette_dict[hue], linestyle='--')
+
+        # Customise legend values
+        handles, _ = ax.get_legend_handles_labels()
+        ax.legend(handles=handles, labels=h_order)
+
+        ax.set_xlabel(plot_choice)
+        ax.set_ylabel("Response Rate")
+
+        if stim_count is True:
+            if plot_type == 'time':
+                ax2.autoscale(axis = 'y')
+            else:
+                ax2.set_ylim([0,101])
+            ax2.set_ylabel(seconday_label[plot_type])
+
+        plt.title(title)
+
+        if grids:
+            ax.grid(axis='y')
+
+        return fig
 
     def plot_response_overtime(self, t_bin_hours = 1, wrapped = False, response_col = 'has_responded', interaction_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, func = 'mean', t_column = 't', title = '', grids = False, figsize = (0,0)):
-        """ A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
-            Generate a plot which shows how the response response rate changes over a day (wrapped) or the course of the experiment.
-            If false stimuli are given and represented in the interaction_id column, they will be plotted seperately.
+        """ Generate a plot which shows how the response response rate changes over a day (wrapped) or the course of the experiment.
+            If false stimuli are given and represented in the interaction_id column, they will be plotted seperately in grey.
 
             Args:
                 t_bin_hours (int, optional): The number of hours you want to bin the response rate to per specimen. Default is 1 (hour).
@@ -1712,7 +1791,8 @@ class behavpy_seaborn(behavpy_draw):
                 colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
                     It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
                 numm_plots (int, optional): The number of plots as rows in a subplot. If a list of HMMs is given num_plots will be that length. Default is 5.
-                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
+                t_bin (int, optional): The time in seconds you want totype, t_bin_hours = 1, response_col =  'has_responded', interaction_id_col = 'has_interacted', stim_count = False, facet_col = None, facet_arg = None, facet_labels = None,  x_limit = False, t_column = 't', title = '', grids = False, figsize = (0,0)):
+ bin the movement data to. Default is 60 or 1 minute
                 func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
                 title (str, optional): The title of the plot. Default is an empty string.
                 t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'

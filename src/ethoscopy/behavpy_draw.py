@@ -7,6 +7,7 @@ from plotly.express.colors import qualitative
 from colour import Color
 from math import sqrt, floor, ceil
 from scipy.stats import zscore
+from functools import partial
 
 #fig to img
 import io
@@ -560,9 +561,9 @@ class behavpy_draw(behavpy_core):
 
         hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
         grouped_data['state'] = grouped_data['state'].map(hmm_dict)
-        grouped_data['label_col'] =  grouped_data['state'] + " " + grouped_data['has_interacted']
+        grouped_data['label_col'] =  grouped_data['state'] + "-" + grouped_data['has_interacted']
         # create the order of plotting and double the colours to assign grey to false stimuli
-        h_order = [f'{lab} {ty}' for lab in labels for ty in ["Spon. Mov.", "True Stimulus"]]
+        h_order = [f'{lab}-{ty}' for lab in labels for ty in ["Spon. Mov.", "True Stimulus"]]
         palette = [x for xs in [[col, col] for col in colours] for x in xs]
         palette_dict = {name : self._check_grey(name, palette[c], response = True)[1] for c, name in enumerate(h_order)} # change to grey if control
 
@@ -619,24 +620,25 @@ class behavpy_draw(behavpy_core):
         # takes subset of data if requested
         if facet_col and facet_arg:
             data = self.xmv(facet_col, facet_arg)
-            h_order = [f'{lab}-{ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]
         else:
             data = self.copy(deep=True)
 
         if len(set(data[interaction_id_col])) == 1: # if only stimulus type in the dataset
             # get colours
             palette = self._get_colours(facet_labels)
+            h_order = [f'{lab}-{ty}' for lab in facet_labels for ty in ["True Stimulus"]]
+
             # find the average response per hour per specimen
             data = data.bin_time(response_col, (60*60) * t_bin_hours, function = 'mean', t_column = t_column)
             if facet_col and facet_arg:
                 data.meta['new_facet'] = data.meta[facet_col] + '-' + 'True Stimulus'
             else:
                 data.meta['new_facet'] = '-True Stimulus'
-            h_order = [f'{lab}-{ty}' for lab in facet_labels for ty in ["True Stimulus"]]
 
         else:
             # get colours and double them to change to grey later
             palette = [x for xs in [[col, col] for col in self._get_colours(facet_labels)] for x in xs]
+            h_order = [f'{lab}-{ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]
 
             # filter into two stimulus and find average per hour per specimen
             data1 = self.__class__(data[data[interaction_id_col]==1].bin_time(response_col, (60*60) * t_bin_hours, function = func, t_column = t_column), data.meta)
@@ -656,7 +658,6 @@ class behavpy_draw(behavpy_core):
             else:
                 data1.meta['new_facet'] = '-True Stimulus'
                 meta2['new_facet'] = '-Spon. Mov.'  
-            h_order = [f'{lab}-{ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]
 
             data = concat(data1, self.__class__(data2, meta2))
 
@@ -667,3 +668,76 @@ class behavpy_draw(behavpy_core):
         df.rename(columns={'mean' : 'Response Rate'}, inplace=True)
 
         return df, h_order, palette
+
+    def _internal_plot_habituation(self, plot_type, t_bin_hours, response_col, interaction_id_col, facet_col, facet_arg, facet_labels, x_limit, t_column): 
+        """ An internal method to curate and analyse the data for both plotly and seaborn versions of plot_habituation """
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        plot_choice = {'time' : f'Hours {t_bin_hours} post first stimulus', 'number' : 'Stimulus number post first'}
+
+        if plot_type not in plot_choice.keys():
+            raise KeyError(f'activity argument must be one of {*plot_choice.keys(),}')
+
+        data_summary = {
+            "mean" : (response_col, 'mean'),
+            "count" : (response_col, 'count'),
+            'ci' : (response_col, bootstrap),
+            "stim_count" : ('stim_count', 'sum')
+            }
+        map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov.'}
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg)
+        else:
+            data = self.copy(deep=True)
+
+        def get_response(int_data, ptype, time_window_length, resp_col, t_col):
+            # bin the responses per amount of hours given and find the mean per specimen
+            if ptype == 'time':
+                hour_secs = time_window_length * 60 * 60
+                int_data[plot_choice[plot_type]] = int_data[t_col].map(lambda t: hour_secs * floor(t / hour_secs)) 
+                min_hour = int_data[plot_choice[plot_type]].min()
+                int_data[plot_choice[plot_type]] = (int_data[plot_choice[plot_type]] - min_hour) / hour_secs
+                gb = int_data.groupby(plot_choice[plot_type]).agg(**{
+                            'has_responded' : (resp_col, 'mean'),
+                            'stim_count' : (resp_col, 'count')
+                })
+                return gb
+            # Sort the responses by time, assign int according to place in the list, return as dataframe 
+            elif ptype == 'number':
+                int_data = int_data.sort_values(t_col)
+                int_data['n_stim'] = list(range(1, len(int_data)+1))
+                return pd.DataFrame(data = {'has_responded' : int_data['has_responded'].tolist(), plot_choice[plot_type] : int_data['n_stim'].tolist(), 
+                                'stim_count' : [1] * len(int_data)}).set_index(plot_choice[plot_type])
+
+        grouped_data = data.groupby([data.index, interaction_id_col]).apply(partial(get_response, ptype=plot_type, time_window_length=t_bin_hours,
+                                                        resp_col=response_col, t_col=t_column), include_groups=False)
+        grouped_data = self.__class__(grouped_data.reset_index().set_index('id'), data.meta, check=True)
+
+        # reduce dataset to the maximum value of the True stimulus (reduces computation time)
+        if x_limit is False:
+            x_max = np.nanmax(grouped_data[grouped_data[interaction_id_col] == 1][plot_choice[plot_type]])
+        else:
+            x_max = x_limit
+            
+        grouped_data = grouped_data[grouped_data[plot_choice[plot_type]] <= x_max]
+        # map stim names and create column to facet by
+        grouped_data[interaction_id_col] = grouped_data[interaction_id_col].map(map_dict)
+        if facet_col:
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
+            grouped_data[facet_col] = grouped_data[facet_col].astype(str) + "-" + grouped_data[interaction_id_col]
+        else:
+            facet_col = 'stim_type'
+            grouped_data[facet_col] = "-" + grouped_data[interaction_id_col]
+
+        grouped_final = grouped_data.groupby([facet_col, plot_choice[plot_type]]).agg(**data_summary).reset_index(level=1)
+        grouped_final[['y_max', 'y_min']] = pd.DataFrame(grouped_final['ci'].tolist(), index =  grouped_final.index)
+        grouped_final.drop('ci', axis = 1, inplace = True)
+
+        palette = [x for xs in [[col, col] for col in self._get_colours(facet_labels)] for x in xs]
+        h_order = [f'{lab}-{ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]
+        palette_dict = {name : self._check_grey(name, palette[c], response = True)[1] for c, name in enumerate(h_order)} # change to grey if control
+
+        return grouped_final, h_order, palette_dict, x_max, plot_choice[plot_type]

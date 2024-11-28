@@ -1044,173 +1044,83 @@ class behavpy_plotly(behavpy_draw):
 
         return fig, stats_df
 
-    def plot_habituation(self, plot_type, bin_time = 1, num_dtick = 10, response_col =  'has_responded', int_id_col = 'has_interacted', facet_col = None, facet_arg = None, facet_labels = None, display = 'continuous', secondary = True, title = '', t_column = 't', grids = False):
-        """
-        A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response. 
-        A plot to view the response rate to a puff of odour over either the hours (as binned) post the first puff or the consecutive puffs post the first puff.
-        This plot is mostly used to understand if the specimen is becoming habituated to the stimulus, it is agnostic of the time of day of the puff or the activity of the specimen.
+    def plot_habituation(self, plot_type, t_bin_hours = 1, response_col = 'has_responded', interaction_id_col = 'has_interacted', stim_count = True, facet_col = None, facet_arg = None, facet_labels = None,  x_limit = False, t_column = 't', title = '', grids = False):
+        """ Generate a plot which shows how the response response rate changes over either repeated stimuli (number) or hours post first stimuli (time).
+            If false stimuli are given and represented in the interaction_id column, they will be plotted seperately in grey.
 
             Args:
-                plot_type (str): Must be either 'time' or 'number'. If time then a plot of the response rate post first puff, if number then the response rate per puff as numbered post first puff.
-                bin_time (int, optional): Only needed if plot_type is 'time'. The number of hours you want to bin the response rate to, default is 1 (hour).
-                num_dtick (int, optional): The dtick for the x-axis (the number spacing) for when plot_type 'number is chosen. Default is 10.
-                response_col (str, optional): The name of the column that contains the boolean response data.
-                int_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
+                plot_type (str): The type of habituation being plotter, either 'number' (the response rate for every stimuli in sequence, i.e. 1st, 2nd, 3rd, ..)
+                    or 'time' (the response rate per hour(s) post the first stimuli.)
+                t_bin_hours (int, optional): The number of hours you want to bin the response rate to. Default is 1 (hour).
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
+                interaction_id_col (str, optional): The name of the column conataining the id for the interaction type, which should be either 1 (true interaction) or 2 (false interaction). Default 'has_interacted'.
+                stim_count (bool, optional): If True statistics for the stimuli are plotted on the secondary y_axis. For 'number' the percentage of specimen revieving
+                    that number of stimuli is plotted. If 'time', the raw number of stimuli per hour(s) is plotted. False Stimuli are discarded. Default is True
                 facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
                 facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
                 facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
-                display (str, optional): Choose between two options to display the data, 'continuous' (default) that is a continuous splined line along the x-axis with 95% CI, 'boxplots' is the same data but boxplots with the mean and 95 CI. Default is 'continuous'.
-                secondary (bool, optional): If true then a secondary y-axis is added that contains either the puff cound for 'time' or percentage of flies recieving the puff in 'number'. Default is True
+                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 50 would be 50 stimuli for 'number'. Default False.
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'.
                 title (str, optional): The title of the plot. Default is an empty string.
-                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
-        
+
         Returns:
             fig (plotly.figure.Figure): Figure object of the plot.
-        """
+            
+        Notes:
+            This function must be called on a behavpy dataframe that is populated with data loaded with the stimulus_response
+                analysing function. Contain columns such as 'has_responded' and 'has_interacted'.
+        """  
 
-        plot_types = ['time', 'number']
-        if plot_type not in plot_types:
-            raise KeyError(f'plot_type argument must be one of {*plot_types,}')
+        seconday_label = {'time' : f'No. of stimulus (absolute)', 'number' : '% recieving stimulus'}
 
-        group_types = ['continuous', 'boxplots']
-        if display not in group_types:
-            raise KeyError(f'display argument must be one of {*group_types,}')
-
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
-        if facet_col is not None:
-            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
-        else:
-            d_list = [self.copy(deep = True)]
-            facet_labels = ['']
-
-        if plot_type == 'time':
-            yname = 'Puff Count'
-            xname = 'Hours post first puff'
-            filtname = 'bin_time'
-        else:
-            yname = 'Percentage recieving puff'
-            xname = 'Puff number post first puff'
-            filtname = 'puff_count'
-
-        if secondary is False:
+        # call the internal method to curate and analse data, see behavpy_draw
+        grouped_data, h_order, palette_dict, x_max, plot_choice = self._internal_plot_habituation(plot_type=plot_type, t_bin_hours=t_bin_hours, response_col=response_col, interaction_id_col=interaction_id_col,
+                                                                                        facet_col=facet_col, facet_arg=facet_arg, facet_labels=facet_labels, x_limit=x_limit, t_column=t_column)
+        # create and style plot
+        if stim_count is False:
             fig = go.Figure() 
         else:
             fig = make_subplots(specs=[[{ "secondary_y" : True}]])
-            self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = False, ylabel = yname, title = title, secondary = True, xdomain = 'x1', grid = grids)
-
-        y_range, dtick = self._check_boolean(list(self[response_col]))
-        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = dtick, ylabel = 'Response Rate', title = title, secondary = False, grid = grids)
-
-        col_list = self._get_colours(d_list)
-        self._plot_xlayout(fig, xrange = False, t0 = 0, dtick = 1, xlabel = xname)
-
-        def get_response(data, ptype, time_window_length):
-            if ptype == 'time':
-                time_window_length = time_window_length * 60 * 60
-                data['bin_time'] = data[t_column].map(lambda t: time_window_length * floor(t / time_window_length)) 
-                min_hour = data['bin_time'].min()
-                data['bin_time'] = (data['bin_time'] - min_hour) / time_window_length
-                gb = data.groupby('bin_time').agg(**{
-                            'has_responded' : (response_col, 'mean'),
-                            'puff_count' : (response_col, 'count')
-                })
-                return gb
-            elif ptype == 'number':
-                tdf = data.sort_values(t_column)
-                tdf['puff_count'] = list(range(1, len(tdf)+1))
-                return tdf[['puff_count', 'has_responded']]
-
-        max_x = []
-
-        for data, name, col in zip(d_list, facet_labels, col_list):
-
-            if len(data) == 0:
-                print(f'Group {name} has no values and cannot be plotted')
-                continue
-            
-            if len(set(data[int_id_col])) == 1:
-                loop_itr = list(set(data[int_id_col]))
+            if plot_type == 'number':
+                yran = [0,101]
             else:
-                loop_itr = [2, 1]
+                yran = False
+            self._plot_ylayout(fig, yrange = yran, t0 = 0, dtick = False, ylabel = seconday_label[plot_type], title = title, secondary = True, xdomain = 'x1', grid = grids)
+            
+        self._plot_ylayout(fig, yrange = [0, 1], t0 = 0, dtick = 0.2, ylabel = 'Response Rate', title = title, grid = grids)
+        self._plot_xlayout(fig, xrange = [0, x_max], t0 = 0, dtick = False, xlabel = plot_choice)
 
-            for q in loop_itr:
+        for hue in h_order:
+            sub_df = grouped_data[grouped_data.index == hue]
 
-                if q == 1:
-                    qcol = col
-                    lab = name
-                elif q == 2:
-                    qcol = 'grey'
-                    lab = f'{name} Spon. Mov'
+            upper, trace, lower = self._plot_line(df = sub_df, x_col = plot_choice, name = hue, marker_col = palette_dict[hue])
+            fig.add_trace(upper)
+            fig.add_trace(trace) 
+            fig.add_trace(lower)
 
-                tdf = data[data[int_id_col] == q].reset_index()
+            if stim_count is True and '-True Stimulus' in hue:
+                if plot_type == 'number':
+                    sub_df['count'] = (sub_df['count'] / np.max(sub_df['count'])) * 100
+                else:
+                    sub_df['count'] = sub_df['stim_count']
 
-                if plot_type == 'time':
-                    rdf = tdf.groupby('id', group_keys = False).apply(partial(get_response, ptype = plot_type, time_window_length = bin_time))
-                    filt_gb = rdf.groupby(filtname).agg(**{
-                            'mean' : (response_col, 'mean'),
-                            'median' : (response_col, 'median'),
-                            'count' : ('puff_count', 'sum'),
-                            'ci' : (response_col, bootstrap)
-                    })
-                elif plot_type == 'number':
-                    rdf = tdf.groupby('id', group_keys = False).apply(partial(get_response, ptype = plot_type, time_window_length = bin_time))
-                    filt_gb = rdf.groupby(filtname).agg(**{
-                            'mean' : (response_col, 'mean'),
-                            'median' : (response_col, 'median'),
-                            'count' : (response_col, 'count'),
-                            'ci' : (response_col, bootstrap)
-                    })
-
-                max_x.append(np.nanmax(filt_gb.index))
-
-                filt_gb[['y_max', 'y_min']] = pd.DataFrame(filt_gb['ci'].tolist(), index =  filt_gb.index)
-                filt_gb.drop('ci', axis = 1, inplace = True)
-                filt_gb.reset_index(inplace = True)
-
-                if display == 'continuous':
-
-                    upper, trace, lower = self._plot_line(df = filt_gb, x_col = filtname, name = lab, marker_col = qcol)
-                    fig.add_trace(upper)
-                    fig.add_trace(trace) 
-                    fig.add_trace(lower)
-
-
-                elif display == 'boxplots':
-
-                    for c in range(len(filt_gb)):
-
-                        fig.add_trace(self._plot_meanbox(mean = [filt_gb['mean'].iloc[c]], median = [filt_gb['mean'].iloc[c]], q3 = [filt_gb['y_min'].iloc[c]], q1 = [filt_gb['y_max'].iloc[c]], 
-                        x = [filt_gb[filtname].iloc[c]], colour =  qcol, showlegend = False, name = filt_gb[filtname].iloc[c].astype(str), xaxis = 'x'))
-
-
-                if secondary is True:
-                    if plot_type == 'number':
-                        filt_gb['count'] = (filt_gb['count'] / np.max(filt_gb['count'])) * 100
-
-                    fig.add_trace(
-                    go.Scatter(
-                        legendgroup = lab,
-                        x = filt_gb[filtname],
-                        y = filt_gb['count'],
-                        mode = 'lines',
-                        name = f'{lab} count',
-                        line = dict(
-                            dash = 'longdashdot',
-                            shape = 'spline',
-                            color = qcol
-                            ),
+                fig.add_trace(
+                go.Scatter(
+                    legendgroup = hue,
+                    x = sub_df[plot_choice],
+                    y = sub_df['count'],
+                    mode = 'lines',
+                    name = f'{hue} count',
+                    line = dict(
+                        dash = 'longdashdot',
+                        shape = 'spline',
+                        color = palette_dict[hue]
                         ),
-                    secondary_y = True
-                    )
-
-        fig['layout']['xaxis']['range'] = [0, np.nanmax(max_x)]
-        if plot_type == 'number':
-            fig['layout']['xaxis']['range'] = [1, np.nanmax(max_x)]
-            if np.nanmax(max_x) > 30:
-                fig['layout']['xaxis']['dtick'] = 10
-
+                    ),
+                secondary_y = True
+                )
+        
         return fig
 
     def plot_response_over_activity(self, mov_df, activity, variable = 'moving', response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, x_limit = 30, t_bin = 60, title = '', t_column = 't', grids = False):
