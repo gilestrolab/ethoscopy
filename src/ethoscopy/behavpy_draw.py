@@ -133,8 +133,8 @@ class behavpy_draw(behavpy_core):
         return f_arg, f_lab, h_list, b_list
 
     @staticmethod
-    def _zscore_bootstrap(array, z_score = True, second_array = None, min_max = False):
-        """ Calculate the z score of a given array, remove any values +- 3 SD and then perform bootstrapping on the remaining
+    def _zscore_bootstrap(array:np.array, z_score:bool = True, second_array:np.array = None, min_max:bool = False):
+        """ Calculate the z score of a given array, remove any values +- 3 SD and then perform bootstrapping on the remaining.
         returns the mean and then several lists with the confidence intervals and z-scored values
         """
         try:
@@ -243,7 +243,7 @@ class behavpy_draw(behavpy_core):
         """
         Takes a string defining an RGB color and converts it a string of equivalent hex
         Input should be a string containing at least 3 numbers separated by a comma.
-        The following input will all work:
+        The following input will all work:lblackhurst29@gmail.com
         rgb(123,122,100)
         123,122,100
         """

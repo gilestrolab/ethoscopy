@@ -27,7 +27,7 @@ class behavpy_seaborn(behavpy_draw):
     canvas = 'seaborn'
     error = 'se'
 
-    def heatmap(self, variable = 'moving', t_column = 't', title = '', figsize = (0,0)):
+    def heatmap(self, variable:str = 'moving', t_column:str = 't', title = '', figsize:tuple = (0,0)):
         """
         Plots a heatmap of a chosen variable.
 
@@ -75,7 +75,7 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig
 
-    def plot_overtime(self, variable:str, wrapped:bool = False, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, facet_tile:None|str = None, avg_window:int = 30, day_length:int = 24, lights_off:int = 12, title:str = '', grids:bool = False, t_column:str = 't', col_list:list|None = None, figsize:tuple = (0,0)):
+    def plot_overtime(self, variable:str, wrapped:bool = False, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, facet_tile:None|str = None, avg_window:int = 30, day_length:int|float = 24, lights_off:int|float  = 12, title:str = '', grids:bool = False, t_column:str = 't', col_list:list|None = None, figsize:tuple = (0,0)):
         """
         Plots a line hypnogram using seaborn, displaying rolling averages of a chosen variable over time.
         Optionally, the plot can be wrapped and faceted.
@@ -138,10 +138,10 @@ class behavpy_seaborn(behavpy_draw):
             min_t.append(t_min)
             max_t.append(t_max)
 
-        if isinstance(lights_off, float):
-            x_ticks = np.arange(np.min(min_t), np.max(max_t), lights_off/2)
-        else:
+        if lights_off%2 == 0:
             x_ticks = np.arange(np.min(min_t), np.max(max_t), lights_off/2, dtype = int)
+        else:
+            x_ticks = np.arange(np.min(min_t), np.max(max_t), lights_off/2)
 
         if figsize == (0,0):
             figsize = ( 6 + 1/3 * len(x_ticks), 
@@ -185,7 +185,7 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig
 
-    def plot_quantify(self, variable:str, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, fun:str = 'mean', title:str = '', grids:bool = False, figsize = (0,0)):
+    def plot_quantify(self, variable:str, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, fun:str = 'mean', title:str = '', grids:bool = False, figsize:tuple = (0,0)):
         """
         Creates a boxplot and swarmplot for the given data with the option to facet by a specific column.
 
@@ -296,11 +296,32 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig, grouped_data
 
-    def plot_compare_variables(self, variables, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', grids = False):
+    def plot_compare_variables(self, variables:list, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, fun:str = 'mean', title:str = '', grids:bool = False, figsize:tuple = (0,0)):
+        """
+            Added to seaborn to keep continuity with plotly plots. Unlike the plotly version this plots each variable on its own plot, not shared.
 
-        return self.plot_quantify(variable = variables, facet_col = facet_col, facet_arg = facet_arg, facet_labels = facet_labels, fun = fun, title = title, grids = grids)
+        Args:
+            variables (list): A list containing the names of the column you wish to plot from your data. 
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels 
+                will be those from the metadata. Default is None.
+            fun (str, optional): The function that is applied to the data. Must be one of 'mean', 'median', 'max', 'count'.
+            title (str, optional): The title of the plot. Default is an empty string.
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+            figsize (tuple, optional): The size of the figure. Default is (0, 0) which auto-adjusts the size.
 
-    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False, figsize=(0,0)):
+
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
+
+        Note:
+            Will return as many plots as items in the variables list
+        """
+        return self.plot_quantify(variable = variables, facet_col = facet_col, facet_arg = facet_arg, facet_labels = facet_labels, fun = fun, title = title, grids = grids, figsize=figsize)
+
+    def plot_day_night(self, variable:str, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, day_length:int|float = 24, lights_off:int|float = 12, title:str = '', t_column:str = 't', grids:bool = False, figsize:tuple = (0,0)):
         """
         A plot that shows the average of a varaible split between the day (lights on) and night (lights off).
 
@@ -359,9 +380,9 @@ class behavpy_seaborn(behavpy_draw):
             # merge the facet_col column and replace with the labelsBinned
             grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
 
-            sns.stripplot(data=grouped_data, x='phase', y=plot_column, order=['light', 'dark'], hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge = True)
+            sns.stripplot(data=grouped_data, x='phase', y=plot_column, order=['light', 'dark'], hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, alpha=0.5, legend=False, dodge = 0.8 - 0.8 / len(facet_labels))
             sns.pointplot(data=grouped_data, x='phase', y=plot_column, order=['light', 'dark'], hue=facet_col, hue_order=facet_labels, ax=ax, palette=palette_dict, estimator = 'mean',
-                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.4)
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.8 - 0.8 / len(facet_labels))
 
             # Customise legend values
             handles, _ = ax.get_legend_handles_labels()
@@ -381,10 +402,10 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig, grouped_data
 
-    def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', grids = False, figsize=(0,0)):
+    def plot_anticipation_score(self, mov_variable:str = 'moving', facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, day_length:int|float = 24, lights_off:int|float = 12, title:str = '', grids:bool = False, figsize:tuple = (0,0)):
         """
-        Plots the anticipation scores for lights on and off periods, separately for each category defined by facet_col.
-        This function calculates the anticipation scores for lights off and on conditions and then plots a seaborn boxplot. 
+        Plots the anticipation scores for lights on and off periods. The anticipation score is calculated as the percentage of activity of the 6 hours prior to lights on/off that occurs in the last 3 hours.
+        A higher score towards 100 indicates greater anticipation of the light change.
 
             Args:
                 mov_variable (str, optional): The name of the column you wish to plot from your data. 
@@ -394,8 +415,8 @@ class behavpy_seaborn(behavpy_draw):
                 day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
                 lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
                 title (str, optional): The title of the plot. Default is an empty string.
-                z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+                figsize (tuple, optional): The size of the figure. Default is (0, 0) which auto-adjusts the size.
 
         Returns:
             fig (matplotlib.figure.Figure): Figure object of the plot.
@@ -430,9 +451,9 @@ class behavpy_seaborn(behavpy_draw):
             # merge the facet_col column and replace with the labels
             dataset = self.facet_merge(dataset, facet_col, facet_arg, facet_labels)
 
-            sns.stripplot(data=dataset, x='phase', y="anticipation_score", order=['Lights On', 'Lights Off'], ax=ax, hue =facet_col, hue_order=facet_labels, palette=palette_dict, alpha=0.5, legend=False, dodge = True)
+            sns.stripplot(data=dataset, x='phase', y="anticipation_score", order=['Lights On', 'Lights Off'], ax=ax, hue =facet_col, hue_order=facet_labels, palette=palette_dict, alpha=0.5, legend=False, dodge = 0.8 - 0.8 / len(facet_labels))
             sns.pointplot(data=dataset, x='phase', y="anticipation_score", order=['Lights On', 'Lights Off'], ax=ax, hue =facet_col, hue_order=facet_labels, palette=palette_dict, estimator = 'mean',
-                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.4)
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge =  0.8 - 0.8 / len(facet_labels))
 
             # Customise legend values
             handles, _ = ax.get_legend_handles_labels()
@@ -516,7 +537,7 @@ class behavpy_seaborn(behavpy_draw):
             }).reset_index()
         return data, days
 
-    def plot_actogram(self, mov_variable = 'moving', bin_window = 5, t_column = 't', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = '', figsize=(0,0)):
+    def plot_actogram(self, mov_variable:str = 'moving', bin_window:int = 5, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, day_length:int|float = 24, t_column:str = 't', title:str = '', figsize:tuple=(0,0)):
         """
         This function creates actogram plots from the provided data. Actograms are useful for visualizing 
         patterns in activity data (like movement or behavior) over time, often with an emphasis on daily 
@@ -526,8 +547,6 @@ class behavpy_seaborn(behavpy_draw):
             mov_variable (str, optional): The name of the column in the dataframe representing movement 
                 data. Default is 'moving'.
             bin_window (int, optional): The bin size for data aggregation in minutes. Default is 5.
-            t_column (str, optional): The name of the column in the dataframe representing time data.
-                Default is 't'.
             facet_col (str, optional): The name of the column to be used for faceting. If None, no faceting 
                 is applied. Default is None.
             facet_arg (list, optional): List of arguments to be used for faceting. If None and if 
@@ -535,6 +554,7 @@ class behavpy_seaborn(behavpy_draw):
             facet_labels (list, optional): List of labels to be used for the facets. If None and if 
                 facet_col is not None, all unique values in the facet_col are used as labels. Default is None.
             day_length (int, optional): The length of the day in hours. Default is 24.
+            t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
             title (str, optional): The title of the plot. Default is an empty string.
             figsize (tuple, optional): The size of the figure to be plotted as (width, height). If set to 
                 (0,0), the size is determined automatically. Default is (0,0).
@@ -542,10 +562,6 @@ class behavpy_seaborn(behavpy_draw):
         Returns:
             matplotlib.figure.Figure: If facet_col is provided, returns a figure that contains subplots for each 
             facet. If facet_col is not provided, returns a single actogram plot.
-
-        Raises:
-            ValueError: If facet_arg is provided but facet_col is None.
-            SomeOtherException: If some other condition is met.
 
         Example:
             >>> instance.plot_actogram(mov_variable='movement', bin_window=10, 
@@ -1170,7 +1186,7 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig
     
-    def plot_quantify_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize=(0,0)):
+    def plot_periodogram_quantify(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize=(0,0)):
         """
         Creates a boxplot and swarmplot of the peaks in circadian rythymn according to a computed periodogram.
         At its core it is just a wrapper of plot_quantify, with some data augmented before being sent to the method.
@@ -1792,7 +1808,7 @@ class behavpy_seaborn(behavpy_draw):
                     It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
                 numm_plots (int, optional): The number of plots as rows in a subplot. If a list of HMMs is given num_plots will be that length. Default is 5.
                 t_bin (int, optional): The time in seconds you want totype, t_bin_hours = 1, response_col =  'has_responded', interaction_id_col = 'has_interacted', stim_count = False, facet_col = None, facet_arg = None, facet_labels = None,  x_limit = False, t_column = 't', title = '', grids = False, figsize = (0,0)):
- bin the movement data to. Default is 60 or 1 minute
+                    bin the movement data to. Default is 60 or 1 minute
                 func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
                 title (str, optional): The title of the plot. Default is an empty string.
                 t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'

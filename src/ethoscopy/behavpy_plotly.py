@@ -227,7 +227,7 @@ class behavpy_plotly(behavpy_draw):
         )  
         return upper_bound, trace, lower_bound
 
-    def heatmap(self, variable = 'moving', t_column = 't', title = ''):
+    def heatmap(self, variable:str = 'moving', t_column:str = 't', title = '', figsize:tuple = (0,0)):
         """
         Creates an aligned heatmap of the movement data binned to 30 minute intervals using plotly
         
@@ -296,7 +296,6 @@ class behavpy_plotly(behavpy_draw):
             For accurate results, the data should be appropriately preprocessed to ensure that 't' values are
             in the correct format (seconds from time 0) and that 'variable' exists in the DataFrame.
         """
-        assert isinstance(wrapped, bool)
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
         if facet_col is not None:
@@ -404,7 +403,7 @@ class behavpy_plotly(behavpy_draw):
 
             data = data.dropna(subset = [variable])
             gdf = data.analyse_column(column = variable, function = fun)
-            mean, median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{variable}_{fun}'].to_numpy(), z_score = z_score)
+            mean, median, q3, q1, zlist = self._zscore_bootstrap(gdf[f'{variable}_{fun}'].to_numpy(dtype=float), z_score = z_score)
             stats_dict[name] = zlist
 
             fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
@@ -420,8 +419,30 @@ class behavpy_plotly(behavpy_draw):
 
         return fig, stats_df
 
-    def plot_compare_variables(self, variables, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', title = '', z_score:bool = True, grids = False):
-        """the first variable in the list is the left hand axis, the last is the right hand axis"""
+    def plot_compare_variables(self, variables:list, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, fun:str = 'mean', title:str = '', z_score:bool = True, grids:bool = False):
+        """ A plotting variation of plot_quantify to plot more than one variable from the data. 
+
+        Args:
+            variables (list): A list containing the names of the column you wish to plot from your data. 
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels 
+                will be those from the metadata. Default is None.
+            fun (str, optional): The function that is applied to the data. Must be one of 'mean', 'median', 'max', 'count'.
+            title (str, optional): The title of the plot. Default is an empty string.
+            z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+
+        Returns:
+            fig (plotly.figure.Figure): Figure object of the plot.
+            data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
+
+        Note:
+            Can plot as many variables as given from the data, however if more than two only the last item in 
+                the list will be plotted on the secondary axis, all others on the primary axis.
+            Whilst this uses the boxplot functions from plotly, it uses it for formatting and actually plots the mean (dotted line)
+            and its 95% confidence intervals, as well as the median (solid line).
+        """
 
         assert(isinstance(variables, list))
 
@@ -450,7 +471,7 @@ class behavpy_plotly(behavpy_draw):
             for c2, (var, secondary) in enumerate(zip(variables, bool_list)):
 
                 t_gb = data.analyse_column(column = var, function = fun)
-                mean, median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{var}_{fun}'].to_numpy(), z_score = z_score)
+                mean, median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{var}_{fun}'].to_numpy(dtype=float), z_score = z_score)
                 stats_dict[f'{name}_{var}'] = zlist
 
                 if len(facet_arg) == 1:
@@ -483,8 +504,8 @@ class behavpy_plotly(behavpy_draw):
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
 
         return fig, stats_df
-
-    def plot_day_night(self, variable, facet_col = None, facet_arg = None, facet_labels = None, fun = 'mean', day_length = 24, lights_off = 12, title = '', t_column = 't', z_score = True, grids = False):
+        
+    def plot_day_night(self, variable:str, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, day_length:int|float = 24, lights_off:int|float = 12, z_score:bool = True, title:str = '', t_column:str = 't', grids:bool = False):
         """
         A plot that shows the average of a varaible split between the day (lights on) and night (lights off).
         Addtionally, a pandas dataframe is generated that contains the averages per specimen per group for users to perform statistics with.
@@ -497,9 +518,9 @@ class behavpy_plotly(behavpy_draw):
                 fun (str, optional): The average function that is applied to the data. Must be one of 'mean', 'median', 'count'.
                 day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
                 lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+                z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.                
                 title (str, optional): The title of the plot. Default is an empty string.
                 t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
-                z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
 
         Returns:
@@ -543,7 +564,7 @@ class behavpy_plotly(behavpy_draw):
                     d2 = d1
                 
                 t_gb = d2.analyse_column(column = variable, function = fun)
-                mean, median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{variable}_mean'].to_numpy(), z_score = z_score)
+                mean, median, q3, q1, zlist = self._zscore_bootstrap(t_gb[f'{variable}_mean'].to_numpy(dtype=float), z_score = z_score)
                 stats_dict[f'{label}_{phase}'] = zlist
 
                 if phase == 'light':
@@ -565,10 +586,10 @@ class behavpy_plotly(behavpy_draw):
 
         return fig, stats_df
 
-    def plot_anticipation_score(self, mov_variable = 'moving', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, lights_off = 12, title = '', z_score = True, grids = False):
+    def plot_anticipation_score(self, mov_variable:str = 'moving', facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, day_length:int|float = 24, lights_off:int|float = 12, z_score:bool = True, title:str = '', grids:bool = False):
         """
-        Plots the anticipation scores for lights on and off periods, separately for each category defined by facet_col.
-        This function calculates the anticipation scores for lights off and on conditions and then plots a seaborn boxplot. 
+        Plots the anticipation scores for lights on and off periods. The anticipation score is calculated as the percentage of activity of the 6 hours prior to lights on/off that occurs in the last 3 hours.
+        A higher score towards 100 indicates greater anticipation of the light change.
 
             Args:
                 mov_variable (str, optional): The name of the column you wish to plot from your data. 
@@ -577,8 +598,8 @@ class behavpy_plotly(behavpy_draw):
                 facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
                 day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
                 lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
-                title (str, optional): The title of the plot. Default is an empty string.
                 z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
+                title (str, optional): The title of the plot. Default is an empty string.
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
 
         Returns:
@@ -681,7 +702,7 @@ class behavpy_plotly(behavpy_draw):
                     boxpoints = False
             ), row = row, col = col)
 
-    def plot_actogram(self, mov_variable = 'moving', bin_window = 5, t_column = 't', facet_col = None, facet_arg = None, facet_labels = None, day_length = 24, title = ''):
+    def plot_actogram(self, mov_variable:str = 'moving', bin_window:int = 5, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, day_length:int|float = 24, t_column:str = 't', title:str = ''):
         """
         This function creates actogram plots from the provided data. Actograms are useful for visualizing 
         patterns in activity data (like movement or behavior) over time, often with an emphasis on daily 
@@ -691,8 +712,6 @@ class behavpy_plotly(behavpy_draw):
             mov_variable (str, optional): The name of the column in the dataframe representing movement 
                 data. Default is 'moving'.
             bin_window (int, optional): The bin size for data aggregation in minutes. Default is 5.
-            t_column (str, optional): The name of the column in the dataframe representing time data.
-                Default is 't'.
             facet_col (str, optional): The name of the column to be used for faceting. If None, no faceting 
                 is applied. Default is None.
             facet_arg (list, optional): List of arguments to be used for faceting. If None and if 
@@ -700,17 +719,14 @@ class behavpy_plotly(behavpy_draw):
             facet_labels (list, optional): List of labels to be used for the facets. If None and if 
                 facet_col is not None, all unique values in the facet_col are used as labels. Default is None.
             day_length (int, optional): The length of the day in hours. Default is 24.
+            t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
             title (str, optional): The title of the plot. Default is an empty string.
             figsize (tuple, optional): The size of the figure to be plotted as (width, height). If set to 
                 (0,0), the size is determined automatically. Default is (0,0).
 
         Returns:
-            plotly.figure.Figure: If facet_col is provided, returns a figure that contains subplots for each 
+            matplotlib.figure.Figure: If facet_col is provided, returns a figure that contains subplots for each 
             facet. If facet_col is not provided, returns a single actogram plot.
-
-        Raises:
-            ValueError: If facet_arg is provided but facet_col is None.
-            SomeOtherException: If some other condition is met.
 
         Example:
             >>> instance.plot_actogram(mov_variable='movement', bin_window=10, 
@@ -1379,7 +1395,6 @@ class behavpy_plotly(behavpy_draw):
         """
         # check if the dataset has the needed columns from .periodogram()
         self._validate()
-        # check the facet_col and args are in the dataset, populate if not
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
         # takes subset of data if requested
@@ -1419,7 +1434,7 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
     
-    def plot_quantify_periodogram(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
+    def plot_periodogram_quantify(self, facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False):
         """
         Creates a boxplot and swarmplot of the peaks in circadian rythymn according to a computed periodogram.
         At its core it is just a wrapper of plot_quantify, with some data augmented before being sent to the method.
@@ -1447,7 +1462,6 @@ class behavpy_plotly(behavpy_draw):
         # find period peaks for plotting
         if 'peak' not in self.columns.tolist():
             self = self.find_peaks(num_peaks = 1)
-        # filter by these plot
         self = self[self['peak'] == 1]
         self = self.rename(columns = {power_var : y_label})
     
