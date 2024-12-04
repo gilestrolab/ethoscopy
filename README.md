@@ -29,6 +29,26 @@ We recommned installing ethoscopy into a virtual environment due to specific pac
 python pip install ethoscopy
 ```
 
+## Example of use
+
+Ethoscopy is primarily made to work in a Jupyter notebook environment and should be imported in as so:
+
+```bash
+import ethoscopy as etho
+```
+
+Generate a behavpy dataframe object as so:
+
+```bash
+data = pandas_dataframe
+metadata = pandas_dataframe
+
+df = etho.behavpy(data, metadata, check = True, canvas = 'plotly', palette = 'Set2')
+
+# select only the data from specimens in experimental group 2
+filtered_df = df.xmv('experimental_column', 'group_2')
+```
+
 ## License
 
 This project is licensed under the [GNU-3 license](LICENSE)
