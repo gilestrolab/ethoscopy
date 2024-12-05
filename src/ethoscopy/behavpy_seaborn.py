@@ -17,7 +17,7 @@ from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
 from ethoscopy.misc.bootstrap_CI import bootstrap
 from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
-from ethoscopy.misc.static_functions import concat
+from ethoscopy.misc.general_functions import concat
 
 class behavpy_seaborn(behavpy_draw):
     """
@@ -27,15 +27,17 @@ class behavpy_seaborn(behavpy_draw):
     canvas = 'seaborn'
     error = 'se'
 
-    def heatmap(self, variable:str = 'moving', t_column:str = 't', title = '', figsize:tuple = (0,0)):
+    def heatmap(self, variable:str, t_column:str = 't', title = '', figsize:tuple = (0,0)):
         """
-        Plots a heatmap of a chosen variable.
-
+        Creates an aligned heatmap of the movement data binned to 30 minute intervals. 
+        This is a great tool to quickly identify changes in the variable of choice over the course of the experiment.
+        
         Args:
-            variable (str, optional): The variable from the DataFrame to plot. Default is 'moving'.
-            t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
+            variable (str): The name for the column containing the variable of interest
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
             title (str, optional): The title of the plot. Default is an empty string.
-            figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+
+        returns
         
         Returns:
             fig (matplotlib.figure.Figure): Figure object of the plot.
@@ -77,23 +79,22 @@ class behavpy_seaborn(behavpy_draw):
 
     def plot_overtime(self, variable:str, wrapped:bool = False, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, facet_tile:None|str = None, avg_window:int = 30, day_length:int|float = 24, lights_off:int|float  = 12, title:str = '', grids:bool = False, t_column:str = 't', col_list:list|None = None, figsize:tuple = (0,0)):
         """
-        Plots a line hypnogram using seaborn, displaying rolling averages of a chosen variable over time.
-        Optionally, the plot can be wrapped and faceted.
-
+        A line plot to view a variable of choice over an experiment or experimental day. The mean and 95% confidence intervals are plotted per group.
+        White and black boxes are generated to signify when lights are on and off, and can be augmented to differing day lengths or light on schedules.
+        
         Args:
-            variable (str): The name of the variable in the DataFrame to plot. eg: asleep, moving
-            wrapped (bool, optional): If True, time data will be wrapped to daylength. Default is False.
-            facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
-            facet_arg (list, optional): The arguments to use for faceting. Default is None.
-            facet_labels (list, optional): The labels to use for faceting. Default is None.
+            variable (str): The name of the column you wish to plot from your data. 
+            wrapped (bool, optional): If true the data is augmented to represent one day, combining data of the same time on consequtive days.
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
             avg_window (int, optional): The number, in minutes, that is applied to the rolling smoothing function. The default is 30 minutes, which for a t_diff of 10 would be a window of 180.
-            day_length (int, optional): The length of the day in hours for wrapping. Default is 24.
-            lights_off (int, optional): The time of "lights off" in hours. Default is 12.
+            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+            lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
             title (str, optional): The title of the plot. Default is an empty string.
-            grids (bool, optional): If True, horizontal grid lines will be displayed on the plot. Default is False.
-            t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
             col_list (list, optioanl): Provide a list of colours to override the previous chose palette. Default is None.
-            figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
 
         Returns:
             fig (matplotlib.figure.Figure): Figure object of the plot.
@@ -187,17 +188,20 @@ class behavpy_seaborn(behavpy_draw):
 
     def plot_quantify(self, variable:str, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, fun:str = 'mean', title:str = '', grids:bool = False, figsize:tuple = (0,0)):
         """
-        Creates a boxplot and swarmplot for the given data with the option to facet by a specific column.
+        A plot that finds the average (default mean) for a given variable per specimen. The plots will show each specimens average 
+        and a box representing the mean and 95% confidence intervals.
+        Addtionally, a pandas dataframe is generated that contains the averages per specimen per group for users to perform statistics with.
 
         Args:
-            variable (str): The variable column name to be plotted. e.g. asleep
-            facet_col (str, optional): The column name used for faceting. Defaults to None.
-            facet_arg (list, optional): List of values used for faceting. Defaults to None.
-            facet_labels (list, optional): List of labels used for faceting. Defaults to None.
-            fun (str, optional): Function to apply on the data, e.g., 'mean'. Defaults to 'mean'.
-            title (str, optional): Title of the plot. Defaults to ''.
-            grids (bool, optional): If True, add a grid to the plot. Defaults to False.
-            figsize (tuple, optional): Tuple specifying the figure size. Default is (0, 0) which auto-adjusts the size.
+            variable (str): The name of the column you wish to plot from your data. 
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels 
+                will be those from the metadata. Default is None.
+            fun (str, optional): The function that is applied to the data. Must be one of 'mean', 'median', 'max', 'count'.
+            title (str, optional): The title of the plot. Default is an empty string.
+            z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
 
         Returns:
             fig (matplotlib.figure.Figure): Figure object of the plot.
@@ -209,31 +213,9 @@ class behavpy_seaborn(behavpy_draw):
         Note:
             This function uses seaborn to create a stripplot and pointplot. It uses boostrapping with n 1000 to calculate 95%
             confidence intervals. It allows to facet the data by a specific column.
-            The function to be applied on the data is specified by the `fun` parameter.
         """
 
-        # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
-        if not isinstance(variable, list):
-            variable = [variable]
-
-        data = self.copy(deep=True)
-
-        data_summary = {}
-        for var in variable:
-            data_summary.update( {
-                f"{var}_{fun}" : (var, fun),
-                f"{var}_std" : (var, 'std')
-                } )
-
-        # takes subset of data if requested
-        if facet_col and facet_arg:
-            # takes subselection of df that contains the specified facet columns
-            data = self.xmv(facet_col, facet_arg)
-            
-        # applt the averaging function by index per variable
-        grouped_data = data.groupby(data.index).agg(**data_summary)
+        grouped_data, palette_dict, facet_labels, variable = self._internal_plot_quantify(variable, facet_col, facet_arg, facet_labels, fun)
 
         # BOXPLOT
         fig_rows = len(variable)
@@ -241,7 +223,7 @@ class behavpy_seaborn(behavpy_draw):
 
         # (0,0) means automatic size
         if figsize == (0,0):
-            figsize = (2*len(facet_arg), 4*fig_rows)
+            figsize = (2*len(facet_labels), 4*fig_rows)
 
         fig, axes = plt.subplots(fig_rows, fig_cols, figsize=figsize)
 
@@ -253,12 +235,8 @@ class behavpy_seaborn(behavpy_draw):
             axes = axes.flatten()
         else:
             axes = [axes]
-        
-        palette = self._get_colours(facet_labels)
-        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
-
-        grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
-
+        print(grouped_data)
+        print(facet_col)
         for ax, var in zip(axes, variable):
         
             plot_column = f'{var}_{fun}'
@@ -280,8 +258,8 @@ class behavpy_seaborn(behavpy_draw):
                 # ax.legend(labels=facet_labels)
 
             else:
-                sns.stripplot(data=grouped_data, y=plot_column, color = palette[0], ax=ax, alpha=0.5, legend=False,)
-                sns.pointplot(data=grouped_data, y=plot_column, color = palette[0], ax=ax, estimator = 'mean',
+                sns.stripplot(data=grouped_data, y=plot_column, color = list(palette_dict.values())[0], ax=ax, alpha=0.5, legend=False,)
+                sns.pointplot(data=grouped_data, y=plot_column, color = list(palette_dict.values())[0], ax=ax, estimator = 'mean',
                                 linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3)
 
             ax.set_ylabel(var)
@@ -298,7 +276,7 @@ class behavpy_seaborn(behavpy_draw):
 
     def plot_compare_variables(self, variables:list, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, fun:str = 'mean', title:str = '', grids:bool = False, figsize:tuple = (0,0)):
         """
-            Added to seaborn to keep continuity with plotly plots. Unlike the plotly version this plots each variable on its own plot, not shared.
+        Added to seaborn to keep continuity with plotly plots. Unlike the plotly version this plots each variable on its own plot, not shared.
 
         Args:
             variables (list): A list containing the names of the column you wish to plot from your data. 
@@ -323,23 +301,26 @@ class behavpy_seaborn(behavpy_draw):
 
     def plot_day_night(self, variable:str, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, day_length:int|float = 24, lights_off:int|float = 12, title:str = '', t_column:str = 't', grids:bool = False, figsize:tuple = (0,0)):
         """
-        A plot that shows the average of a varaible split between the day (lights on) and night (lights off).
+        A plot that shows the average of a variable split between the day (lights on) and night (lights off). This a specific version of plot_quantify, using similar backend.
 
-            Args:
-                variable (str): The name of the column you wish to plot from your data. 
-                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
-                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
-                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
-                fun (str, optional): The average function that is applied to the data. Must be one of 'mean', 'median', 'count'.
-                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
-                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
-                title (str, optional): The title of the plot. Default is an empty string.
-                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
-                figsize (tuple, optional): The size of the figure. Default is (0, 0) which auto-adjusts the size.
+        Args:
+            variable (str): The name of the column you wish to plot from your data. 
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+            fun (str, optional): The average function that is applied to the data. Must be one of 'mean', 'median', 'count'.
+            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+            lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+            title (str, optional): The title of the plot. Default is an empty string.
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+            figsize (tuple, optional): The size of the figure. Default is (0, 0) which auto-adjusts the size.
 
         Returns:
             fig (matplotlib.figure.Figure): Figure object of the plot.
             data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
+        
+        Note:
+
 
         """
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
@@ -407,16 +388,16 @@ class behavpy_seaborn(behavpy_draw):
         Plots the anticipation scores for lights on and off periods. The anticipation score is calculated as the percentage of activity of the 6 hours prior to lights on/off that occurs in the last 3 hours.
         A higher score towards 100 indicates greater anticipation of the light change.
 
-            Args:
-                mov_variable (str, optional): The name of the column you wish to plot from your data. 
-                facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
-                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
-                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
-                day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
-                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
-                title (str, optional): The title of the plot. Default is an empty string.
-                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
-                figsize (tuple, optional): The size of the figure. Default is (0, 0) which auto-adjusts the size.
+        Args:
+            mov_variable (str, optional): The name of the column you wish to plot from your data. 
+            facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
+            facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+            lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+            title (str, optional): The title of the plot. Default is an empty string.
+            grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
+            figsize (tuple, optional): The size of the figure. Default is (0, 0) which auto-adjusts the size.
 
         Returns:
             fig (matplotlib.figure.Figure): Figure object of the plot.
@@ -615,7 +596,7 @@ class behavpy_seaborn(behavpy_draw):
         else:
             return self._plot_single_actogram(data, figsize, days, title, day_length)
 
-    def plot_actogram_tile(self, mov_variable = 'moving', bin_window = 15, t_column = 't', labels = None, day_length = 24, title = '', figsize=(0,0)):
+    def plot_actogram_tile(self, mov_variable:str = 'moving', labels:None|str = None, bin_window:int = 15, day_length:int = 24, t_column:str = 't', title:str = '', figsize:tuple = (0,0)):
         """
         This function creates a grid or tile actogram plot of all specimens in the provided data. Actograms are useful for visualizing 
         patterns in activity data (like movement or behavior) over time, often with an emphasis on daily 
@@ -624,16 +605,12 @@ class behavpy_seaborn(behavpy_draw):
         Args:
             mov_variable (str, optional): The name of the column in the dataframe representing movement 
                 data. Default is 'moving'.
-            bin_window (int, optional): The bin size for data aggregation in minutes. Default is 5.
+            labels (str, optional): The name of the column in the metadata with the labels per specimen. If None then
+                the ids in the index are used. Default is None.
+            bin_window (int, optional): The bin size for data aggregation in minutes. Default is 15.
+            day_length (int, optional): The length of the day in hours. Default is 24.
             t_column (str, optional): The name of the column in the dataframe representing time data.
                 Default is 't'.
-            facet_col (str, optional): The name of the column to be used for faceting. If None, no faceting 
-                is applied. Default is None.
-            facet_arg (list, optional): List of arguments to be used for faceting. If None and if 
-                facet_col is not None, all unique values in the facet_col are used. Default is None.
-            facet_labels (list, optional): List of labels to be used for the facets. If None and if 
-                facet_col is not None, all unique values in the facet_col are used as labels. Default is None.
-            day_length (int, optional): The length of the day in hours. Default is 24.
             title (str, optional): The title of the plot. Default is an empty string.
             figsize (tuple, optional): The size of the figure to be plotted as (width, height). If set to 
                 (0,0), the size is determined automatically. Default is (0,0).
@@ -654,7 +631,7 @@ class behavpy_seaborn(behavpy_draw):
         # If there are no lablels then populate with index IDs
         if labels is not None:
             if labels not in self.meta.columns.tolist():
-                raise AttributeError(f'{labels} is not a column in the metadata')
+                raise KeyError(f'{labels} is not a column in the metadata')
             title_list = self.meta[labels].tolist() 
         else:
             title_list = self.meta.index.tolist()
@@ -671,7 +648,7 @@ class behavpy_seaborn(behavpy_draw):
         for subplot, label in zip(facet_arg, title_list):
 
             dt = data.loc[data['id'] == subplot]
-            subtitle = "%s" % (label)
+            subtitle = "%s" % (label)        
             fig = self._plot_single_actogram(dt, figsize, days, subtitle, day_length)
             plt.close()
 
@@ -699,26 +676,29 @@ class behavpy_seaborn(behavpy_draw):
 
         return combined_fig
 
-    def survival_plot(self, facet_col = None, facet_arg = None, facet_labels = None, repeat = False, day_length = 24, lights_off = 12, title = '', grids = False, t_column = 't', figsize=(0,0)):
+    def survival_plot(self, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, repeat:bool|str = False, day_length:int = 24, lights_off:int = 12, title:str = '', t_column:str = 't', grids:bool = False, figsize:tuple = (0,0)):
         """
         Generates a plot of the percentage of animals in a group present / alive over the course of an experiment. This method does not calculate or remove flies that are dead. It is 
         recommended you use the method .curate_dead_animals() to do this. If you have repeats, signposted in the metadata, call the column in the repeat parameter and the standard error
         will be plotted.
         
-            Args:
-                facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
-                facet_arg (list, optional): The arguments to use for faceting. Default is None.
-                facet_labels (list, optional): The labels to use for faceting. Default is None.
-                repeat (bool/str, optional): If False the function won't look for a repeat column. If wanted the user should change the argument to the column in the metadata that contains repeat information. Default is False
-                day_length (int, optional): The length of the day in hours for wrapping. Default is 24.
-                lights_off (int, optional): The time of "lights off" in hours. Default is 12.
-                title (str, optional): The title of the plot. Default is an empty string.
-                grids (bool, optional): If True, horizontal grid lines will be displayed on the plot. Default is False.
-                t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
-                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+        Args:
+            facet_col (str, optional): The name of the column to use for faceting. Can be main column or from metadata. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. Default is None.
+            facet_labels (list, optional): The labels to use for faceting. Default is None.
+            repeat (bool/str, optional): If False the function won't look for a repeat column. If wanted the user should change the argument to the 
+                column in the metadata that contains repeat information, which could be increasing integers indicating experiment repeat, 
+                i.e. 1, 2, or 3. Default is False
+            day_length (int, optional): The length of the day in hours for wrapping. Default is 24.
+            lights_off (int, optional): The time of "lights off" in hours. Default is 12.
+            title (str, optional): The title of the plot. Default is an empty string.
+            t_column (str, optional): The name of the time column in the DataFrame. Default is 't'.
+            grids (bool, optional): If True, horizontal grid lines will be displayed on the plot. Default is False.
         
         Returns:
             fig (matplotlib.figure.Figure): Figure object of the plot.
+        Note:
+            Percentage alive at each timepoint is calculated by taking the highest timepoint per group and checking from start to x_max how many of the group have data points at each hour.
         """
 
         if repeat is True:
@@ -768,7 +748,7 @@ class behavpy_seaborn(behavpy_draw):
 
         if grids:
             plt.grid(axis='y')
-        ymin, ymax = 0, 105
+        ymin, ymax = 0, 101
         bar_range, thickness = circadian_bars(0, sur_df['hour'].max(), min_y = ymin, max_y = ymax, day_length = day_length, lights_off = lights_off, canvas = 'seaborn')
         # lower range of y-axis to make room for the bars 
         ax.set_ylim(ymin-thickness, ymax)
@@ -785,89 +765,72 @@ class behavpy_seaborn(behavpy_draw):
 
     # Response AGO/mAGO section
 
-    def plot_response_quantify(self, response_col = 'has_responded', facet_col = None, facet_arg = None, facet_labels = None, title = '', grids = False, figsize = (0,0)):
+    def plot_response_quantify(self, response_col:str = 'has_responded', facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, title:str = '', grids:bool = False, figsize:tuple = (0,0)):
         """ 
         A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
-        A augmented version of plot_quanitfy that looks finds the average response to a stimulus and the average response
+        A augmented version of plot_quanitfy that finds the average response to a stimulus and the average response
         from a mock stimulus. Must contain the column 'has_interacted' with 1 = True stimulus, 2 = Mock stimulus.
         
-            Args:
-                response_col = string, the name of the column in the data with the response per interaction, column data should be in boolean form
-                facet_col = string, the name of the column in the metadata you wish to filter the data by
-                facet_arg = list, if not None then a list of items from the column given in facet_col that you wish to be plotted
-                facet_labels = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items are used
-                title = string, a title for the plotted figure
-                grids = bool, true/false whether the resulting figure should have grids
-                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+        Args:
+            response_col = string, the name of the column in the data with the response per interaction, column data should be in boolean form
+            facet_col = string, the name of the column in the metadata you wish to filter the data by
+            facet_arg = list, if not None then a list of items from the column given in facet_col that you wish to be plotted
+            facet_labels = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items are used
+            title = string, a title for the plotted figure
+            grids = bool, true/false whether the resulting figure should have grids
+            figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
 
         Returns:
             fig (matplotlib.figure.Figure): Figure object of the plot.
             data (pandas.DataFrame): DataFrame with grouped data based on the input parameters.
+        Notes:
+            This function must be called on a behavpy dataframe that is populated with data loaded with the stimulus_response
+                analysing function or one that mimics it.
         """
 
-        if response_col not in self.columns.tolist():
-            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with stimulus_response')
-
-        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
-
+        grouped_data, h_order, palette_dict =  self._internal_plot_response_quantify(response_col, facet_col, facet_arg, facet_labels) 
         plot_column = f'{response_col}_mean'
-
-        data_summary = {
-            "%s_mean" % response_col : (response_col, 'mean'),
-            "%s_std" % response_col : (response_col, 'std'),
-            }
-
-        # takes subset of data if requested
-        if facet_col and facet_arg:
-            # takes subselection of df that contains the specified facet columns
-            data = self.xmv(facet_col, facet_arg)
-            # apply the specified operation and add the specified columns from metadata
-            grouped_data = data.groupby([data.index, 'has_interacted']).agg(**data_summary).reset_index(level = 1).merge(self.meta[[facet_col]], left_index=True, right_index=True)
-            grouped_data[facet_col] = grouped_data[facet_col].astype('category')
-
-        # this applies in case we want to apply the specified information to ALL the data
-        else:
-            grouped_data = self.groupby([self.index, 'has_interacted']).agg(**data_summary).copy(deep=True).reset_index()
 
         # (0,0) means automatic size
         if figsize == (0,0):
-            figsize = (6*len(facet_arg), 10)
+            figsize = (1.5*len(h_order), 10)
 
         fig, ax = plt.subplots(figsize=figsize)
-
         plt.ylim(0, 1.01)
-        map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov'}
-        grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
-
-        palette = self._get_colours(facet_labels)
-        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+        plt.ylabel("Response rate")
 
         if facet_col:
+            # this one splits by the original facet_col and then plots thw conjoined order. However, they sit on top of each other and normal dodging doesn't work.
+            # sns.stripplot(data=grouped_data, x=facet_col, y=plot_column, order=facet_labels, hue='facet_col', hue_order=h_order, ax=ax, palette=palette_dict, alpha=0.5, legend=False)
+            # sns.pointplot(data=grouped_data, x=facet_col, y=plot_column, order=facet_labels, hue='facet_col', hue_order=h_order, ax=ax, palette=palette_dict, estimator = 'mean',
+            #                 linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3)
 
-            map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
-            grouped_data[facet_col] = grouped_data[facet_col].map(map_dict)
-            h_order = ["Spon. Mov", "True Stimulus"]
-            sns.stripplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette={"Spon. Mov" : "grey", "True Stimulus" : palette[0]}, alpha=0.5, legend=False, dodge = 0.8 - 0.8 / len(h_order))
-            sns.pointplot(data=grouped_data, x=facet_col, y=plot_column, order = facet_labels, hue='has_interacted', hue_order=["Spon. Mov", "True Stimulus"], ax=ax, palette={"Spon. Mov" : "grey", "True Stimulus" : palette[0]}, estimator = 'mean',
-                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, dodge = 0.8 - 0.8 / len(h_order)) 
-            
-            # ax.set_xticklabels(facet_labels)
+            sns.stripplot(data=grouped_data, x='facet_col', y=plot_column, order=h_order, hue='facet_col', hue_order=h_order, ax=ax, palette=palette_dict, alpha=0.5, legend=False)
+            sns.pointplot(data=grouped_data, x='facet_col', y=plot_column, order=h_order, hue='facet_col', hue_order=h_order, ax=ax, palette=palette_dict, estimator = 'mean',
+                            linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3, legend=True)
+            ax.set(xticklabels=[])
 
-            #Customise legend values
-            handles, _ = ax.get_legend_handles_labels()
-            ax.legend(handles = handles, labels=["Spon. Mov", "True Stimulus"])
+            # Customise legend values
+            # handles, _ = ax.get_legend_handles_labels()
+            # ax.legend(handles=handles, labels=h_order)
+
+            plt.xticks(rotation=45)
+
 
         else:
-            sns.stripplot(data=grouped_data, x='has_interacted', y=plot_column, order=["Spon. Mov", "True Stimulus"], ax=ax, hue ='has_interacted', palette={"Spon. Mov" : "grey", "True Stimulus" : palette[0]}, alpha=0.5, legend=False)
-            sns.pointplot(data=grouped_data, x='has_interacted', y=plot_column, order=["Spon. Mov", "True Stimulus"], ax=ax, hue ='has_interacted', palette={"Spon. Mov" : "grey", "True Stimulus" : palette[0]}, estimator = 'mean',
+            sns.stripplot(data=grouped_data, x='facet_col', y=plot_column, order=h_order, ax=ax, hue = 'facet_col', hue_order = h_order, palette=palette_dict, alpha=0.5, legend=False)
+            sns.pointplot(data=grouped_data, x='facet_col', y=plot_column, order=h_order, ax=ax, hue = 'facet_col', hue_order = h_order, palette=palette_dict, estimator = 'mean',
                             linestyle='none', errorbar= ("ci", 95), n_boot = 1000, markers="_", markersize=30, markeredgewidth=3)
+        
+        plt.xlabel(facet_col)
 
         plt.title(title)
         if grids: plt.grid(axis='y')
 
         # reorder dataframe for stats output
         if facet_col: 
-            grouped_data = grouped_data.sort_values(facet_col)
+            grouped_data[facet_col] = grouped_data['facet_col']
+            grouped_data = grouped_data[[plot_column, f'{response_col}_std', facet_col]].sort_values(facet_col)
 
         return fig, grouped_data
 
@@ -897,7 +860,7 @@ class behavpy_seaborn(behavpy_draw):
             This plotting method can show the response rate for both active and inactive bouts for the 
                 whole dataset, but only for one or the other if you want to facet by a column, i.e. facet_col.
             This function must be called on a behavpy dataframe that is populated with data loaded with the stimulus_response
-                analysing function.
+                analysing function or one that mimics it.
         """        
 
         # call the internal method to curate and analse data, see behavpy_draw
@@ -1927,7 +1890,7 @@ class behavpy_seaborn(behavpy_draw):
 
         Note:
             This function must be called on a behavpy dataframe that is populated by data loaded in with the stimulus_response
-            analysing function.
+            analysing function or one that minics it.
         """
 
         if response_col not in self.columns.tolist():

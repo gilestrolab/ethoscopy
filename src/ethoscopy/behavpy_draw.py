@@ -15,7 +15,7 @@ import PIL
 
 from ethoscopy.behavpy_core import behavpy_core
 from ethoscopy.misc.bootstrap_CI import bootstrap
-from ethoscopy.misc.static_functions import concat
+from ethoscopy.misc.general_functions import concat
 
 class behavpy_draw(behavpy_core):
     """
@@ -741,3 +741,72 @@ class behavpy_draw(behavpy_core):
         palette_dict = {name : self._check_grey(name, palette[c], response = True)[1] for c, name in enumerate(h_order)} # change to grey if control
 
         return grouped_final, h_order, palette_dict, x_max, plot_choice[plot_type]
+
+    def _internal_plot_quantify(self, variable, facet_col, facet_arg, facet_labels, fun):
+
+        # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        if not isinstance(variable, list):
+            variable = [variable]
+
+        data_summary = {}
+        for var in variable:
+            data_summary.update( {
+                f"{var}_{fun}" : (var, fun),
+                f"{var}_std" : (var, 'std')
+                } )
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg)
+        else:
+            data = self.copy(deep=True)
+
+        # applt the averaging function by index per variable
+        grouped_data = data.groupby(data.index).agg(**data_summary)
+
+        palette = self._get_colours(facet_labels)
+        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+
+        if facet_col:
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
+
+        return grouped_data, palette_dict, facet_labels, variable
+
+    def _internal_plot_response_quantify(self, response_col, facet_col, facet_arg, facet_labels):
+
+        if response_col not in self.columns.tolist():
+            raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with stimulus_response')
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        data_summary = {
+            "%s_mean" % response_col : (response_col, 'mean'),
+            "%s_std" % response_col : (response_col, 'std'),
+            }
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            # takes subselection of df that contains the specified facet columns
+            data = self.xmv(facet_col, facet_arg)
+            # apply the specified operation and add the specified columns from metadata
+            grouped_data = data.groupby([data.index, 'has_interacted']).agg(**data_summary).reset_index(level = 1).merge(self.meta[[facet_col]], left_index=True, right_index=True)
+            grouped_data[facet_col] = grouped_data[facet_col].astype('category')
+
+        # this applies in case we want to apply the specified information to ALL the data
+        else:
+            grouped_data = self.groupby([self.index, 'has_interacted']).agg(**data_summary).copy(deep=True).reset_index()
+
+        map_dict = {1 : 'True Stimulus', 2 : 'Spon. Mov.'}
+        grouped_data['has_interacted'] = grouped_data['has_interacted'].map(map_dict)
+        if facet_col:
+            grouped_data['facet_col'] =  grouped_data[facet_col].astype(str) + "-" + grouped_data['has_interacted']
+        else:
+            grouped_data['facet_col'] =  "-" + grouped_data['has_interacted']
+
+        palette = [x for xs in [[col, col] for col in self._get_colours(facet_labels)] for x in xs]
+        h_order = [f'{lab}-{ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]       
+        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(h_order)} # change to grey if control
+
+        return grouped_data, h_order, palette_dict

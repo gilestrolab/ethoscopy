@@ -1,6 +1,6 @@
-**ethoscopy**
+# ethoscopy 
 
-A data-analysis toolbox utilising Pandas, Seaborn, and Plotly to curate, clean, analyse, and visualse behavioural time series data. Whilst the toolbix was created around the data produced from an Ethoscope (a Drosophila monitoring system), if the users data follows the same structure for time series data all methods can be utilised.
+A data-analysis toolbox utilising Pandas, Seaborn, and Plotly to curate, clean, analyse, and visualise behavioural time series data. Whilst the toolbix was created around the data produced from an Ethoscope (a Drosophila monitoring system), if the users data follows the same structure for time series data all methods can be utilised.
 
 Head to the [tutorial](https://bookstack.lab.gilest.ro/books/ethoscopy) for an in-depth walk through.
 
@@ -11,19 +11,19 @@ At its core ethoscopy is a subclass of the data manipulation tool Pandas. The da
 
 Ethoscopy contains methods to perform common analytical techniques per specimen in the data table, such as removing dead specimens, interpolating missing values, or calculating sleep from movement. Addtionally, specialist anlysing tools have been implemented for analysing circadian rhythm, such as periodograms, and for generating hidden Markov models (HMM) to understand latent behavioural states. HMMs are trained utilising hmmlearn in the background and come accompanied with a range of visualisation tools to understand the generated model.
 
--- Update to 2.0.0 --
+### -- Update to 2.0.0 --
 
 This new update sees a whole refactoring of the code base to make everything more streamline and keep the package up to date with the new versions of pandas and numpy. Gone are seperate classes for periodograms and HMM based analysis, all are under one class behavpy(). Addtioanlly, now the user can choose between plotter packages, Seaborn and Plotly, and choose a desired colour pallete. The previous used package Plotly can balloon the size of jupyter notebooks, putting a strain on storage, despite being great for data exploration. If you just want static plots, use Seaborn. But be wary of comparison, the backend for Plotly plots is all calculated in ethoscopy applying z-score and bootstrapping to quantification plots, whereas Seaborn based plots will use the Seaborn internal standard error tools.
 
 The latest update is backwards compatible with all previously saved behavpy dataframes. However, post loading they should be re-initiated as the new behavpy class. 
 
-Addtionally, behavpy_object.concat() for combining dataframes has been shifted to a function that is imported automatically. Call etho.concat(df1, df2) or etho.concat(*[df1, df2]) for conbine dataframes and their metadata. There are other minor changes to method and argument names, which are reflected in their docstring and the tutorial. 
+Addtionally, the concat method ( behavpy_object.concat() ) for combining dataframes has been shifted to a function that is imported automatically. Call etho.concat(df1, df2) or etho.concat(*[df1, df2]) instead. There are other minor changes to method and argument names, which are reflected in their docstrings and in the tutorial. 
 
 ## Getting Started
 
 Ethoscopy can be installed via pip from [PyPi](https://pypi.org/project/ethoscopy/)
 
-We recommned installing ethoscopy into a virtual environment due to specific pacakge versions.
+We recommned installing ethoscopy into a virtual environment due to specific package versions.
 
 ```bash
 python pip install ethoscopy
