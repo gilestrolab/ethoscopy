@@ -971,7 +971,7 @@ class behavpy_plotly(behavpy_draw):
 
     # Response AGO/mAGO section
 
-    def plot_response_quantify(self, response_col:str = 'has_responded', facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, title:str = '', z_score:bool = True, grids:bool = False): 
+    def plot_response_quantify(self, response_col:str = 'has_responded', facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, z_score:bool = True, title:str = '', grids:bool = False): 
         """ 
         A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
         A augmented version of plot_quanitfy that finds the average response to a stimulus and the average response
@@ -982,8 +982,8 @@ class behavpy_plotly(behavpy_draw):
             facet_col = string, the name of the column in the metadata you wish to filter the data by
             facet_arg = list, if not None then a list of items from the column given in facet_col that you wish to be plotted
             facet_labels = list, if not None then a list of label names for facet_arg. If not provided then facet_arg items are used
-            title = string, a title for the plotted figure
             z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. Default is True.
+            title = string, a title for the plotted figure
             grids = bool, true/false whether the resulting figure should have grids
 
         Returns:
@@ -1529,29 +1529,39 @@ class behavpy_plotly(behavpy_draw):
 
     # HMM section
 
-    def plot_hmm_overtime(self, hmm, variable = 'moving', labels = None, colours = None, wrapped = False, t_bin = 60, func = 'max', avg_window = 30, day_length = 24, lights_off = 12, title = '', t_column = 't', grids = False):
+    def plot_hmm_overtime(self, hmm, variable:str = 'moving', labels:list = None, colours:list = None, wrapped:bool = False, t_bin:int = 60, 
+        func:str = 'max', avg_window:int = 30, day_length:int = 24, lights_off:int = 12, title:str = '', t_column:str = 't', grids:bool = False):
         """
-        Creates a plot of the occurance of each state as a percentage at each time point. The method will decode and augment the dataset to be fed into a plot_overtime method.
+        Generates a plot of the occurance of each state as a percentage at each time point for the whole dataset. The is the go to plot for understanding 
+        how states change over the day.
 
             Args:
                 hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
                 variable (str, optional): The column heading of the variable of interest. Default is "moving"
-                labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
-                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
-                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                labels (list[str], optional): The names of the different states present in the hidden markov model. 
+                    If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. 
+                    If None the colours are by default for 4 states (blue and red), if not 4 then colours from the palette are chosen. 
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn. Default is None.
                 wrapped (bool, optional). If True the plot will be limited to a 24 hour day average. Default is False.
                 t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
-                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+                func (str, optional): When binning to the above what function should be applied to the grouped data. 
+                    Default is "max" as is necessary for the "moving" variable
                 avg_window (int, optioanl): The window in minutes you want the moving average to be applied to. Default is 30 mins
                 day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
-                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. 
+                    Must be number between 0 and day_lenght. Default is 12.
                 title (str, optional): The title of the plot. Default is an empty string.
                 t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
                 figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
 
         Returns:
-            returns a Plotly figure made by the .plot_overtime() method
+            fig (plotly.figure.Figure): Figure object of the plot.
+                Generated by the .plot_overtime() method
+        Note:
+            The method decodes and augments the dataset, which is then fed into the plot_overtime method.
+
         """
         assert isinstance(wrapped, bool)
 
@@ -1745,7 +1755,7 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
 
-    def plot_hmm_quantify(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column = 't', grids = False):
+    def plot_hmm_quantify(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', z_score=True,title = '', t_column = 't', grids = False):
         """
         Creates a quantification plot of how much a predicted state appears per individual. 
 
@@ -1803,7 +1813,7 @@ class behavpy_plotly(behavpy_draw):
             for arg, i in zip(facet_arg, facet_labels):
                 
                 try:
-                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy())
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy(), z_score = z_score)
                 except KeyError:
                     mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
                 
@@ -1835,7 +1845,7 @@ class behavpy_plotly(behavpy_draw):
         
         return fig, stats_df
     
-    def plot_hmm_quantify_length(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, bin = 60, func = 'max', title = '',  t_column = 't', grids = False):
+    def plot_hmm_quantify_length(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, bin = 60, func = 'max', z_score =  True, title = '',  t_column = 't', grids = False):
         """
         Creates a quantification plot of the average length of each state per individual. 
 
@@ -1889,7 +1899,7 @@ class behavpy_plotly(behavpy_draw):
             for arg, i in zip(facet_arg, facet_labels):
 
                 try:
-                    mean, median, q3, q1, zlist = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy())
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy(), z_score)
                 except KeyError:
                     mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
                 stats_dict[f'{arg}_{lab}'] = zlist
@@ -1977,7 +1987,7 @@ class behavpy_plotly(behavpy_draw):
                 try:
                     lnp = gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy()
                     count = lnp.size
-                    mean, median, q3, q1, _ = self._zscore_bootstrap(lnp, min_max = True)
+                    mean, median, q3, q1, _ = self._zscore_bootstrap(lnp, min_max = True, z_score = False)
 
                 except KeyError:
                     mean, median, q3, q1, count = [0], [0], [0], [0], [0]
@@ -2003,7 +2013,7 @@ class behavpy_plotly(behavpy_draw):
         
         return fig, pd.DataFrame.from_dict(stats).set_index(['group', 'state']).unstack().stack()
             
-    def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column='t', grids = False):
+    def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', z_score = False, title = '', t_column='t', grids = False):
         """
         Creates a quantification plot of the times each state is transitioned into as a percentage of the whole. 
 
@@ -2057,7 +2067,7 @@ class behavpy_plotly(behavpy_draw):
             for arg, i in zip(facet_arg, facet_labels):
                 
                 try:
-                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy())  
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy(), z_score = z_score)  
                 except KeyError:
                     mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
 
@@ -2090,31 +2100,42 @@ class behavpy_plotly(behavpy_draw):
 
         return fig, stats_df
 
-    def plot_hmm_raw(self, hmm, variable = 'moving', colours = None, num_plots = 5, t_bin = 60, stim_df = None, func = 'max', show_movement = False, t_column = 't', title = '', day_length=24):
-        """Creates a plot showing the raw output from a hmm decoder for every row in the data.
+    def plot_hmm_raw(self, hmm, variable:str = 'moving', colours:list = None, num_plots:int = 5, stim_df = None, show_movement:bool = False, 
+        t_bin:int = 60, func:str = 'max', day_length:int = 24, lights_off:int = 12, t_column:str = 't', title:str = '', grids:bool = False):
+        """
+        Generates a plot that represents each predicted state over the experiment. This plot is great for getting a quick feel to your HMM and useful
+        for comparing multiple HMMs trained with different architecture on the same dataset. 
 
             Args:
-                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                hmm (hmmlearn.hmm.CategoricalHMM | list([hmmlearn.hmm.CategoricalHMM ])): This should be a trained HMM Learn object with the 
+                    correct hidden states and emission states for your dataset. If as a list the number of plots will be the same as its length,
+                    with seach plot being the same specimens data decoded with each HMM.
                 variable (str, optional): The column heading of the variable of interest for decoding. Default is "moving"
-                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states.
+                    If None the colours are a default for 4 states (blue and red) or the first X number of colours in the given palette. Default is None.
                     It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
-                numm_plots (int, optional): The number of plots as rows in a subplot. If a list of HMMs is given num_plots will be that length. Default is 5.
-                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
-                stim_df (behavpy df, optional): A corresponding dataframe with responses to stimuli as loaded in by stimulus_response. Default is None.
-                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable.
+                    If given a list of HMMs, the largest n state model is found and colours checked against.
+                numm_plots (int, optional): The number of plots as rows in a subplot. If a list of HMMs is given num_plots will be overridden
+                    by the length of that list. Default is 5.
+                stim_df (behavpy df, optional): A corresponding dataframe with responses to stimuli as loaded in by stimulus_response. 
+                    When present True responses will be purple and False responses will be lime. Only for true stimuli, not mock. Default is None.
                 show_movement (bool, optional): If True each plot will be overlayed with the given variable, not decoded, see note below. Default is False.
-                title (str, optional): The title of the plot. Default is an empty string.
-                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
-                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
+                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute.
+                func (str, optional): When binning to the above what function should be applied to the grouped data. 
+                    Default is "max" as is necessary for the "moving" variable
                 day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
-                figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
+                lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. 
+                    Default is 12.    
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+                title (str, optional): The title of the plot. Default is an empty string.  
+                grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
 
         Returns:
             A plotly figure that is composed of scatter plots.
 
         Note:
-            If show_movement is true the categories of your variable must be binary, i.e. 0 and 1. Otherwise it might be plotter
-            off the figure.
+            If show_movement is true the categories of your variable must be less than the number of states. If greater it 
+                will be plotted off the plot.
         """
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = None, col = colours)
@@ -2122,7 +2143,7 @@ class behavpy_plotly(behavpy_draw):
         colours_index = {c : col for c, col in enumerate(colours)}
 
         if stim_df is not None:
-            assert isinstance(stim_df, self.__class__), 'The stim_df dataframe is not behavpy class'
+            assert isinstance(stim_df, self.__class__), 'The stim_df dataframe is not behavpy dataframe'
 
         if isinstance(hmm, list):
             num_plots = len(hmm)
@@ -2149,6 +2170,10 @@ class behavpy_plotly(behavpy_draw):
         horizontal_spacing=0.02
         )
 
+        y_range = [-0.2, len(labels)-0.8]
+        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = False, ylabel = '', title = title)
+
+
         for c, (df, b) in enumerate(zip(decoded, b_list)):
 
             df['colour'] = df['previous_state'].map(colours_index)
@@ -2163,10 +2188,8 @@ class behavpy_plotly(behavpy_draw):
                 df = pd.merge(df, df2, how = 'outer', on = ['id', 'bin'])
                 df['colour'] = np.where(df['has_responded'] == True, 'purple', df['colour'])
                 df['colour'] = np.where(df['has_responded'] == False, 'lime', df['colour'])
-                df['bin'] = df['bin'] / (60*60)
             
-            else:
-                df['bin'] = df['bin'] / (60*60) # change time to be a fraction of an hour
+            df['bin'] = df['bin'] / (60*60) # change time to be a fraction of an hour
 
             trace1 = go.Scatter(
                 showlegend = False,
@@ -2200,8 +2223,10 @@ class behavpy_plotly(behavpy_draw):
                     )
                 fig.add_trace(trace2, row = c+1, col= 1)
 
-        y_range = [-0.2, len(labels)-0.8]
-        self._plot_ylayout(fig, yrange = y_range, t0 = 0, dtick = False, ylabel = '', title = title)
+            # Light-Dark annotaion bars
+            # bar_shapes, min_bar = circadian_bars(np.nanmin(df['bin']), np.nanmax(df['bin']), min_y = y_range[0], max_y = y_range[1], day_length = day_length, lights_off = lights_off)
+            # fig.update_layout(shapes=list(bar_shapes.values()))
+
 
         fig.update_yaxes(
             showgrid = False,
@@ -2221,7 +2246,7 @@ class behavpy_plotly(behavpy_draw):
             showgrid = False,
             color = 'black',
             linecolor = 'black',
-            dtick = day_length,
+            dtick = lights_off,
             ticks = 'outside',
             tickwidth = 2,
             tickfont = dict(
@@ -2255,7 +2280,8 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
     
-    def plot_hmm_response(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column = 't', col_uniform = True, grids = False):
+    def plot_hmm_response(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None,
+        t_bin = 60, func = 'max', z_score = True, title = '', t_column = 't', col_uniform = True, grids = False):
         """
         Generates a plot to explore the response rate to a stimulus per hidden state from a Hidden markov Model. Y-axis is the average response rate per group / state / True or mock interactions
 
@@ -2275,8 +2301,8 @@ class behavpy_plotly(behavpy_draw):
                 func (str, optional): When binning the time what function to apply the variable column. Default is 'max'.
                 title (str, optional): The title of the plot. Default is an empty string.
                 t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
-                col_uniform (bool, optional): Unique to the plotly version of this plot. When True the true interaction response is coloured by the state colour choice even with multiple
-                    groups. When false the colour palette is used instead as in the Seaborn version. Default is True.
+                col_uniform (bool, optional): Unique to the plotly version of this method. When True the true interaction response is coloured by the 
+                    state colour choice even with multiple groups. When false the colour palette is used instead as in the Seaborn version. Default is True.
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False
 
         Returns:
@@ -2311,7 +2337,7 @@ class behavpy_plotly(behavpy_draw):
 
                 sub_np = sub_df[plot_column][sub_df[facet_col] == lab].to_numpy()
                 try:
-                    mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_np)
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_np, z_score = z_score)
                 except KeyError:
                     continue
 

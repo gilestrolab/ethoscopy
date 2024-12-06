@@ -43,8 +43,9 @@ class behavpy_draw(behavpy_core):
         """
         Check the colours and labels passed to a plotting method are of equal length. If None then it will be populated with the defaults.
         """
-        if isinstance(hm, list):
-            hm = hm[0]
+        if isinstance(hm, list): # find the number of states in each model and seleect the longest one
+            len_hmms = [h.transmat_.shape[0] for h in hm]
+            hm = hm[len_hmms.index(max(len_hmms))]
 
         if hm.transmat_.shape[0] == 4:
             if lab == None and col == None:
@@ -150,17 +151,19 @@ class behavpy_draw(behavpy_core):
                     zlist = array
                 mean = np.mean(zlist)
                 median = np.median(zlist)
-                boot_array = bootstrap(zlist)
-                q3 = boot_array[1]
-                q1 = boot_array[0]
+
+                if min_max == True:
+                    q3 = np.max(array)
+                    q1 = np.min(array)
+
+                else:
+                    boot_array = bootstrap(zlist)
+                    q3 = boot_array[1]
+                    q1 = boot_array[0]
 
         except ZeroDivisionError:
             mean = median = q3 = q1 = 0
             zlist = array
-
-        if min_max == True:
-            q3 = np.max(array)
-            q1 = np.min(array)
         
         if median < q1 or median > q3:
             median = mean
