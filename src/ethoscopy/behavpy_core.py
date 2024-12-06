@@ -790,7 +790,7 @@ class behavpy_core(pd.DataFrame):
         
         Returns:
             returns two modified behavpy object, the 1st the interaction behavpy dataframe that had the method called on it and the
-            2nd the movment df with all the data points. Both filted to remove specimens where presumed dead.
+            second the movement behavpy dataframe. Both filted to remove specimens where presumed dead.
         """
 
         def curate_filter(df, dict):
@@ -882,7 +882,8 @@ class behavpy_core(pd.DataFrame):
         Args:
             variable (str | list[string]): The column or list of columns in the data that you want to the function to be applied to post pivot
             bin_secs (int): The amount of time (in seconds) you want in each bin in seconds, e.g. 60 would be bins for every minutes
-            function (str | user defined function, optional): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, can also be a user defined function
+            function (str | user defined function, optional): The applied function to the grouped data, can be standard 'mean', 'max'.... ect, 
+                can also be a user defined function
             t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
 
         
@@ -905,13 +906,14 @@ class behavpy_core(pd.DataFrame):
                                                                                                 bin_secs = bin_secs
         )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
-    def remove_first_last_bout(self, bout_column):
+    def remove_first_last_bout(self, variable):
         """
-        A method to remove the first and last bout, only use for columns like 'moving' and 'asleep', that have continuous runs of True and False variables.
-        For use with plotting and analysis where you are not sure if the starting and ending bouts weren't cut in two when filtering or stopping experiment.
+        A method to remove the first and last runs of a value per specimen, only use for columns like 'moving' and 'asleep', 
+        that have continuous runs of True and False variables. For use with plotting and analysis where you are not sure if the starting and 
+        ending bouts weren't cut in two when filtering or stopping experiment.
 
-        Args:
-            None
+            Args:
+                variable (str): The column in the data that you want to the function to be applied to.
 
         Returns:
             returns a modified behavpy object with fewer rows
@@ -1033,30 +1035,33 @@ class behavpy_core(pd.DataFrame):
                                                                                                         min_time_immobile = min_time_immobile
         )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
-    def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', left_rois = [1,2,3,4,5,6,7,8,9,10], right_rois = [11,12,13,14,15,16,17,18,19,20], add_walk = False, x_position = 'x', t_column = 't'):
-        """ A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food.
-            The default settings are for a standard 20 short tube ethoscope setup. It can be altered to match other tube designs, but will take more thought.
-            Only call this function once on a dataset, as it permanently flips the right hand x positions.
+    def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', left_rois = [1,2,3,4,5,6,7,8,9,10], right_rois = [11,12,13,14,15,16,17,18,19,20], 
+        add_walk = False, x_position = 'x', t_column = 't'):
+        """
+        A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food.
+        The default settings are for a standard 20 short tube ethoscope setup. It can be altered to match other tube designs, but will take more thought.
+        Only call this function once on a dataset, as it permanently flips the right hand x positions.
 
-        Args:
-            food_postion (str): Must be either "outside" or "inside". This signifies the postion of the food in relation to the center of the arena.
-            dist_from_food (float, optional): The distance (as a value between 0-1, with 1 being the other end of the tube) from the food 
-                that consider the space that when they have micromovements they are feeding. Default 0.05. but play around with this value
-            micro_mov (str, optional): The name of the column that contains the data for whether micromovements occurs as boolean values. Default is 'mirco'.
-            left_rois (list[int], optional): A list with the roi values for the left-hand side of the ethoscope. Default is values from 1 - 10, as per the standard
-                20 tube ethoscope setup. If changed, have food_position as 'outside' and have these rois be those with food pointing left as seem from the video.
-            right_rois (list[int], optional): A list with the roi values for the right-hand side of the ethoscope. Default is values from 11 - 20, as per the standard
-                20 tube ethoscope setup. If changed, have food_position as 'outside' and have these rois be those with food pointing right as seem from the video.
-            add_walk (bool, optional): If the data isn't a high enough resolution over time micromovements can be lost in walking, thereby underestimating feeding, see Note below.
-                If add_walk is True, the conditional is changed to 'moving' and the function infers feeding from if the fly is moving and near the food. Default is False.
-            x_position = string, the name of the column that contains the x postion
-            t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
+            Args:
+                food_postion (str): Must be either "outside" or "inside". This signifies the postion of the food in relation to the center of the arena.
+                dist_from_food (float, optional): The distance (as a value between 0-1, with 1 being the other end of the tube) from the food 
+                    that consider the space that when they have micromovements they are feeding. Default 0.05. but play around with this value
+                micro_mov (str, optional): The name of the column that contains the data for whether micromovements occurs as boolean values. Default is 'mirco'.
+                left_rois (list[int], optional): A list with the roi values for the left-hand side of the ethoscope. Default is values from 1 - 10, as per the standard
+                    20 tube ethoscope setup. If changed, have food_position as 'outside' and have these rois be those with food pointing left as seem from the video.
+                right_rois (list[int], optional): A list with the roi values for the right-hand side of the ethoscope. Default is values from 11 - 20, as per the standard
+                    20 tube ethoscope setup. If changed, have food_position as 'outside' and have these rois be those with food pointing right as seem from the video.
+                add_walk (bool, optional): If the data isn't a high enough resolution over time micromovements can be lost in walking, thereby underestimating feeding, 
+                    see Note below.
+                    If add_walk is True, the conditional is changed to 'moving' and the function infers feeding from if the fly is moving and near the food. Default is False.
+                x_position = string, the name of the column that contains the x postion
+                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
 
         Returns:
             returns an augmented behavpy object with an addtional column 'feeding' with boolean variables where True equals predicted feeding.
         Note:
-            This function is not ground truthed and makes assumptions. True only occurs when a fly is within the users distance of the food and also micro movements are True. Given all variables
-            are binned to a time per row (i.e. 10 or 60 seconds) short bursts of micromovemts followed by walking are lost, leading to an underestimataion.
+            This function is not ground truthed and makes assumptions. True only occurs when a fly is within the users distance of the food and also micro movements are True. 
+                Given all variables are binned to a time per row (i.e. 10 or 60 seconds) short bursts of micromovemts followed by walking are lost, leading to an underestimataion.
         """
 
         if food_position != 'outside' and food_position != 'inside':
@@ -1148,35 +1153,36 @@ class behavpy_core(pd.DataFrame):
             return df
 
     @staticmethod
-    def _hmm_table(start_prob, trans_prob, emission_prob, state_names, observable_names):
-        """ 
-        Prints a formatted table of the probabilities from a hmmlearn MultinomialHMM object
+    def hmm_display(self, hmm, states:list, observables:list):
         """
-        df_s = pd.DataFrame(start_prob)
+        Prints to screen the transion probabilities for the hidden state and observables for a given hmmlearn hmm object
+
+            Args:
+                hmm (hmmlearn trained model): The hmmlearn model whose probabilities you want to print.
+                states (list([str])): A list of names for the states in order. Must be the same length as the number of hidden states in the model.
+                observables (list([str]))): A list of names of the observables of the model, i.e. ['inactive', 'active']. Must be the same lenght as 
+                    the number of emissions in the model.
+        Returns:
+            None. Prints to screen.
+        """
+
+        df_s = pd.DataFrame(hmm.startprob_)
         df_s = df_s.T
-        df_s.columns = state_names
+        df_s.columns = states
         print("Starting probabilty table: ")
         print(tabulate(df_s, headers = 'keys', tablefmt = "github") + "\n")
         print("Transition probabilty table: ")
-        df_t = pd.DataFrame(trans_prob, index = state_names, columns = state_names)
+        df_t = pd.DataFrame(hmm.transmat_, index = states, columns = states)
         print(tabulate(df_t, headers = 'keys', tablefmt = "github") + "\n")
         print("Emission probabilty table: ")
-        df_e = pd.DataFrame(emission_prob, index = state_names, columns = observable_names)
+        df_e = pd.DataFrame(hmm.emissionprob_, index = states, columns = observables)
         print(tabulate(df_e, headers = 'keys', tablefmt = "github") + "\n")
-
-    def hmm_display(self, hmm, states, observables):
-        """
-        Prints to screen the transion probabilities for the hidden state and observables for a given hmmlearn hmm object
-        """
-        self._hmm_table(start_prob = hmm.startprob_, trans_prob = hmm.transmat_, emission_prob = hmm.emissionprob_, state_names = states, observable_names = observables)
 
     def hmm_train(self, states, observables, var_column, file_name, trans_probs = None, emiss_probs = None, start_probs = None, iterations = 10, hmm_iterations = 100, tol = 50, t_column = 't', bin_time = 60, test_size = 10, verbose = False):
         """
         Behavpy wrapper for the hmmlearn package which generates a Hidden Markov Model using the movement data from ethoscope data.
         If users want a restricted framework ,
         E.g. for random:
-
-        There must be no NaNs in the training data
 
         Resultant hidden markov models will be saved as a .pkl file if file_name is provided
         Final trained model probability matrices will be printed to terminal at the end of the run time
@@ -1189,11 +1195,13 @@ class behavpy_core(pd.DataFrame):
                 file_name (string): Name and path of the .pkl file the resultant trained model will be saved to.
                     If 'moving' or 'beam_crosses' it is assumed to be boolean and will be converted to 0, 1.
                     Variable categories must be represented by ints starting at 0. I.e. 3 observable states are 0, 1, 2.
-                trans_probs (np.array, optional): Transtion probability matrix with shape 'len(states) x len(states)', 0's restrict the model from training any tranisitons between those states
+                trans_probs (np.array, optional): Transtion probability matrix with shape 'len(states) x len(states)', 0's restrict the model 
+                    from training any tranisitons between those states
                 emiss_probs (np.array, optional): emission probability matrix with shape 'len(observables) x len(observables)', 0's same as above
                 start_probs (np.array, optional): starting probability matrix with shape 'len(states) x 0', 0's same as above
                 iterations (int, optional): The number of loops using a different randomised starting matrices, default is 10
-                hmm_iterations (int, optional): An argument to be passed to hmmlearn, number of iterations of parameter updating without reaching tol before it stops, default is 100
+                hmm_iterations (int, optional): An argument to be passed to hmmlearn, number of iterations of parameter updating without reaching tol before it stops. 
+                    Default is 100
                 tol (int, optioanl): The convergence threshold passed tio hmmlearn, EM will stop if the gain in log-likelihood is below this value, default is 50
                 t_column (string, optional): The name for the column containing the time series data, default is 't'
                 bin_time (int, optional): The time in seconds the data will be binned to before the training begins, default is 60 (i.e 1 min)
@@ -1202,6 +1210,8 @@ class behavpy_core(pd.DataFrame):
 
         returns: 
             A trained hmmlearn HMM Multinomial object, which is also saved at the given path
+        Note:
+            There must be no NaNs in the training data
         """
         
         if file_name.endswith('.pkl') is False:
@@ -1345,6 +1355,53 @@ class behavpy_core(pd.DataFrame):
 
     # PERIODOGRAM SECTION
 
+    def anticipation_score(self, variable:str, day_length:int=24, lights_off:int=12, t_column:str='t'):
+        """
+        A method to find the anticipation score, a metric for measuring circadian rythmn. The score is calculated as the percentage
+        of activity in the last six hours before lights on or off that is present in the last 3 hours. A higher score indicates greater
+        anticipation.
+
+        Args:
+            variable (str): The name of the column containing the variable that measures activity.
+            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
+            lights_off (int, optional): The time point when the lights are turned off in an experimental day, 
+                assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
+        
+        Returns:
+            An amended behavpy dataframe with anticipation scores.
+        Note:
+            This method is used internally in the plot_anticipation_score method.
+        """
+        def _ap_score(total, small):
+            try:
+                return (small / total) * 100
+            except ZeroDivisionError:
+                return 0
+
+        # drop NaN's and wrap everything to 24 hours
+        data = self.dropna(subset=[variable]).copy(deep=True)
+        data = data.wrap_time()
+
+        filter_dict = {'Lights Off' : [lights_off - 6, lights_off - 3, lights_off],
+                            'Lights On' : [day_length - 6, day_length - 3, day_length]}
+
+        ant_df = pd.DataFrame()
+
+        for phase in [ 'Lights On', 'Lights Off']:
+
+            d = data.t_filter(start_time = filter_dict[phase][0], end_time = filter_dict[phase][2], t_column=t_column)
+            total = d.analyse_column(column = variable, function = 'sum')
+            
+            d = data.t_filter(start_time = filter_dict[phase][1], end_time = filter_dict[phase][2], t_column=t_column)
+            small = d.analyse_column(column = variable, function = 'sum')
+            d = total.join(small, rsuffix = '_small')
+            d = d.dropna()
+            d = pd.DataFrame(d[[f'{variable}_sum', f'{variable}_sum_small']].apply(lambda x: _ap_score(*x), axis = 1), columns = ['anticipation_score']).reset_index()
+            d['phase'] = phase
+            ant_df = pd.concat([ant_df, d])
+
+        return self.__class__(ant_df, self.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
+
     def _validate(self):
         """ Validator to check further periodogram methods if the data is produced from the periodogram method """
         if  any([i not in self.columns.tolist() for i in ['period', 'power']]):
@@ -1357,10 +1414,10 @@ class behavpy_core(pd.DataFrame):
         periodogram_list = ['chi_squared', 'lomb_scargle', 'fourier', 'welch']
 
         if v not in self.columns.tolist():
-            raise AttributeError(f"Variable column {v} is not a column title in your given dataset")
+            raise KeyError(f"Variable column {v} is not a column title in your given dataset")
 
         if t_col not in self.columns.tolist():
-            raise AttributeError(f"Time column {t_col} is not a column title in your given dataset")
+            raise KeyError(f"Time column {t_col} is not a column title in your given dataset")
 
         if wavelet_type is not False:
             fun = eval(per)
@@ -1384,20 +1441,37 @@ class behavpy_core(pd.DataFrame):
 
         return fun
 
-    def periodogram(self, mov_variable, periodogram, period_range = [10, 32], sampling_rate = 15, alpha = 0.01, t_col = 't'):
-        """ A method to apply a periodogram function to given behavioural data. Call this method first to create an analysed dataset that can access 
-        the other methods of this class 
-        params:
+    def periodogram(self, mov_variable, periodogram, period_range = [10, 32], sampling_rate = 15, alpha = 0.01, t_column = 't'):
+        """ 
+        A method to apply a periodogram analysis to given behavioural data, typically movement data. 
+        Call this method first to create an analysed dataset that can be plotted with the other periodogram methods.
+        Four types of rhymicity analysing algorithms can be used with this method, 'chi_squared', 'lomb_scargle',
+        'fourier', 'welch'.
+
+            Args:
+                mov_varible (str): THe name of the column in the data containing the movement data.
+                periodogram (str); The name of the function as a string to analyse the dataset with.
+                    Choose one of ['chi_squared', 'lomb_scargle', 'fourier', 'welch'].
+                period_range (list([int,int]). optional): A list of two containing the minimum and maximum values to find the 
+                    frequency power (in hours). Default is [10, 32].
+                sampling_rate (int, optional): The frquency to resample the data at (in seconds). Default is 15.
+                alpha (float, optional): The significance level. Default is 0.01.
+        Returns:
+            An ammended behavpy dataframe with new columns 'period' and 'power'
+        Raises:
+            AttributeError:
+                If an unknown periodogram function is given. If you want to add your own implementation edit the base code or
+                raise an issue in the GitHub.
         """
 
-        fun = self._check_periodogram_input(mov_variable, periodogram, period_range, t_col)
+        fun = self._check_periodogram_input(mov_variable, periodogram, period_range, t_column)
 
         sampling_rate = 1 / (sampling_rate * 60)
 
         data = self.copy(deep = True)
         sampled_data = data.interpolate_linear(variable = mov_variable, step_size = 1 / sampling_rate)
         sampled_data = sampled_data.reset_index()
-        return  self.__class__(sampled_data.groupby('id', group_keys = False)[[t_col, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_col, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
+        return  self.__class__(sampled_data.groupby('id', group_keys = False)[[t_column, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_column, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
     def wavelet_types():

@@ -7,7 +7,7 @@ from functools import partial
 
 from scipy.stats import chi2
 from scipy.special import chdtri
-from scipy.signal import welch
+from scipy.signal import welch as internal_welch
 from scipy.fftpack import fft
 
 from astropy.timeseries import LombScargle
@@ -77,9 +77,9 @@ def fourier(data, t_col, var, period_range = [10, 36], alpha = 0.01, **kwargs):
 
     N = len(y)
     dt = t[1] - t[0]
-    period = np.linspace(0.0, 1.0/(2.0*dt), N//2)
+    period = np.delete(np.linspace(0.0, 1.0/(2.0*dt), N//2), 0)
     power = fft(y)
-    power = 2.0/N * np.abs(power[0:N//2])
+    power = 2.0/N * np.abs(power[1:N//2])
     long_period = 1 / period  
     period = long_period[(long_period > start) & (long_period < end)]
     period = period / (60*60)
@@ -94,14 +94,14 @@ def fourier(data, t_col, var, period_range = [10, 36], alpha = 0.01, **kwargs):
     return out
 
 def welch(data, t_col, var, period_range = [10, 36], alpha = 0.01, **kwargs):
-
     id = data.name
     start = 60*60*period_range[0]
     end = 60*60*period_range[1]
     t, y =  data[t_col].to_numpy(), data[var].to_numpy()
 
     dt = t[1] - t[0]
-    period, power = welch(y, fs = 1/dt)
+    period, power = internal_welch(y, fs = 1/dt)
+    period, power = np.delete(period, 0), np.delete(power, 0)
     long_period = 1 / period  
     period = long_period[(long_period > start) & (long_period < end)]
     period = period / (60*60)

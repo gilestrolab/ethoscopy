@@ -403,38 +403,6 @@ class behavpy_draw(behavpy_core):
 
         return gbm, np.array(time_list), id_list
 
-    def anticipation_score(self, data, mov_variable, day_length, lights_off):
-        
-        def _ap_score(total, small):
-            try:
-                return (small / total) * 100
-            except ZeroDivisionError:
-                return 0
-
-        ant_df = pd.DataFrame()
-
-        for phase in ['Lights Off', 'Lights On']:
-
-            if phase == 'Lights Off':
-                start = [lights_off - 6, lights_off - 3]
-                end = lights_off
-            elif phase == 'Lights On':
-                start = [day_length - 6, day_length - 3]
-                end = day_length
-
-            d = data.t_filter(start_time = start[0], end_time = end)
-            total = d.analyse_column(column = mov_variable, function = 'sum')
-            
-            d = data.t_filter(start_time = start[1], end_time = end)
-            small = d.analyse_column(column = mov_variable, function = 'sum')
-            d = total.join(small, rsuffix = '_small')
-            d = d.dropna()
-            d = pd.DataFrame(d[[f'{mov_variable}_sum', f'{mov_variable}_sum_small']].apply(lambda x: _ap_score(*x), axis = 1), columns = ['anticipation_score']).reset_index()
-            d['phase'] = phase
-            ant_df = pd.concat([ant_df, d])
-        
-        return ant_df
-
     def _hmm_response(self, mov_df, hmm, variable, response_col, labels, colours, facet_col, facet_arg, t_bin, facet_labels, func, t_column):
 
         data_summary = {
@@ -511,16 +479,19 @@ class behavpy_draw(behavpy_core):
             "count" : (response_col, 'count'),
             "ci" : (response_col, bootstrap),
             }
-        data = self.copy(deep=True)
+        try:
+            data = self.drop(columns=['moving']).copy(deep=True) # if 'moving' is in the response dataset then it messes up the merge
+        except KeyError:
+            data = self.copy(deep=True)
         mdata = mov_df.copy(deep=True)
 
         if hmm is not False:
             # copy and decode the dataset
             mdata = self.__class__(self._hmm_decode(mdata, hmm, t_bin, variable, func, t_col, return_type='table'), mdata.meta, check=True)
-            var, newT, m_var_1, m_var_2 = 'state', 'bin', 'moving', 'previous_moving'
+            var, newT = 'state', 'bin'
         else:
             mdata = mdata.bin_time(variable, t_bin, function = func, t_column = t_col)
-            var, newT, m_var_1, m_var_2 = f'{variable}_{func}', f'{t_col}_bin', 'activity_count', 'previous_activity_count'
+            var, newT = f'{variable}_{func}', f'{t_col}_bin'
 
         # take the states and time per specimen and find the runs of states
         st_gb = mdata.groupby('id')[var].apply(np.array)
@@ -529,6 +500,7 @@ class behavpy_draw(behavpy_core):
         for m, t, ids in zip(st_gb, time_gb, st_gb.index):
             spec_run = self._find_runs(m, t, ids)
             all_runs.append(spec_run)
+
         # take the arrays and make a dataframe for merging
         counted_df = pd.concat([pd.DataFrame(specimen) for specimen in all_runs])
 
@@ -540,12 +512,14 @@ class behavpy_draw(behavpy_core):
         merged = pd.merge(counted_df, data, how = 'inner', on = ['id', t_col])
         merged['t_check'] = merged.interaction_t + merged.t_rel
         merged['t_check'] = merged['t_check'].map(lambda t:  t_bin * floor(t / t_bin))
+
         # change both previous if the interaction to stimulus happens in the next time bin
         merged['previous_activity_count'] = np.where(merged['t_check'] > merged[t_col], merged['activity_count'], merged['previous_activity_count'])
         merged['previous_moving'] = np.where(merged['t_check'] > merged[t_col], merged['moving'], merged['previous_moving'])
         merged = merged[merged['previous_activity_count'] <= x_limit]
         merged.dropna(subset = ['previous_moving', 'previous_activity_count'], inplace=True)
         merged['previous_activity_count'] = merged['previous_activity_count'].astype(int)
+
         # groupby the columns of interest, and find the mean and bootstrapped 95% CIs
         grouped_data = merged.groupby(['previous_moving', 'previous_activity_count', 'has_interacted']).agg(**data_summary)
         grouped_data = grouped_data.reset_index()
@@ -560,8 +534,9 @@ class behavpy_draw(behavpy_core):
             return grouped_data
 
         hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
-        grouped_data['state'] = grouped_data['state'].map(hmm_dict)
+        grouped_data['state'] = grouped_data['moving'].map(hmm_dict)
         grouped_data['label_col'] =  grouped_data['state'] + "-" + grouped_data['has_interacted']
+
         # create the order of plotting and double the colours to assign grey to false stimuli
         h_order = [f'{lab}-{ty}' for lab in labels for ty in ["Spon. Mov.", "True Stimulus"]]
         palette = [x for xs in [[col, col] for col in colours] for x in xs]
@@ -597,15 +572,19 @@ class behavpy_draw(behavpy_core):
 
         # Get colours and labels, syncing them together and replacing False Stimuli with a grey colour
         grouped_data['label_col'] =  grouped_data['facet_col'] + " " + grouped_data['has_interacted']
-        palette = [x for xs in [[col, col] for col in self._get_colours(facet_labels)] for x in xs]
-        h_order = [f'{lab} {ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]
+        if facet_col:
+            palette = [x for xs in [[col, col] for col in self._get_colours(facet_labels)] for x in xs]
+            h_order = [f'{lab} {ty}' for lab in facet_labels for ty in ["Spon. Mov.", "True Stimulus"]]
+        else:
+            palette = [x for xs in [[col, col] for col in self._get_colours(list(inverse_dict.values()))] for x in xs]
+            h_order = [f'{lab} {ty}' for lab in list(inverse_dict.values()) for ty in ["Spon. Mov.", "True Stimulus"]]
         palette_dict = {name : self._check_grey(name, palette[c], response = True)[1] for c, name in enumerate(h_order)} # change to grey if control
 
         # If not both filter the dataset
         if isinstance(activity_choice[activity], int):
             grouped_data = grouped_data[grouped_data['previous_moving'] == activity_choice[activity]]
         
-        return grouped_data, h_order, palette_dict, activity_choice[activity]
+        return grouped_data, h_order, palette_dict
 
     def _internal_plot_response_overtime(self, t_bin_hours, response_col, interaction_id_col, facet_col, facet_arg, facet_labels, func, t_column):
         """ An internal method to curate and analyse the data for both plotly and seaborn versions of plot_response_overtime """
@@ -766,11 +745,13 @@ class behavpy_draw(behavpy_core):
         # applt the averaging function by index per variable
         grouped_data = data.groupby(data.index).agg(**data_summary)
 
-        palette = self._get_colours(facet_labels)
-        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
-
         if facet_col:
+            palette = self._get_colours(facet_labels)
+            palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
             grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
+        else:
+            palette = self._get_colours(variable)
+            palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(variable)} # change to grey if control
 
         return grouped_data, palette_dict, facet_labels, variable
 
@@ -810,3 +791,52 @@ class behavpy_draw(behavpy_core):
         palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(h_order)} # change to grey if control
 
         return grouped_data, h_order, palette_dict
+
+    def _internal_plot_day_night(self, variable, facet_col, facet_arg, facet_labels, day_length, lights_off, t_column):
+        """ internal method to calculate the average variable amounts for the day and night, for use in plot_day_night, plotly and seaborn """
+        
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+        data_summary = {
+            "%s_mean" % variable : (variable, 'mean'),
+            "%s_std" % variable : (variable, 'std'),
+            }
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg)
+        else:
+            data = self.copy(deep=True)
+
+        #Add phase information to the data
+        data.add_day_phase(day_length = day_length, lights_off = lights_off, t_column = t_column)
+
+        grouped_data = data.groupby([data.index, 'phase'], observed = True).agg(**data_summary).reset_index(1)
+
+        palette = self._get_colours(facet_labels)
+        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+        if facet_col: grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
+
+        return grouped_data, palette_dict, facet_labels
+    
+    def _internal_plot_anticipation_score(self, variable, facet_col, facet_arg, facet_labels, day_length, lights_off, t_column):
+        """ """
+        if variable not in self.columns.tolist():
+            raise KeyError(f'The column you gave {variable}, is not in the data')
+
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            data = self.xmv(facet_col, facet_arg)
+        else:
+            data = self.copy(deep=True)
+
+        grouped_data = data.anticipation_score(variable, day_length, lights_off, t_column)
+
+        palette = self._get_colours(facet_labels)
+        palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+
+        if facet_col:
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
+
+        return grouped_data, palette_dict, facet_labels
