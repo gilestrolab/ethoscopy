@@ -62,16 +62,16 @@ class behavpy_draw(behavpy_core):
             if lab == None and col == None:
                 # give generic names and populate with colours from the given palette 
                 _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
-                _colours = self.get_colours(hm.transmat_)
+                _colours = self._get_colours(hm.transmat_)[:len(_labels)]
             elif lab != None and col == None:
-                _colours = self.get_colours(hm.transmat_)
+                _colours = self._get_colours(hm.transmat_)[:len(lab)]
                 _labels = lab
             elif lab == None and col != None:
                 _colours = col
                 _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
             else:
                 if len(col) != len(lab):
-                    raise RuntimeError('You have more or less states than colours, please rectify so the lists are equal in length')
+                    raise ValueError('You have more or less states than colours, please rectify so the lists are equal in length')
                 _labels = lab
                 _colours = col
         else:
@@ -79,7 +79,7 @@ class behavpy_draw(behavpy_core):
             _colours = col
 
         if len(_labels) != len(_colours):
-            raise RuntimeError('Internal check fail: You have more or less states than colours, please rectify so they are equal in length')
+            raise ValueError('Internal check failed: You have more or less states than colours, please rectify so they are equal in length')
         
         return _labels, _colours
 
@@ -88,13 +88,18 @@ class behavpy_draw(behavpy_core):
         Check if the facet arguments match the labels or populate from the column if not.
         Check if there is more than one HMM object for HMM comparison. Populate hmm and bin lists accordingly.
         """
+
         if isinstance(h, list):
             assert isinstance(b, list), "If providing a list of HMMs, also provide a list of ints to bin the time by (t_bin)"
-            if len(h) != len(f_arg) or len(b) != len(f_arg):
-                raise RuntimeError('There are not enough hmm models or bin intergers for the different groups or vice versa')
-            else:
-                h_list = h
-                b_list = b
+            if f_col is not None: # if faceting then the user must provide an equal length list of bin times and facet args
+                assert isinstance(f_arg, list), "If providing a list of HMMs, also provide a list of groups to filter by via facet_arg"
+                if len(h) != len(f_arg) or len(b) != len(f_arg):
+                    raise ValueError('There are not enough hmm models or bin intergers for the different groups or vice versa')
+                else:
+                    h_list = h
+                    b_list = b
+            else: # if a list of HMMs but no facet, populate fake lists with None and names to trick the system
+                return [None for c in range(len(h))], [f'HMM-{c+1}' for c in range(len(h))], h, b
 
         if f_col is not None:
             if f_arg is None:
@@ -843,3 +848,43 @@ class behavpy_draw(behavpy_core):
             grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
 
         return grouped_data, palette_dict, facet_labels
+
+    def _internal_plot_hmm_quantify(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
+        t_bin, func, t_column):
+        """ internal method to calculate the average amount of each state for use in plot_hmm_quantify, plotly and seaborn """
+
+        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
+        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
+
+        data = self.copy(deep=True)
+
+        # takes subset of data if requested
+        if facet_col and facet_arg:
+            # takes subselection of df that contains the specified facet columns
+            data = self.xmv(facet_col, facet_arg)
+
+        if facet_col is None:  # decode the whole dataset
+            decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+        else:
+            if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
+                decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+            else:
+                decoded_data = concat(*[self.__class__(self._hmm_decode(data.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
+
+        # Count each state and find its fraction
+        grouped_data = decoded_data.groupby([decoded_data.index, 'state'], sort=False).agg({'bin' : 'count'})
+        grouped_data = grouped_data.join(decoded_data.groupby('id', sort=False).agg({'previous_state':'count'}))
+        grouped_data['Fraction of time in each State'] = grouped_data['bin'] / grouped_data['previous_state']
+        grouped_data.reset_index(level=1, inplace = True)
+
+        if facet_col:
+            palette = self._get_colours(facet_labels)
+            palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
+        else:
+            palette = colours
+            palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(labels)} # change to grey if control            
+            hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
+            grouped_data['state'] = grouped_data['state'].map(hmm_dict)
+
+        return grouped_data, labels, colours, facet_labels, palette_dict

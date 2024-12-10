@@ -1119,11 +1119,13 @@ class behavpy_core(pd.DataFrame):
         # change the movement column of choice to intergers, 1 == active, 0 == inactive
         if var == 'moving' or var == 'asleep':
             d[var] = np.where(d[var] == True, 1, 0)
-
+        # Throw a custom error if the passed individual dataframe has no data
+        if len(d) == 0:
+            raise TypeError('Given dataframe has no values')
         # bin the data to 60 second intervals with a selected column and function on that column
         bin_df = d.bin_time(var, b, t_column = t, function = fun)
         gb = bin_df.groupby(bin_df.index, sort=False)[f'{var}_{fun}'].apply(list)
-        time_list = bin_df.groupby(bin_df.index, sort=False)['t_bin'].apply(list)
+        time_list = bin_df.groupby(bin_df.index, sort=False)[f'{t}_bin'].apply(list)
 
         # logprob_list = []
         states_list = []
