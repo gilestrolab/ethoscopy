@@ -1888,36 +1888,50 @@ class behavpy_seaborn(behavpy_draw):
         fig.supylabel("Predicted State")
         return fig
 
-    def plot_hmm_response(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column = 't', grids = False, figsize = (0,0)):
+    def plot_hmm_response(self, mov_df, hmm, variable:str = 'moving', response_col:str = 'has_responded', labels:list = None, colours:list = None, 
+        facet_col:None|str = None, facet_arg:None|list = None, facet_labels:None|list = None, t_bin:int = 60, func:str = 'max', 
+        title:str = '', t_column:str = 't', grids:bool = False, figsize:tuple=(0,0)):
         """
-        Generates a plot to explore the response rate to a stimulus per hidden state from a Hidden markov Model. Y-axis is the average response rate per group / state / True or mock interactions
+        Generates a plot to explore the response rate to a stimulus per hidden state from a Hidden markov Model. 
+        Y-axis is the average response rate per group / state / True or mock interactions
+
 
             Args:
                 mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
-                hmm (hmmlearn.hmm.CategoricalHMM): The accompanying trained hmmlearn model to decode the data.
-                variable (str, optional): The name of column that is to be decoded by the HMM. Default is 'moving'.
-                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
-                labels (list[string], optional): A list of the names of the decoded states, must match the number of states in the given model and colours. 
-                    If left as None and the model is 4 states the names will be ['Deep Sleep', 'Light Sleep', 'Quiet Awake', 'Active Awake'], else it will be ['state_0', 'state_1', ...]. Default is None
-                colours (list[string], optional): A list of colours for the decoded states, must match length of labels. If left as None and the 
-                    model is 4 states the colours will be ['Dark Blue', 'Light Blue', 'Red', 'Dark Red'], else it will be the colour palette choice. Default is None.
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the 
+                    correct hidden states and emission states for your dataset
+                variable (str, optional): The column heading of the variable of interest. Default is "moving"
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. 
+                    Must be a column of bools. Default is 'has_responded'.
+                labels (list[str], optional): The names of the different states present in the hidden markov model. 
+                    If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. 
+                    If None and not 4 states then generic labels are generated, i.e. 'state-1, state-2, state-n'.
+                    Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. 
+                    If None the colours are by default for 4 states (blue and red), if not 4 then colours from the palette are chosen. 
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn. Default is None.
                 facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
-                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
-                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
-                t_bin (int, optional): The time in seconds to bin the time series data to. Default is 60,
-                func (str, optional): When binning the time what function to apply the variable column. Default is 'max'.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. 
+                    Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. 
+                    If None the labels will be those from the metadata. Default is None.
+                t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
+                func (str, optional): When binning to the above what function should be applied to the grouped data. 
+                    Default is "max" as is necessary for the "moving" variable.
                 title (str, optional): The title of the plot. Default is an empty string.
                 t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
                 figsize (tuple, optional): The size of the figure in inches. Default is (0, 0) which auto-adjusts the size.
 
-
         Returns:
-            fig (matplotlib.figure.Figure): Figure object of the plot.
-
+            fig (matplotlib.figure.Figure): Figure object of the plot.    
+        Raises:
+            KeyError:
+                If a column for the respones is not a column.   
+            Multiple assertion of ValueErrors and KeyErrors in regards to faceting and HMM lists
         Note:
             This function must be called on a behavpy dataframe that is populated by data loaded in with the stimulus_response
-            analysing function or one that minics it.
+            analysing function.
         """
 
         if response_col not in self.columns.tolist():
@@ -1932,7 +1946,7 @@ class behavpy_seaborn(behavpy_draw):
         # (0,0) means automatic size
         if figsize == (0,0):
             figsize = (4*len(facet_arg)+2, 8)
-        
+
         fig, ax = plt.subplots(figsize=figsize)
         plt.ylim([0, 1.01])
 
@@ -1957,23 +1971,31 @@ class behavpy_seaborn(behavpy_draw):
         if facet_col: 
             grouped_data = grouped_data.sort_values(facet_col)
         grouped_data.drop(columns=['previous_state'], inplace=True)
+
         return fig, grouped_data
 
-    def plot_response_over_hmm_bouts(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't', figsize = (0,0)):
+    def plot_response_over_hmm_bouts(self, mov_df, hmm, variable:str = 'moving', response_col:str = 'has_responded', labels:list = None, colours:list = None, 
+        x_limit:int = 30, t_bin:int = 60, func:str = 'max', title:str = '', grids:bool = False, t_column:str = 't', figsize:tuple = (0,0)):
         """ 
         Generates a plot showing the response rate per time stamp in each HMM bout. Y-axis is between 0-1 and the response rate, the x-axis is the time point
         in each state as per the time the dataset is binned to when decoded.
 
             Args:
                 mov_df (behavpy dataframe): The matching behavpy dataframe containing the movement data from the response experiment
-                hmm (hmmlearn.hmm.CategoricalHMM): The accompanying trained hmmlearn model to decode the data.
-                variable (str, optional): The name of column that is to be decoded by the HMM. Default is 'moving'.
-                response_col (str, optional): The name of the coloumn that has the responses per interaction. Must be a column of bools. Default is 'has_responded'.
-                labels (list[string], optional): A list of the names of the decoded states, must match the number of states in the given model and colours. 
-                    If left as None and the model is 4 states the names will be ['Deep Sleep', 'Light Sleep', 'Quiet Awake', 'Active Awake']. Default is None
-                colours (list[string], optional): A list of colours for the decoded states, must match length of labels. If left as None and the 
-                    model is 4 states the colours will be ['Dark Blue', 'Light Blue', 'Red', 'Dark Red']. Default is None.
-                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 30 would be 30 minutes or less if t_bin is 60. Default 30.
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the 
+                    correct hidden states and emission states for your dataset
+                variable (str, optional): The column heading of the variable of interest. Default is "moving"
+                response_col (str, optional): The name of the coloumn that has the responses per interaction. 
+                    Must be a column of bools. Default is 'has_responded'.
+                labels (list[str], optional): The names of the different states present in the hidden markov model. 
+                    If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. 
+                    If None and not 4 states then generic labels are generated, i.e. 'state-1, state-2, state-n'.
+                    Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. 
+                    If None the colours are by default for 4 states (blue and red), if not 4 then colours from the palette are chosen. 
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn. Default is None.
+                x_limit (int, optional): A number to limit the x-axis by to remove outliers, i.e. 30 would be 30 minutes or less if t_bin is 60. 
+                    Default 30.
                 t_bin (int, optional): The time in seconds to bin the time series data to. Default is 60,
                 func (str, optional): When binning the time what function to apply the variable column. Default is 'max'.
                 title (str, optional): The title of the plot. Default is an empty string.
