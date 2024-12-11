@@ -16,6 +16,7 @@ import PIL
 from ethoscopy.behavpy_core import behavpy_core
 from ethoscopy.misc.bootstrap_CI import bootstrap
 from ethoscopy.misc.general_functions import concat
+from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
 
 class behavpy_draw(behavpy_core):
     """
@@ -849,14 +850,17 @@ class behavpy_draw(behavpy_core):
 
         return grouped_data, palette_dict, facet_labels
 
-    def _internal_plot_hmm_quantify(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
-        t_bin, func, t_column):
-        """ internal method to calculate the average amount of each state for use in plot_hmm_quantify, plotly and seaborn """
-
+    def _internal_plot_decoder(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels,
+        t_bin, func, t_column, rm=False):
+        """ contains the first part of the internal plotters for HMM quant plots """
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
 
-        data = self.copy(deep=True)
+        if rm:
+            # remove the first and last bout to reduce errors and also copy the data
+            data = self.remove_first_last_bout(variable=variable)
+        else:
+            data = self.copy(deep=True)
 
         # takes subset of data if requested
         if facet_col and facet_arg:
@@ -871,11 +875,112 @@ class behavpy_draw(behavpy_core):
             else:
                 decoded_data = concat(*[self.__class__(self._hmm_decode(data.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
 
+        return decoded_data, labels, colours, facet_arg, facet_labels
+
+    def _internal_plot_hmm_quantify(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
+        t_bin, func, t_column):
+        """ internal method to calculate the average amount of each state for use in plot_hmm_quantify, plotly and seaborn """
+
+        decoded_data, labels, colours, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
+        t_bin, func, t_column)
+
         # Count each state and find its fraction
         grouped_data = decoded_data.groupby([decoded_data.index, 'state'], sort=False).agg({'bin' : 'count'})
         grouped_data = grouped_data.join(decoded_data.groupby('id', sort=False).agg({'previous_state':'count'}))
         grouped_data['Fraction of time in each State'] = grouped_data['bin'] / grouped_data['previous_state']
         grouped_data.reset_index(level=1, inplace = True)
+
+        if facet_col:
+            palette = self._get_colours(facet_labels)
+            palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
+        else:
+            palette = colours
+            palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(labels)} # change to grey if control            
+            hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
+            grouped_data['state'] = grouped_data['state'].map(hmm_dict)
+
+        return grouped_data, labels, colours, facet_labels, palette_dict
+
+    def _internal_plot_hmm_quantify_length(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
+        t_bin, func, t_column):
+        """ internal method to calculate the average length of each state for use in plot_hmm_quantify_length, plotly and seaborn """
+
+        decoded_data, labels, colours, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
+        t_bin, func, t_column)
+
+        # get each specimens states time series to find lengths
+        states = decoded_data.groupby(decoded_data.index, sort=False)['state'].apply(list)
+        df_lengths = []
+        for l, id in zip(states, states.index):
+            length = hmm_mean_length(l, delta_t = t_bin) 
+            length['id'] = [id] * len(length)
+            df_lengths.append(length)
+
+        grouped_data = pd.concat(df_lengths)
+        grouped_data.rename(columns={'mean_length' : 'Length of state bout (mins)'}, inplace=True)
+        grouped_data.set_index('id', inplace=True)
+
+        if facet_col:
+            palette = self._get_colours(facet_labels)
+            palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
+        else:
+            palette = colours
+            palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(labels)} # change to grey if control            
+            hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
+            grouped_data['state'] = grouped_data['state'].map(hmm_dict)
+
+        return grouped_data, labels, colours, facet_labels, palette_dict
+
+    def _internal_plot_hmm_quantify_length_min_max(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
+        t_bin, func, t_column):
+        """ internal method to calculate the average length of each state for use in plot_hmm_quantify_length, plotly and seaborn """
+
+        decoded_data, labels, colours, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
+        t_bin, func, t_column, rm = True)
+
+        # get each specimens states time series to find lengths
+        states = decoded_data.groupby(decoded_data.index, sort=False)['state'].apply(list)
+        df_lengths = []
+        for l, id in zip(states, states.index):
+            length = hmm_mean_length(l, delta_t = t_bin, raw=True) 
+            length['id'] = [id] * len(length)
+            df_lengths.append(length)
+
+        grouped_data = pd.concat(df_lengths)
+        grouped_data.rename(columns={'length_adjusted' : 'Length of state bout (mins)'}, inplace=True)
+        grouped_data.set_index('id', inplace=True)
+
+        if facet_col:
+            palette = self._get_colours(facet_labels)
+            palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
+        else:
+            palette = colours
+            palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(labels)} # change to grey if control            
+            hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
+            grouped_data['state'] = grouped_data['state'].map(hmm_dict)
+
+        return grouped_data, labels, colours, facet_labels, palette_dict
+
+    def _internal_plot_hmm_quantify_transition(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
+        t_bin, func, t_column):
+
+        decoded_data, labels, colours, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
+        t_bin, func, t_column, rm = True)
+
+        # get each specimens states time series to find lengths
+        states = decoded_data.groupby(decoded_data.index, sort=False)['state'].apply(list)
+        df_list = []
+        for l, id in zip(states, states.index):
+            length = hmm_pct_transition(l, total_states=list(range(len(labels)))) 
+            length['id'] = [id] * len(length)
+            df_list.append(length)
+
+        grouped_data = pd.concat(df_list)
+        grouped_data = grouped_data.set_index('id').stack().reset_index().set_index('id')
+        grouped_data.rename(columns={'level_1' : 'state', 0 : 'Fraction of transitions into each state'}, inplace=True)
 
         if facet_col:
             palette = self._get_colours(facet_labels)

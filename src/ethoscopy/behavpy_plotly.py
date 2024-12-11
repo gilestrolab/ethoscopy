@@ -1115,8 +1115,8 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
 
-    def plot_response_over_activity(self, mov_df, activity:str, variable:str = 'moving', response_col:str = 'has_responded', facet_col:None|str = None, facet_arg:None|str = None, 
-        facet_labels:None|str = None, x_limit:int = 30, t_bin:int = 60, title:str = '', t_column:str = 't', grids:bool = False):
+    def plot_response_over_activity(self, mov_df, activity:str, variable:str = 'moving', response_col:str = 'has_responded', facet_col:None|str = None,
+        facet_arg:None|list = None, facet_labels:None|list = None, x_limit:int = 30, t_bin:int = 60, title:str = '', t_column:str = 't', grids:bool = False):
         """ 
         A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
         Generate a plot which shows how the response response rate changes over time inactive or active.
@@ -1169,7 +1169,7 @@ class behavpy_plotly(behavpy_draw):
         return fig
 
     def plot_response_overtime(self, t_bin_hours:int = 1, wrapped:bool = False, response_col:str = 'has_responded', interaction_id_col:str = 'has_interacted', 
-        facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, day_length:int = 24, lights_off:int = 12, func:str = 'mean', 
+        facet_col:None|str = None, facet_arg:None|list = None, facet_labels:None|list = None, day_length:int = 24, lights_off:int = 12, func:str = 'mean', 
         t_column:str = 't', title:str = '', grids:bool = False):
         """ 
         A plotting function for AGO or mAGO datasets that have been loaded with the analysing function stimulus_response.
@@ -1239,7 +1239,7 @@ class behavpy_plotly(behavpy_draw):
         significant given the alpha value when calculating frequency power with .periodogram().
 
             Args:
-                label (str, optional): The name of the column in the metadata that contains unique labels per specimen. If None then
+                labels (str, optional): The name of the column in the metadata that contains unique labels per specimen. If None then
                     the index ids are used. Default is None.
                 find_peaks (bool, optional): If True then the highest frequency that is signifcant is found and marked with an X.
                     Default is False.
@@ -1378,7 +1378,8 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
 
-    def plot_periodogram(self, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, title:str = '', grids:bool = False):
+    def plot_periodogram(self, facet_col:None|str = None, facet_arg:None|list = None, facet_labels:None|list = None, 
+        title:str = '', grids:bool = False):
         """ 
         Generates a periodogram plot that is averaged over the whole dataset or faceted by a metadata column.
         Periodograms are a good way to quantify through signal analysis the ryhthmicity of your dataset.
@@ -1438,7 +1439,7 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
     
-    def plot_periodogram_quantify(self, facet_col:None|str = None, facet_arg:None|str = None, facet_labels:None|str = None, title:str = '', 
+    def plot_periodogram_quantify(self, facet_col:None|str = None, facet_arg:None|list = None, facet_labels:None|list = None, title:str = '', 
         grids:bool = False):        
         """
         Creates a boxplot and swarmplot of the peaks in circadian rythymn according to a computed periodogram.
@@ -1803,11 +1804,11 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
 
-    def plot_hmm_quantify(self, hmm, variable:str = 'moving', labels:list = None, colours:list = None, facet_col:None|list = None, 
+    def plot_hmm_quantify(self, hmm, variable:str = 'moving', labels:list = None, colours:list = None, facet_col:None|str = None, 
         facet_arg:None|list = None, facet_labels:None|list = None, t_bin:int = 60, col_uniform:bool = False, func:str = 'max', 
         z_score:bool = True, title:str = '', t_column:str = 't', grids:bool = False):
         """
-        Creates a quantification plot of how much a predicted state appears per individual. 
+        Generates a quantification plot of how much a state is predicted as a percentage of the whole time. 
 
             Args:
                 hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the 
@@ -1848,12 +1849,11 @@ class behavpy_plotly(behavpy_draw):
                                                                                     facet_arg, facet_labels, t_bin, func, t_column)
         if col_uniform: # change the palette to be labels rather than facet
             palette_dict = {name : self._check_grey(name, colours[c])[1] for c, name in enumerate(labels)} # change to grey if control  
-
-        fig = go.Figure()
-        self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Fraction of time in each state', title = title, grid = grids)
-
         plot_column = 'Fraction of time in each State'
         domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
+
+        fig = go.Figure()
+        self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = plot_column, title = title, grid = grids)
 
         for c, state in enumerate(labels):
 
@@ -1894,260 +1894,280 @@ class behavpy_plotly(behavpy_draw):
 
         return fig, grouped_data
     
-    def plot_hmm_quantify_length(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, bin = 60, func = 'max', z_score =  True, title = '',  t_column = 't', grids = False):
+    def plot_hmm_quantify_length(self, hmm, variable:str = 'moving', labels:list = None, colours:list = None, facet_col:None|str = None, 
+        facet_arg:None|list = None, facet_labels:None|list = None, scale:str = 'log', t_bin:int = 60, col_uniform:bool = False, func:str = 'max', 
+        z_score:bool =  True, title:str = '', t_column:str = 't', grids:bool = False):
         """
-        Creates a quantification plot of the average length of each state per individual. 
+        Generates a quantification plot of the average length of each state per individual per group. 
 
             Args:
-                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the 
+                    correct hidden states and emission states for your dataset
                 variable (str, optional): The column heading of the variable of interest. Default is "moving"
-                labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
-                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
-                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                labels (list[str], optional): The names of the different states present in the hidden markov model. 
+                    If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. 
+                    If None and not 4 states then generic labels are generated, i.e. 'state-1, state-2, state-n'.
+                    Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. 
+                    If None the colours are by default for 4 states (blue and red), if not 4 then colours from the palette are chosen. 
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn. Default is None.
                 facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
-                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
-                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. 
+                    Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. 
+                    If None the labels will be those from the metadata. Default is None.
+                scale (str, optional): The scale of the y-axis. Default is 'log'.
                 t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
-                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+                col_uniform (bool, optional): Unique to the plotly version of this method. 
+                    When True the colour scheme is based on the states and not the faceted column. 
+                    When false the colour palette is used instead as in the Seaborn version. Default is False.
+                func (str, optional): When binning to the above what function should be applied to the grouped data. 
+                    Default is "max" as is necessary for the "moving" variable.
+                z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. 
+                    Default is True.
                 title (str, optional): The title of the plot. Default is an empty string.
                 t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
 
         Returns:
-            returns a Plotly figure and pandas Dataframe with the mean length of each state per indivdual
+            fig (plotly.figure.Figure): Figure object of the plot.
+                Generated by the .plot_overtime() method       
+        Raises:
+            Multiple assertion of ValueErrors in regards to faceting and HMM lists
         """
-        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-        list_states = list(range(len(labels)))
-        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, bin)
-
-        if facet_col is not None:
-            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
-        else:
-            df_list = [self.copy(deep = True)]
-
-        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func, t_column) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
-
-        def analysis(states, t_diff):
-            df_lengths = pd.DataFrame()
-            for l in states:
-                length = hmm_mean_length(l, delta_t = t_diff) 
-                df_lengths = pd.concat([df_lengths, length], ignore_index= True)
-            return df_lengths
-
-        analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0], b) for n, b in zip(facet_arg, b_list)}
+        grouped_data, labels, colours, facet_labels, palette_dict = self._internal_plot_hmm_quantify_length(hmm, variable, labels, colours, facet_col, 
+                                                                                    facet_arg, facet_labels, t_bin, func, t_column)
+        if col_uniform: # change the palette to be labels rather than facet
+            palette_dict = {name : self._check_grey(name, colours[c])[1] for c, name in enumerate(labels)} # change to grey if control  
+        plot_column = 'Length of state bout (mins)'
+        domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
 
         fig = go.Figure()
-        self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = 0.69897000433, ylabel = 'Length of state bout (mins)', ytype = 'log', title = title, grid = grids)
+        self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = 0.69897000433, ylabel = plot_column, ytype = scale, title = title, grid = grids)
 
-        gb_dict = {f'gb{n}' : analysed_dict[f'df{n}'].groupby('state') for n in facet_arg}
+        for c, state in enumerate(labels):
 
-        stats_dict = {}
+            sub_df = grouped_data[grouped_data['state'] == state]
 
-        for state, col, lab in zip(list_states, colours, labels):
+            if facet_col:
+                for lab in facet_labels:
 
-            for arg, i in zip(facet_arg, facet_labels):
+                    sub_sub_df = sub_df[sub_df[facet_col] == lab]
 
-                try:
-                    mean, median, q3, q1, zlist = self._zscore_bootstrap(gb_dict[f'gb{arg}'].get_group(state)['mean_length'].to_numpy(), z_score)
-                except KeyError:
-                    mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
-                stats_dict[f'{arg}_{lab}'] = zlist
+                    if col_uniform: col = palette_dict[state]
+                    else: col = palette_dict[lab]
 
-                if 'baseline' in i or 'control' in i:
-                    if 'rebound' in i:
-                        marker_col = 'black'
-                    else:
-                        marker_col = 'grey'
-                else:
-                    if 'rebound' in i:
-                        marker_col = f'dark{col}'
-                    else:
-                        marker_col = col
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_sub_df[plot_column].to_numpy(dtype=float), z_score = z_score)
+
+                    fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
+                    x = [lab], colour =  col, showlegend = True, name = lab, xaxis = f'x{c+1}'))
+
+                    fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [lab], colour = col, 
+                    showlegend = False, name = lab, xaxis = f'x{c+1}'))
+            else:
+                mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_df[plot_column].to_numpy(dtype=float), z_score = z_score)
 
                 fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
-                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
+                x = [state], colour =  palette_dict[state], showlegend = True, name = state, xaxis = f'x{c+1}'))
 
-                label_list = [i] * len(zlist)
-                fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
-                showlegend = False, name = i, xaxis = f'x{state+1}'))
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [state], colour = palette_dict[state], 
+                showlegend = False, name = state, xaxis = f'x{c+1}'))
 
-            domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
-            axis = f'xaxis{state+1}'
-            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
-        
-        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
+            axis = f'xaxis{c+1}'
+            if facet_col is None: state = ' ' # to prevent double labelling of light dark
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = state, domains = domains[c:c+2], axis = axis)
 
-        return fig, stats_df
+        # reorder dataframe for stats output
+        if facet_col: 
+            grouped_data = grouped_data.sort_values(facet_col)
 
-    def plot_hmm_quantify_length_min_max(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', title = '', t_column='t', grids = False):
+        return fig, grouped_data
+
+    def plot_hmm_quantify_length_min_max(self, hmm, variable:str = 'moving', labels:list = None, colours:list = None, facet_col:None|str = None, 
+        facet_arg:None|list = None, facet_labels:None|list = None, scale:str = 'log', plot_points:bool = False, t_bin:int = 60, col_uniform:bool = False, 
+        func:str = 'max', z_score:bool =  True, title:str = '', t_column:str = 't', grids:bool = False):
         """
-        Creates a quantification plot of the minimum and maximum lengths of each bout. 
+        Generates a plot of the average length of each state per individual per group. 
 
             Args:
-                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the 
+                    correct hidden states and emission states for your dataset
                 variable (str, optional): The column heading of the variable of interest. Default is "moving"
-                labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
-                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
-                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                labels (list[str], optional): The names of the different states present in the hidden markov model. 
+                    If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. 
+                    If None and not 4 states then generic labels are generated, i.e. 'state-1, state-2, state-n'.
+                    Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. 
+                    If None the colours are by default for 4 states (blue and red), if not 4 then colours from the palette are chosen. 
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn. Default is None.
                 facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
-                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
-                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. 
+                    Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. 
+                    If None the labels will be those from the metadata. Default is None.
+                scale (str, optional): The scale of the y-axis. Default is 'log'.
+                plot_points (bool, optional); If True then the length of each run is plotted. However, as it is every state run within each specimen
+                    this can generate many points making the notebook run slowly or crash . Default is False.
                 t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
-                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+                col_uniform (bool, optional): Unique to the plotly version of this method. 
+                    When True the colour scheme is based on the states and not the faceted column. 
+                    When false the colour palette is used instead as in the Seaborn version. Default is False.
+                func (str, optional): When binning to the above what function should be applied to the grouped data. 
+                    Default is "max" as is necessary for the "moving" variable.
                 title (str, optional): The title of the plot. Default is an empty string.
                 t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
 
         Returns:
-            returns a Seaborn figure and pandas Dataframe with the mean length of each state per indivdual
-
+            fig (plotly.figure.Figure): Figure object of the plot.
+                Generated by the .plot_overtime() method       
+        Raises:
+            Multiple assertion of ValueErrors in regards to faceting and HMM lists
         Notes:
-            In processing the first and last bouts of the HMM fed variable are trimmed off to prevent them affecting the result. Any missing data points will also affect the end quantification.
+            In processing the first and last bouts of the variable fed into the HMM are trimmed to prevent them affecting the result. 
+            Any missing data points will also affect the end quantification.
         """
-        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-        list_states = list(range(len(labels)))
-        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
 
-        if facet_col is not None:
-            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
-        else:
-            df_list = [self.copy(deep = True)]
+        grouped_data, labels, colours, facet_labels, palette_dict = self._internal_plot_hmm_quantify_length_min_max(hmm, variable, labels, colours, facet_col, 
+                                                                                    facet_arg, facet_labels, t_bin, func, t_column)
+        if col_uniform: # change the palette to be labels rather than facet
+            palette_dict = {name : self._check_grey(name, colours[c])[1] for c, name in enumerate(labels)} # change to grey if control  
 
-        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func, t_column) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
-
-        def analysis(states, t_diff):
-            df_lengths = pd.DataFrame()
-            for l in states:
-                length = hmm_mean_length(l, delta_t = t_diff, raw = True) 
-                df_lengths = pd.concat([df_lengths, length], ignore_index= True)
-            return df_lengths
-
-        analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0], b) for n, b in zip(facet_arg, b_list)}
+        plot_column = 'Length of state bout (mins)'
+        domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
 
         fig = go.Figure()
-        self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = 0.69897000433, ylabel = 'Length of state bout (mins)', ytype = 'log', title = title, grid = grids)
+        self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = 0.69897000433, ylabel = plot_column, ytype = scale, title = title, grid = grids)
 
-        gb_dict = {f'gb{n}' : analysed_dict[f'df{n}'].groupby('state') for n in facet_arg}
-        stats = []
-        for state, col, lab in zip(list_states, colours, labels):
+        for c, state in enumerate(labels):
 
-            for arg, i in zip(facet_arg, facet_labels):
-                
-                try:
-                    lnp = gb_dict[f'gb{arg}'].get_group(state)['length_adjusted'].to_numpy()
-                    count = lnp.size
-                    mean, median, q3, q1, _ = self._zscore_bootstrap(lnp, min_max = True, z_score = False)
+            sub_df = grouped_data[grouped_data['state'] == state]
 
-                except KeyError:
-                    mean, median, q3, q1, count = [0], [0], [0], [0], [0]
+            if facet_col:
+                for lab in facet_labels:
 
-                row_dict = {'group' : i, 'state' : lab, 'mean' : mean, 'median' : median, 'min' : q1, 'max' : q3, 'count' : count}
-                stats.append(row_dict)
-                if 'baseline' in i or 'control' in i:
-                    if 'rebound' in i:
-                        marker_col = 'black'
-                    else:
-                        marker_col = 'grey'
-                else:
-                    if 'rebound' in i:
-                        marker_col = f'dark{col}'
-                    else:
-                        marker_col = col
+                    sub_sub_df = sub_df[sub_df[facet_col] == lab]
+
+                    if col_uniform: col = palette_dict[state]
+                    else: col = palette_dict[lab]
+
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_sub_df[plot_column].to_numpy(dtype=float), min_max = True, z_score = False)
+
+                    fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
+                    x = [lab], colour =  col, showlegend = True, name = lab, xaxis = f'x{c+1}'))
+                    if plot_points:
+                        fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [lab], colour = col, 
+                        showlegend = False, name = lab, xaxis = f'x{c+1}'))
+            else:
+                mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_df[plot_column].to_numpy(dtype=float), min_max = True, z_score = False)
+
                 fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
-                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}', CI = False))
+                x = [state], colour =  palette_dict[state], showlegend = True, name = state, xaxis = f'x{c+1}'))
+                if plot_points:
+                    fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [state], colour = palette_dict[state], 
+                    showlegend = False, name = state, xaxis = f'x{c+1}'))
 
-            domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
-            axis = f'xaxis{state+1}'
-            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
-        
-        return fig, pd.DataFrame.from_dict(stats).set_index(['group', 'state']).unstack().stack()
+            axis = f'xaxis{c+1}'
+            if facet_col is None: state = ' ' # to prevent double labelling of light dark
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = state, domains = domains[c:c+2], axis = axis)
+
+        # reorder dataframe for stats output
+        if facet_col: 
+            grouped_data = grouped_data.sort_values(facet_col)
+
+        return fig, grouped_data
             
-    def plot_hmm_quantify_transition(self, hmm, variable = 'moving', labels = None, colours = None, facet_col = None, facet_arg = None, facet_labels = None, t_bin = 60, func = 'max', z_score = False, title = '', t_column='t', grids = False):
+    def plot_hmm_quantify_transition(self, hmm, variable:str = 'moving', labels:list = None, colours:list = None, facet_col:None|str = None, 
+        facet_arg:None|list = None, facet_labels:None|list = None, t_bin:int = 60, col_uniform:bool = False, 
+        func:str = 'max', z_score:bool =  True, title:str = '', t_column:str = 't', grids:bool = False):        
         """
-        Creates a quantification plot of the times each state is transitioned into as a percentage of the whole. 
+        Generates a plot of the average amount each state is transitioned into. This is a good plot to compare with plot_hmm_quantify() to understand the interplay
+        between frequent transitions into a state and staying in a state.
 
             Args:
-                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the correct hidden states and emission states for your dataset
+                hmm (hmmlearn.hmm.CategoricalHMM): This should be a trained HMM Learn object with the 
+                    correct hidden states and emission states for your dataset
                 variable (str, optional): The column heading of the variable of interest. Default is "moving"
-                labels (list[str], optional): The names of the different states present in the hidden markov model. If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. Default is None.
-                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. If None the colours are a default for 4 states (blue and red). Default is None.
-                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn.
+                labels (list[str], optional): The names of the different states present in the hidden markov model. 
+                    If None the labels are assumed to be ['Deep sleep', 'Light sleep', 'Quiet awake', 'Full awake'] if a 4 state model. 
+                    If None and not 4 states then generic labels are generated, i.e. 'state-1, state-2, state-n'.
+                    Default is None.
+                colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. 
+                    If None the colours are by default for 4 states (blue and red), if not 4 then colours from the palette are chosen. 
+                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn. Default is None.
                 facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
-                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. Default is None.
-                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. If None the labels will be those from the metadata. Default is None.
+                facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. 
+                    Default is None.
+                facet_labels (list, optional): The labels to use for faceting, these will be what appear on the plot. 
+                    If None the labels will be those from the metadata. Default is None.
                 t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
-                func (str, optional): When binning to the above what function should be applied to the grouped data. Default is "max" as is necessary for the "moving" variable
+                col_uniform (bool, optional): Unique to the plotly version of this method. 
+                    When True the colour scheme is based on the states and not the faceted column. 
+                    When false the colour palette is used instead as in the Seaborn version. Default is False.
+                func (str, optional): When binning to the above what function should be applied to the grouped data. 
+                    Default is "max" as is necessary for the "moving" variable.
                 title (str, optional): The title of the plot. Default is an empty string.
                 t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
                 grids (bool, optional): true/false whether the resulting figure should have grids. Default is False.
 
         Returns:
-            returns a Seaborn figure and pandas Dataframe with the mean length of each state per indivdual
-
+            fig (plotly.figure.Figure): Figure object of the plot.
+                Generated by the .plot_overtime() method       
+        Raises:
+            Multiple assertion of ValueErrors in regards to faceting and HMM lists
         Notes:
+            In processing the first and last bouts of the variable fed into the HMM are trimmed to prevent them affecting the result. 
+            Any missing data points will also affect the end quantification.
         """
-        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-        list_states = list(range(len(labels)))
-        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
 
-        if facet_col is not None:
-            df_list = [self.xmv(facet_col, arg) for arg in facet_arg]
-        else:
-            df_list = [self.copy(deep = True)]
+        grouped_data, labels, colours, facet_labels, palette_dict = self._internal_plot_hmm_quantify_transition(hmm, variable, labels, colours, facet_col, 
+                                                                                    facet_arg, facet_labels, t_bin, func, t_column)
+        if col_uniform: # change the palette to be labels rather than facet
+            palette_dict = {name : self._check_grey(name, colours[c])[1] for c, name in enumerate(labels)} # change to grey if control  
 
-        decoded_dict = {f'df{n}' : self._hmm_decode(d, h, b, variable, func, t_column) for n, d, h, b in zip(facet_arg, df_list, h_list, b_list)}
-
-        def analysis(states):
-            df_trans = pd.DataFrame()
-            for l in states:
-                trans = hmm_pct_transition(l, list_states) 
-                df_trans = pd.concat([df_trans, trans], ignore_index= True)
-            return df_trans
-
-        analysed_dict = {f'df{n}' : analysis(decoded_dict[f'df{n}'][0]) for n in facet_arg}
+        plot_column = 'Fraction of transitions into each state'
+        domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
 
         fig = go.Figure()
-        self._plot_ylayout(fig, yrange = [0, 1.05], t0 = 0, dtick = 0.2, ylabel = 'Fraction of transitions into each state', title = title, grid = grids)
+        self._plot_ylayout(fig, yrange = False, t0 = 0, dtick = 0.69897000433, ylabel = plot_column, title = title, grid = grids)
 
-        stats_dict = {}
+        for c, state in enumerate(labels):
 
-        for state, col, lab in zip(list_states, colours, labels):
+            sub_df = grouped_data[grouped_data['state'] == state]
 
-            for arg, i in zip(facet_arg, facet_labels):
-                
-                try:
-                    mean, median, q3, q1, zlist = self._zscore_bootstrap(analysed_dict[f'df{arg}'][state].to_numpy(), z_score = z_score)  
-                except KeyError:
-                    mean, median, q3, q1, zlist = [0], [0], [0], [np.nan]
+            if facet_col:
+                for lab in facet_labels:
 
-                stats_dict[f'{arg}_{lab}'] = zlist
+                    sub_sub_df = sub_df[sub_df[facet_col] == lab]
 
-                if 'baseline' in i.lower() or 'control' in i.lower():
-                    if 'rebound' in i.lower():
-                        marker_col = 'black'
-                    else:
-                        marker_col = 'grey'
-                else:
-                    if 'rebound' in i.lower():
-                        marker_col = f'dark{col}'
-                    else:
-                        marker_col = col
+                    if col_uniform: col = palette_dict[state]
+                    else: col = palette_dict[lab]
+
+                    mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_sub_df[plot_column].to_numpy(dtype=float), z_score = z_score)
+
+                    fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
+                    x = [lab], colour =  col, showlegend = True, name = lab, xaxis = f'x{c+1}'))
+
+                    fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [lab], colour = col, 
+                    showlegend = False, name = lab, xaxis = f'x{c+1}'))
+            else:
+                mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_df[plot_column].to_numpy(dtype=float), z_score = z_score)
 
                 fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
-                x = [i], colour =  marker_col, showlegend = False, name = i, xaxis = f'x{state+1}'))
+                x = [state], colour =  palette_dict[state], showlegend = True, name = state, xaxis = f'x{c+1}'))
 
-                label_list = [i] * len(zlist)
-                fig.add_trace(self._plot_boxpoints(y = zlist, x = label_list, colour = marker_col, 
-                showlegend = False, name = i, xaxis = f'x{state+1}'))
+                fig.add_trace(self._plot_boxpoints(y = zlist, x = len(zlist) * [state], colour = palette_dict[state], 
+                showlegend = False, name = state, xaxis = f'x{c+1}'))
 
-            domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
+            axis = f'xaxis{c+1}'
+            if facet_col is None: state = ' ' # to prevent double labelling of light dark
+            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = state, domains = domains[c:c+2], axis = axis)
 
-            axis = f'xaxis{state+1}'
-            self._plot_xlayout(fig, xrange = False, t0 = False, dtick = False, xlabel = lab, domains = domains[state:state+2], axis = axis)
+        # reorder dataframe for stats output
+        if facet_col: 
+            grouped_data = grouped_data.sort_values(facet_col)
 
-        stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
-
-        return fig, stats_df
+        return fig, grouped_data
 
     def plot_hmm_raw(self, hmm, variable:str = 'moving', colours:list = None, num_plots:int = 5, stim_df = None, show_movement:bool = False, 
         t_bin:int = 60, func:str = 'max', day_length:int = 24, lights_off:int = 12, t_column:str = 't', title:str = '', grids:bool = False):
@@ -2387,7 +2407,6 @@ class behavpy_plotly(behavpy_draw):
         fig = go.Figure()
         self._plot_ylayout(fig, yrange = [0, 1.01], t0 = 0, dtick = 0.2, ylabel = 'Response Rate', title = title, grid = grids)
 
-        stats_dict = {}
 
         for c, (col, st_lab) in enumerate(zip(colours, labels)):
             sub_df = grouped_data[grouped_data['state'] == st_lab]
@@ -2399,8 +2418,6 @@ class behavpy_plotly(behavpy_draw):
                     mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_np, z_score = z_score)
                 except KeyError:
                     continue
-
-                stats_dict[f'{st_lab}: {lab}'] = zlist
                 
                 if col_uniform == True:
                     if 'Spon. Mov.' in lab:
@@ -2423,7 +2440,7 @@ class behavpy_plotly(behavpy_draw):
 
         stats_df = pd.DataFrame(dict([(k, pd.Series(v)) for k, v in stats_dict.items()]))
         
-        return fig, stats_df
+        return fig, grouped_data
 
     def plot_response_over_hmm_bouts(self, mov_df, hmm, variable = 'moving', response_col = 'has_responded', labels = None, colours = None, x_limit = 30, t_bin = 60, func = 'max', title = '', grids = False, t_column = 't'):
         """ 
