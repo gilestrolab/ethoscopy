@@ -4,10 +4,14 @@ def rle(x):
     """
     Find runs of consecutive items in an array
 
-    params:
-    @x = ID numpy array  
+        Args:
+            x (np.array): The numpy array containing runs
+                of data.  
     
-    returns three arrays containg the run values, the start indices of the runs, and the lengths of the runs 
+    Returns: 
+        Three arrays containg the run values, 
+            the start indices of the runs, 
+            and the lengths of the runs 
     """
 
     # ensure array

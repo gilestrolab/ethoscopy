@@ -210,7 +210,8 @@ class behavpy_draw(behavpy_core):
                 return sns.color_palette('husl', len(plot_list))
 
     def _adjust_colours(self, colour_list):
-        """ Takes a list of colours written names or hex codes.
+        """ 
+        Takes a list of colours written names or hex codes.
         Returns two lists of hex colour codes. The first is a lighter version of the second which is the original.
         """
         def adjust_color_lighten(r,g,b, factor):
@@ -272,6 +273,19 @@ class behavpy_draw(behavpy_core):
         return hex_string
 
     def save_figure(self, fig, path, width = None, height = None):
+        """
+        Save the produced plot from either Plotly or Seaborn that is produced from a method
+
+            Args:
+                fig (Figure.object): The figure object, either from Plotly or Seaborn/Matplotlib.
+                path (str): The path of the local folder you wish to save to.
+                width (int | None, optional): The width of the exported image in layout pixels. 
+                    The Only for Plotly figures. Default is None.
+                height (int | None, optional): The height of the exported image in layout pixels. 
+                    The Only for Plotly figures. Default is None.
+        Returns:
+            None
+        """
         assert(isinstance(path, str))
 
         if self.canvas == 'plotly':
@@ -311,6 +325,7 @@ class behavpy_draw(behavpy_core):
     # GENERAL PLOT HELPERS
 
     def facet_merge(self, data, facet_col, facet_arg, facet_labels, hmm_labels = None):
+        """ A internal method for joining a metadata column with its data for plotting purposes """
         # merge the facet_col column and replace with the labels
         data = data.join(self.meta[[facet_col]])
         data[facet_col] = data[facet_col].astype('category')
@@ -413,7 +428,7 @@ class behavpy_draw(behavpy_core):
         return gbm, np.array(time_list), id_list
 
     def _hmm_response(self, mov_df, hmm, variable, response_col, labels, colours, facet_col, facet_arg, t_bin, facet_labels, func, t_column):
-
+        """ an internal method for all hmm response plotters. Decodes the movement dataset and merges it with the response dataset """ 
         data_summary = {
             "%s_mean" % response_col : (response_col, 'mean'),
             "%s_std" % response_col : (response_col, 'std'),
@@ -482,7 +497,7 @@ class behavpy_draw(behavpy_core):
         return grouped_data, palette_dict, h_order
     
     def _bouts_response(self, mov_df, hmm, variable, response_col, labels, colours, x_limit, t_bin, func, t_col):
-
+        """ An internal method to find the response rate over runs of a variable """
         data_summary = {
             "mean" : (response_col, 'mean'),
             "count" : (response_col, 'count'),
@@ -731,7 +746,7 @@ class behavpy_draw(behavpy_core):
         return grouped_final, h_order, palette_dict, x_max, plot_choice[plot_type]
 
     def _internal_plot_quantify(self, variable, facet_col, facet_arg, facet_labels, fun):
-
+        """ An internal method for the quantifying plots, finds the avg and std of the individual """
         # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -765,6 +780,9 @@ class behavpy_draw(behavpy_core):
         return grouped_data, palette_dict, facet_labels, variable
 
     def _internal_plot_response_quantify(self, response_col, facet_col, facet_arg, facet_labels):
+        """ An internal method for the quantifying response to stimulus, finds the avg and std of the individual 
+            and generates labels for False and True stimulis
+        """
 
         if response_col not in self.columns.tolist():
             raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analyed the dataset with stimulus_response')
@@ -828,7 +846,7 @@ class behavpy_draw(behavpy_core):
         return grouped_data, palette_dict, facet_labels
     
     def _internal_plot_anticipation_score(self, variable, facet_col, facet_arg, facet_labels, day_length, lights_off, t_column):
-        """ """
+        """ An internal method to applt the preprocessing to a dataset before calling the anticopation_score method """
         if variable not in self.columns.tolist():
             raise KeyError(f'The column you gave {variable}, is not in the data')
 
@@ -873,7 +891,8 @@ class behavpy_draw(behavpy_core):
             if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
                 decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
             else:
-                decoded_data = concat(*[self.__class__(self._hmm_decode(data.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
+                decoded_data = concat(*[self.__class__(self._hmm_decode(data.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), 
+                                            mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
 
         return decoded_data, labels, colours, facet_arg, facet_labels
 
@@ -966,6 +985,7 @@ class behavpy_draw(behavpy_core):
 
     def _internal_plot_hmm_quantify_transition(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
         t_bin, func, t_column):
+        """ An internal method to find the % of transtions into a state occur per state per individual """
 
         decoded_data, labels, colours, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
         t_bin, func, t_column, rm = True)

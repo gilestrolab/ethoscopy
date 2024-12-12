@@ -12,7 +12,7 @@ def fancy_range(start, stop, steps=(1,)):
         val += next(steps)
 
 def make_bars(bar, bar_col, size, split, y_size1, y_size2):
-
+    """ The function to generate plotly shapes for the boxes """
     shaped_bar = go.layout.Shape(type="rect", 
                                 x0=bar, 
                                 y0= y_size1, 
@@ -29,12 +29,35 @@ def make_bars(bar, bar_col, size, split, y_size1, y_size2):
 
     return shaped_bar
 
-def circadian_bars(t_min, t_max, min_y, max_y, day_length = 24, lights_off = 12, split = False, canvas = 'plotly'):
+def circadian_bars(t_min:int|float, t_max:int|float, min_y:int|float, max_y:int|float, day_length:int|float = 24, 
+    lights_off:int|float = 12, split:bool|int = False, canvas:str = 'plotly'):
     """ 
-    create boxes within plotly to represent the light, dark phases in light sensitive experiments
-    @t_min = int, the minimum time point as a multiple of 12 
-    @t_max = int, the maximum time point as a multiple of 12
-    @circadian_night = int, the hour the lights turn off, must be between 1 and 23
+    Generates boxes that indicate when the lights are ona dn off for both Plotly and Seaborn.
+    Typically used internally for use with overtime plots.
+
+        Args:
+            t_min (int | float): the minimum value of t (time) as a function of the lights_off interval
+            t_mmax (int | float): the maximum value of t (time) as a function of the lights_off interval
+            min_y (int | float): the minimum value of the y-axis to scale the height of the boxes
+            max_y (int | float): the maximum value of the y-axis to scale the height of the boxes
+            day_length (int | float): the length (in hours) of the experimental day.
+                The combined length of both the white (day) and black (night) boxes will this length.
+                Default is 24.
+            lights_off (int | float): the timepoint (in hours) when the lights go off in an experimental day.
+                The length of both the white (day) box will be this length. The black (night) will be 
+                day_length - lights_off.
+                Default is 12.
+            split (bool | int, optional): If not False then must be an int that corresponds to the number 
+                of subplots in the figure. Default is False.
+            canvas (str, optional); The canvas type the boxes are generated for, either Plotly or Seaborn.
+                Default is 'plotly'.
+
+    Returns:
+        If canvas == 'plotly':
+            A dictionary containing plotly shape objects
+        If canvas == 'seaborn':
+            used_range - a list of the x values of the boxes
+            size - the height of the boxes
     """
     if split != False:
         scale = 20

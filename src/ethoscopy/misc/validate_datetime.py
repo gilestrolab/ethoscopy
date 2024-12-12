@@ -5,7 +5,12 @@ def validate_datetime(data):
     Checks the date column of a pandas dataframe for the format YYYY-MM-DD, corrects formats DD-MM-YYYY
     and DD/MM/YYYY, raises an error message for other formats
     returns data unaltered if there are no alerations, if changes found the date column is updated
-    @data = pandas dataframe file containing with a column headed 'date' 
+
+        Args:
+            data (pd.DataFrame): A pandas dataframe file containing with a column headed 'date'
+
+    Returns:
+        An augmented pd.Dataframe with the dates in the correct format 
     """
     date_list = data['date'].values.tolist()
     new_date_list = []

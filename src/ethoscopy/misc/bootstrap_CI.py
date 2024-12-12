@@ -6,10 +6,16 @@ def bootstrap(data, n=1000, func=np.mean):
     at each resampling. `bootstrap` returns a function,
     which can be called to obtain confidence intervals
     of interest
-    params:
-    @data = numpy array 
-    @n = number of iterations of the simulation 
-    @func = function to find average of all simulation outputs
+
+        Args:
+            data (np.array): The numpy array of data to be bootstrapped.
+            n (int, optional): The number of iterations of the simulation.
+                Default is 1000.
+            func (np.function, optional): The function to find average of 
+                all simulation outputs. Default is numpy mean.
+    
+    Returns:
+        a tuple containing the 95% confidence intervals
     """
     simulations = list()
     sample_size = len(data)
