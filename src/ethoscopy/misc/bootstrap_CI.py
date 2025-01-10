@@ -1,21 +1,18 @@
 import numpy as np 
 
-def bootstrap(data, n=1000, func=np.mean):
+def bootstrap(data: np.ndarray, n: int = 1000, func: callable = np.mean) -> tuple:
     """ 
-    Generate n bootstrap samples, evaluating `func`
-    at each resampling. `bootstrap` returns a function,
-    which can be called to obtain confidence intervals
-    of interest
+    Generate n bootstrap samples and evaluate confidence intervals.
+    
+    Uses resampling with replacement to estimate confidence intervals for a given statistic.
 
-        Args:
-            data (np.array): The numpy array of data to be bootstrapped.
-            n (int, optional): The number of iterations of the simulation.
-                Default is 1000.
-            func (np.function, optional): The function to find average of 
-                all simulation outputs. Default is numpy mean.
+    Args:
+        data (np.ndarray): Array of data to be bootstrapped
+        n (int, optional): Number of bootstrap iterations. Default is 1000.
+        func (callable, optional): Function to compute on resampled data. Default is np.mean.
     
     Returns:
-        a tuple containing the 95% confidence intervals
+        tuple: Lower and upper 95% confidence interval bounds
     """
     simulations = list()
     sample_size = len(data)

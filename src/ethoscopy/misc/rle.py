@@ -1,17 +1,22 @@
 import numpy as np 
 
-def rle(x):
+def rle(x: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Find runs of consecutive items in an array
-
-        Args:
-            x (np.array): The numpy array containing runs
-                of data.  
+    Find runs of consecutive items in an array.
     
-    Returns: 
-        Three arrays containg the run values, 
-            the start indices of the runs, 
-            and the lengths of the runs 
+    Identifies continuous sequences of identical values and their properties.
+
+    Args:
+        x (np.ndarray): Array containing runs of data
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray]: Tuple containing:
+            - run values (unique values in runs)
+            - run starts (starting indices)
+            - run lengths (duration of each run)
+
+    Raises:
+        ValueError: If input array is not 1-dimensional
     """
 
     # ensure array

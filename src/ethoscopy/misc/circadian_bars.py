@@ -1,5 +1,6 @@
 import plotly.graph_objs as go 
 from itertools import cycle
+from typing import Union
 
 def fancy_range(start, stop, steps=(1,)):
     """
@@ -29,35 +30,27 @@ def make_bars(bar, bar_col, size, split, y_size1, y_size2):
 
     return shaped_bar
 
-def circadian_bars(t_min:int|float, t_max:int|float, min_y:int|float, max_y:int|float, day_length:int|float = 24, 
-    lights_off:int|float = 12, split:bool|int = False, canvas:str = 'plotly'):
+def circadian_bars(t_min: int|float, t_max: int|float, min_y: int|float, max_y: int|float, 
+                  day_length: int|float = 24, lights_off: int|float = 12, 
+                  split: bool|int = False, canvas: str = 'plotly') -> Union[dict, tuple]:
     """ 
-    Generates boxes that indicate when the lights are ona dn off for both Plotly and Seaborn.
-    Typically used internally for use with overtime plots.
+    Generate light/dark cycle indicator boxes for circadian plots.
+    
+    Creates visual indicators for light and dark periods in both Plotly and Seaborn plots.
 
-        Args:
-            t_min (int | float): the minimum value of t (time) as a function of the lights_off interval
-            t_mmax (int | float): the maximum value of t (time) as a function of the lights_off interval
-            min_y (int | float): the minimum value of the y-axis to scale the height of the boxes
-            max_y (int | float): the maximum value of the y-axis to scale the height of the boxes
-            day_length (int | float): the length (in hours) of the experimental day.
-                The combined length of both the white (day) and black (night) boxes will this length.
-                Default is 24.
-            lights_off (int | float): the timepoint (in hours) when the lights go off in an experimental day.
-                The length of both the white (day) box will be this length. The black (night) will be 
-                day_length - lights_off.
-                Default is 12.
-            split (bool | int, optional): If not False then must be an int that corresponds to the number 
-                of subplots in the figure. Default is False.
-            canvas (str, optional); The canvas type the boxes are generated for, either Plotly or Seaborn.
-                Default is 'plotly'.
+    Args:
+        t_min (int|float): Minimum time value (relative to lights_off)
+        t_max (int|float): Maximum time value (relative to lights_off)
+        min_y (int|float): Minimum y-axis value for scaling boxes
+        max_y (int|float): Maximum y-axis value for scaling boxes
+        day_length (int|float, optional): Length of experimental day in hours. Default is 24.
+        lights_off (int|float, optional): Hour when lights turn off. Default is 12.
+        split (bool|int, optional): Number of subplots if splitting figure. Default is False.
+        canvas (str, optional): Plot type ('plotly' or 'seaborn'). Default is 'plotly'.
 
     Returns:
-        If canvas == 'plotly':
-            A dictionary containing plotly shape objects
-        If canvas == 'seaborn':
-            used_range - a list of the x values of the boxes
-            size - the height of the boxes
+        Union[dict, tuple]: For plotly: dict of shape objects and y-size
+                           For seaborn: tuple of (range values, box size)
     """
     if split != False:
         scale = 20

@@ -1,16 +1,22 @@
+from hmmlearn.hmm import CategoricalHMM
 from pathlib import PurePath
 import pickle
 
-def get_HMM(sex):
-    """Get trained hidden markov models for female and male drosophila -- a 4 state model '
-    Deep Sleep, Active Awake, Quiet awake, Active Awake 
+def get_HMM(sex: str) -> 'CategoricalHMM':
+    """
+    Load pre-trained Hidden Markov Models for Drosophila behavior states.
     
-        Args:
-            sex (str): Choose which trained model you wold like. 
-                Either 'M' for male or 'F' for female. 
+    Provides access to 4-state HMM models (Deep Sleep, Active Awake, Quiet Awake, Active Awake)
+    trained separately for male and female flies.
+
+    Args:
+        sex (str): Sex of the model to load ('M' for male or 'F' for female)
 
     Returns:
-        a hmmlearn.hmm.CategoricalHMM object
+        CategoricalHMM: Trained HMM model object from hmmlearn
+
+    Raises:
+        KeyError: If sex argument is not 'M' or 'F'
     """
 
     path = PurePath(__file__)

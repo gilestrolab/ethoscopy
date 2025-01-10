@@ -1,17 +1,20 @@
 import pandas as pd
 from pathlib import PurePath
 
-def get_tutorial(data_type):
+def get_tutorial(data_type: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """ 
-    Get a dataset for use with the tutorials in the tutorial notebook folder.
+    Load example datasets for tutorial notebooks.
+    
+    Provides access to pre-packaged datasets for learning ethoscopy functionality.
 
-        Args:
-            data_type (str): Choose from two datasets, 'overview' and 'circadian'.
-                Circadian is specifically for the circadian tutorial notebook as 
-                it contains circadian mutant data.
+    Args:
+        data_type (str): Dataset to load ('overview' or 'circadian')
     
     Returns:
-        Two pandas dataframes, data and metadata
+        tuple[pd.DataFrame, pd.DataFrame]: Tuple containing (data, metadata) DataFrames
+
+    Raises:
+        KeyError: If data_type is not 'overview' or 'circadian'
     """
 
     data_types = ['overview', 'circadian']
