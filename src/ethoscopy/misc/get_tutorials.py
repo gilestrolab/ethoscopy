@@ -1,5 +1,5 @@
 import pandas as pd
-from pathlib import PurePath
+from pathlib import Path
 
 def get_tutorial(data_type: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """ 
@@ -21,7 +21,7 @@ def get_tutorial(data_type: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         FileNotFoundError: If tutorial data files cannot be found
     """
     # Use resolve() to handle symlinks and get absolute path
-    path = PurePath(__file__).resolve()
+    path = Path(__file__).absolute()
     this_dir = path.parent
     
     # Normalize input

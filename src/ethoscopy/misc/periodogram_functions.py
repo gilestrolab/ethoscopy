@@ -80,7 +80,8 @@ def chi_squared(data: pd.DataFrame, t_col: str, var: str,
     return out.set_index('id').sort_values('period', ascending=True)
 
 def lomb_scargle(data: pd.DataFrame, t_col: str, var: str, 
-                 period_range: list = [10, 36], alpha: float = 0.01, **kwargs) -> pd.DataFrame:
+                 period_range: list = [10, 36], alpha: float = 0.01, 
+                 **kwargs) -> pd.DataFrame:
     """
     Calculate Lomb-Scargle periodogram for unevenly sampled time series.
     
@@ -93,6 +94,7 @@ def lomb_scargle(data: pd.DataFrame, t_col: str, var: str,
         var (str): Name of column containing variable to analyze
         period_range (list, optional): Min and max periods to analyze in hours. Default [10, 36]
         alpha (float, optional): Significance level for threshold calculation. Default 0.01
+        freq (float, optional): Ignored - included for API compatibility
         **kwargs: Additional arguments for astropy.LombScargle, such as:
             - normalization: Type of normalization ('standard', 'model', 'log', 'psd')
             - nterms: Number of terms in the Fourier fit
@@ -109,6 +111,10 @@ def lomb_scargle(data: pd.DataFrame, t_col: str, var: str,
     start, end = 60*60*period_range[0], 60*60*period_range[1]
     t, y = data[t_col].to_numpy(), data[var].to_numpy()
     
+    # Remove freq from kwargs if present
+    if 'freq' in kwargs:
+        del kwargs['freq']
+        
     # Pass kwargs to LombScargle constructor
     ls = LombScargle(t, y, **kwargs)
     period, power = ls.autopower(
@@ -154,6 +160,10 @@ def fourier(data: pd.DataFrame, t_col: str, var: str,
     start, end = 60*60*period_range[0], 60*60*period_range[1]
     t, y = data[t_col].to_numpy(), data[var].to_numpy()
     
+    # Remove freq from kwargs if present
+    if 'freq' in kwargs:
+        del kwargs['freq']   
+
     # Apply optional window function
     if 'window' in kwargs:
         from scipy.signal import get_window
@@ -185,53 +195,59 @@ def fourier(data: pd.DataFrame, t_col: str, var: str,
         'sig_threshold': sig_thresh
     }).set_index('id').sort_values('period', ascending=True)
 
-def welch(data: pd.DataFrame, t_col: str, var: str, 
-          period_range: list = [10, 36], alpha: float = 0.01, **kwargs) -> pd.DataFrame:
-    """
-    Calculate Welch's periodogram for time series data.
-    
-    Implements Welch's method for estimating power spectral density.
-    Reduces noise in spectral estimation compared to standard periodogram.
+## Welch doesn't work as expected
 
-    Args:
-        data (pd.DataFrame): Input DataFrame containing time series data
-        t_col (str): Name of column containing timestamps
-        var (str): Name of column containing variable to analyze
-        period_range (list, optional): Min and max periods to analyze in hours. Default [10, 36]
-        alpha (float, optional): Significance level for threshold calculation. Default 0.01
-        **kwargs: Additional arguments for scipy.signal.welch, such as:
-            - window: Window function ('hanning' by default)
-            - nperseg: Length of each segment
-            - noverlap: Number of points to overlap between segments
-            - scaling: Spectrum scaling ('density' or 'spectrum')
+# def welch(data: pd.DataFrame, t_col: str, var: str, 
+#           period_range: list = [10, 36], alpha: float = 0.01, **kwargs) -> pd.DataFrame:
+#     """
+#     Calculate Welch's periodogram for time series data.
+    
+#     Implements Welch's method for estimating power spectral density.
+#     Reduces noise in spectral estimation compared to standard periodogram.
 
-    Returns:
-        pd.DataFrame: DataFrame containing:
-            - period: Analyzed periods in hours
-            - power: Power at each period
-            - sig_threshold: Significance threshold
-    """
-    id_val = data.name
-    start, end = 60*60*period_range[0], 60*60*period_range[1]
-    t, y = data[t_col].to_numpy(), data[var].to_numpy()
+#     Args:
+#         data (pd.DataFrame): Input DataFrame containing time series data
+#         t_col (str): Name of column containing timestamps
+#         var (str): Name of column containing variable to analyze
+#         period_range (list, optional): Min and max periods to analyze in hours. Default [10, 36]
+#         alpha (float, optional): Significance level for threshold calculation. Default 0.01
+#         **kwargs: Additional arguments for scipy.signal.welch, such as:
+#             - window: Window function ('hanning' by default)
+#             - nperseg: Length of each segment
+#             - noverlap: Number of points to overlap between segments
+#             - scaling: Spectrum scaling ('density' or 'spectrum')
+
+#     Returns:
+#         pd.DataFrame: DataFrame containing:
+#             - period: Analyzed periods in hours
+#             - power: Power at each period
+#             - sig_threshold: Significance threshold
+#     """
+#     id_val = data.name
+#     start, end = 60*60*period_range[0], 60*60*period_range[1]
+#     t, y = data[t_col].to_numpy(), data[var].to_numpy()
     
-    # Calculate Welch periodogram with kwargs
-    dt = t[1] - t[0]
-    period, power = internal_welch(y, fs=1/dt, **kwargs)
-    period, power = np.delete(period, 0), np.delete(power, 0)
+#     # Remove freq from kwargs if present
+#     if 'freq' in kwargs:
+#         del kwargs['freq']
     
-    long_period = 1/period
-    mask = (long_period > start) & (long_period < end)
-    period = long_period[mask] / (60*60)
+#     # Calculate Welch periodogram with kwargs
+#     dt = t[1] - t[0]
+#     period, power = internal_welch(y, fs=1/dt, **kwargs)
+#     period, power = np.delete(period, 0), np.delete(power, 0)
     
-    sig_thresh = -np.mean(power) * np.log(1 - (1 - alpha) ** (1/len(power)))
+#     long_period = 1/period
+#     mask = (long_period > start) & (long_period < end)
+#     period = long_period[mask] / (60*60)
     
-    return pd.DataFrame({
-        'id': id_val,
-        'period': period,
-        'power': power[mask],
-        'sig_threshold': sig_thresh
-    }).set_index('id').sort_values('period', ascending=True)
+#     sig_thresh = -np.mean(power) * np.log(1 - (1 - alpha) ** (1/len(power)))
+    
+#     return pd.DataFrame({
+#         'id': id_val,
+#         'period': period,
+#         'power': power[mask],
+#         'sig_threshold': sig_thresh
+#     }).set_index('id').sort_values('period', ascending=True)
 
 def wavelet(data: pd.DataFrame, t_col: str, var: str, scale: int = 156, 
             wavelet_type: str = 'morl', **kwargs) -> tuple:

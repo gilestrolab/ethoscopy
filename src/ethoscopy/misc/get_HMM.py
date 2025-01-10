@@ -1,5 +1,5 @@
 from hmmlearn.hmm import CategoricalHMM
-from pathlib import PurePath
+from pathlib import Path
 import pickle
 
 def get_HMM(sex: str) -> 'CategoricalHMM':
@@ -17,22 +17,28 @@ def get_HMM(sex: str) -> 'CategoricalHMM':
 
     Raises:
         KeyError: If sex argument is not 'M' or 'F'
+        FileNotFoundError: If HMM model file cannot be found
     """
-
-    path = PurePath(__file__).resolve()
+    # Get absolute path that works on all OS
+    path = Path(__file__).absolute()
     this_dir = path.parent
 
+    # Normalize input
     sex = sex.upper()
     if sex not in {'M', 'F'}:
         raise KeyError('The argument for "sex" must be "M" or "F"')
 
+    # Use Path's / operator for cross-platform path joining
     hmm_path = this_dir / 'tutorial_data' / f'4_states_{sex}_WT.pkl'
 
     try:
         with open(hmm_path, 'rb') as file:
             h = pickle.load(file)
     except FileNotFoundError:
-        raise FileNotFoundError(f"HMM model file not found at: {hmm_path}")
+        raise FileNotFoundError(
+            f"HMM model file not found at: {hmm_path}\n"
+            f"Current directory is: {this_dir}"
+        )
 
     return h
 

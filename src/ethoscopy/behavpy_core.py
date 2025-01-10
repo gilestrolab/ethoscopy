@@ -1413,7 +1413,7 @@ class behavpy_core(pd.DataFrame):
     def _check_periodogram_input(self, v, per, per_range, t_col, wavelet_type = False):
         """ Method to check the input to periodogram methods"""
 
-        periodogram_list = ['chi_squared', 'lomb_scargle', 'fourier', 'welch']
+        periodogram_list = ['chi_squared', 'lomb_scargle', 'fourier']#, 'welch'] ## remove welch for now
 
         if v not in self.columns.tolist():
             raise KeyError(f"Variable column {v} is not a column title in your given dataset")
@@ -1443,7 +1443,7 @@ class behavpy_core(pd.DataFrame):
 
         return fun
 
-    def periodogram(self, mov_variable, periodogram, period_range = [10, 32], sampling_rate = 15, alpha = 0.01, t_column = 't'):
+    def periodogram(self, mov_variable, periodogram, period_range = [10, 32], sampling_rate = 15, alpha = 0.01, t_column = 't', **kwargs):
         """ 
         A method to apply a periodogram analysis to given behavioural data, typically movement data. 
         Call this method first to create an analysed dataset that can be plotted with the other periodogram methods.
@@ -1467,13 +1467,20 @@ class behavpy_core(pd.DataFrame):
         """
 
         fun = self._check_periodogram_input(mov_variable, periodogram, period_range, t_column)
-
-        sampling_rate = 1 / (sampling_rate * 60)
-
+        sampling_rate = 1 / (sampling_rate * 60)  # Converts to frequency
+        
         data = self.copy(deep = True)
         sampled_data = data.interpolate_linear(variable = mov_variable, step_size = 1 / sampling_rate)
         sampled_data = sampled_data.reset_index()
-        return  self.__class__(sampled_data.groupby('id', group_keys = False)[[t_column, mov_variable]].apply(partial(fun, var = mov_variable, t_col = t_column, period_range = period_range, freq = sampling_rate, alpha = alpha)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
+        return self.__class__(sampled_data.groupby('id', group_keys = False)[[t_column, mov_variable]].apply(
+            partial(fun, 
+                    var = mov_variable, 
+                    t_col = t_column, 
+                    period_range = period_range, 
+                    freq = sampling_rate,
+                    alpha = alpha, 
+                    **kwargs)), 
+            data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
     def wavelet_types():
@@ -1503,21 +1510,22 @@ class behavpy_core(pd.DataFrame):
 
     @staticmethod
     def _wrapped_find_peaks(data, num, height = None):
-
         if height is True:
             peak_ind, _ = find_peaks(x = data['power'].to_numpy(), height = data['sig_threshold'].to_numpy())
         else:
             peak_ind, _ = find_peaks(x = data['power'].to_numpy())
 
         peaks = data['period'].to_numpy()[peak_ind]
-
         peak_power = data['power'].to_numpy()[peak_ind]
         order = peak_power.argsort()[::-1]
         ranks = order.argsort() + 1
 
-        rank_dict = {k : int(v) for k,v in zip(peaks, ranks)}
-        data['peak'] = data['period'].map(rank_dict)
-        data['peak'] =  np.where(data['peak'] > num, False, data['peak'])
+        # Create dictionary with default value of False
+        rank_dict = {k: int(v) for k,v in zip(peaks, ranks)}
+        
+        # Use map with a lambda that returns False for values not in dictionary
+        data['peak'] = data['period'].map(lambda x: rank_dict.get(x, False))
+        data['peak'] = np.where(data['peak'] > num, False, data['peak'])
 
         return data
     
