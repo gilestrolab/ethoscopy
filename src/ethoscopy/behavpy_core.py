@@ -14,7 +14,7 @@ from scipy.stats import zscore
 from ethoscopy.misc.circadian_bars import circadian_bars
 from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
-from ethoscopy.misc.periodogram_functions import chi_squared, lomb_scargle, fourier, welch, wavelet
+from ethoscopy.misc.periodogram_functions import chi_squared, lomb_scargle, fourier, wavelet #, welch
 
 class behavpy_core(pd.DataFrame):
     """

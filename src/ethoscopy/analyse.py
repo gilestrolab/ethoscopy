@@ -12,7 +12,6 @@ def max_velocity_detector(data: pd.DataFrame,
                         masking_duration: int = 6,
                         velocity_threshold: float = 1.0,
                         walk_threshold: float = 2.5,
-                        optional_columns: List[str] = ['has_interacted']
                         ) -> Optional[pd.DataFrame]:
     """ 
     Default movement classification for real-time ethoscope experiments.
@@ -27,7 +26,6 @@ def max_velocity_detector(data: pd.DataFrame,
         masking_duration (int, optional): Seconds during which movement is ignored after stimulus. Default is 6.
         velocity_threshold (float, optional): Threshold above which movement is detected. Default is 1.0.
         walk_threshold (float, optional): Threshold above which movement is classified as walking. Default is 2.5.
-        optional_columns (List[str], optional): Additional columns to include. Default is ['has_interacted'].
 
     Returns:
         Optional[pd.DataFrame]: DataFrame with movement classifications or None if insufficient data.
@@ -43,6 +41,7 @@ def max_velocity_detector(data: pd.DataFrame,
         return None
 
     required_columns = ['t', 'x', 'y', 'w', 'h', 'phi', 'xy_dist_log10x1000']
+    optional_columns = ['has_interacted']
 
     # Prepare and bin the data
     dt = prep_data_motion_detector(data,
@@ -54,7 +53,8 @@ def max_velocity_detector(data: pd.DataFrame,
     dt['deltaT'] = dt.t.diff()
     # in rethomics it was v = dist / deltaT and then vc = v * (deltaT / vcoef), subrating in the first equation ablates the deltaT leavinf vc = dist / vcoef
     # in this case we are using the log10x1000 distance and then correcting for the velocity correction coefficient
-    dt['velocity'] = np.power(10, dt.xy_dist_log10x1000 / 1000) / velocity_correction_coef
+    dt['dist'] = 10 ** (dt.xy_dist_log10x1000 / 1000)
+    dt['velocity'] = dt.dist / velocity_correction_coef
 
     # Detect beam crossings (crossing center of arena)
     dt['beam_cross'] = abs(np.sign(0.5 - dt['x']).diff())
@@ -75,17 +75,19 @@ def max_velocity_detector(data: pd.DataFrame,
 
     # Aggregate data by time window using dictionary of operations
     agg_dict = {
-        'x': 'mean',
-        'y': 'mean',
-        'w': 'mean',
-        'h': 'mean',
-        'phi': 'mean',
-        'velocity': ['max', 'mean'],
-        'dist': 'sum',
-        'has_interacted': 'sum',
-        'beam_cross': 'sum'
+        'x': ('x', 'mean'),
+        'y': ('y', 'mean'),
+        'w': ('w', 'mean'),
+        'h': ('h', 'mean'),
+        'phi': ('phi', 'mean'),
+        'max_velocity': ('velocity', 'max'),
+        'mean_velocity': ('velocity', 'mean'),
+        'dist': ('dist', 'sum'),
+        'has_interacted': ('has_interacted', 'sum'),
+        'beam_cross': ('beam_cross', 'sum')
     }
-    d_small = dt.groupby('t_round').agg(agg_dict)
+
+    d_small = dt.groupby('t_round').agg(**agg_dict)
 
     # Classify movement types using configurable thresholds
     d_small['moving'] = d_small['max_velocity'] > velocity_threshold
@@ -213,7 +215,7 @@ def sleep_annotation(data: pd.DataFrame,
 
     def classify_sleep(movement_data: pd.Series,
                       sampling_freq: float,
-                      min_duration: int = 300
+                      min_duration: int
                       ) -> List[bool]:
         """
         Identifies sleep periods based on sustained immobility.
@@ -227,13 +229,15 @@ def sleep_annotation(data: pd.DataFrame,
             List of boolean sleep states for each timepoint
         """
         min_samples = sampling_freq * min_duration
-        immobility_runs = rle(~movement_data)
-        valid_sleep = immobility_runs[2] >= min_samples
-        sleep_states = valid_sleep & immobility_runs[0]
-        
+        v, _, l = rle(np.logical_not(movement_data))
+
+        # Convert to numpy arrays to ensure compatible types
+        valid_sleep = np.array(l >= min_samples)
+        sleep_states = np.logical_and(valid_sleep, np.array(v))
+
         # Expand run lengths back to original time series
         sleep_series = []
-        for state, length in zip(sleep_states, immobility_runs[2]):
+        for state, length in zip(sleep_states, l):
             sleep_series.extend([state] * length)
             
         return sleep_series
@@ -309,7 +313,8 @@ def stimulus_response(data: pd.DataFrame,
         data (pd.DataFrame): Behavioral variables from one or multiple animals
         start_response_window (int, optional): Start of response window in seconds. Default is 0.
         response_window_length (int, optional): Duration of response window in seconds. Default is 10.
-        add_false (Union[bool, int], optional): If int, seconds of immobility before stimulus. 
+        add_false (Union[bool, int], optional): If int, then the number of seconds of immobility before 
+            a stimulus would be given. 
             For use with old datasets with no false interactions. Default is False.
         velocity_correction_coef (float, optional): Coefficient for velocity calculations. Default is 3e-3.
     
@@ -375,13 +380,9 @@ def stimulus_response(data: pd.DataFrame,
     starts = interaction_dt.start.values 
     ends = interaction_dt.end.values  
 
-   ## old method, but can be slow
-   # df = pd.concat([data[(data['t'] >= i) & (data['t'] < q)] for i, q in zip(starts, ends)])
-   # df = df.join(interaction_dt, rsuffix = '_int').fillna(method = 'ffill')
-
-    # New way - creates a single boolean mask first, then filters once
-    mask = pd.concat([pd.Series((data['t'] >= i) & (data['t'] < q)) for i, q in zip(starts, ends)])
-    df = data[mask]
+    ## new method, but can be slow
+    df = pd.concat([data[(data['t'] >= i) & (data['t'] < q)] for i, q in zip(starts, ends)])
+    df = df.join(interaction_dt, rsuffix = '_int').ffill()
 
     # find relative time to interaction and check for movemokonomiyaki flourent
     df['t_rel'] = df.t - df.t_int
@@ -519,12 +520,11 @@ def stimulus_prior(data: pd.DataFrame,
         if any(response_data['has_responded']):
             formatted_small = format_window(response = True)
             if formatted_small is not None:
-                response_df = response_df.append(formatted_small)
-
+                response_df = pd.concat([response_df, formatted_small], ignore_index=True)
         else:
             formatted_small = format_window(response = False)
             if formatted_small is not None:
-                response_df = response_df.append(formatted_small)
+                response_df = pd.concat([response_df, formatted_small], ignore_index=True)
 
     return response_df
 

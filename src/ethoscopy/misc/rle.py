@@ -20,7 +20,7 @@ def rle(x: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         ValueError: If input array is not 1-dimensional
     """
     # Ensure array and validate dimension
-    x = np.asarray(x, dtype=np.float64)  # Specify dtype for better performance
+    x = np.asarray(x)  # Specify dtype for better performance
     if x.ndim != 1:
         raise ValueError('only 1D array supported')
     
