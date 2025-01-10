@@ -1,10 +1,11 @@
-import numpy as np 
+import numpy as np
 
 def rle(x: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Find runs of consecutive items in an array.
     
     Identifies continuous sequences of identical values and their properties.
+    Optimized for performance using numpy vectorization.
 
     Args:
         x (np.ndarray): Array containing runs of data
@@ -18,28 +19,28 @@ def rle(x: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     Raises:
         ValueError: If input array is not 1-dimensional
     """
-
-    # ensure array
-    x = np.asanyarray(x)
+    # Ensure array and validate dimension
+    x = np.asarray(x, dtype=np.float64)  # Specify dtype for better performance
     if x.ndim != 1:
         raise ValueError('only 1D array supported')
-    n = x.shape[0]
-
-    # handle empty array
+    
+    # Handle empty array efficiently
+    n = len(x)
     if n == 0:
         return np.array([]), np.array([]), np.array([])
-
-    else:
-        # find run starts
-        loc_run_start = np.empty(n, dtype=bool)
-        loc_run_start[0] = True
-        np.not_equal(x[:-1], x[1:], out=loc_run_start[1:])
-        run_starts = np.nonzero(loc_run_start)[0]
-
-        # find run values
-        run_values = x[loc_run_start]
-
-        # find run lengths
-        run_lengths = np.diff(np.append(run_starts, n))
-
-        return run_values, run_starts, run_lengths
+    
+    # Find run boundaries using vectorized operations
+    # Pre-allocate with correct size and dtype
+    loc_run_start = np.ones(n, dtype=bool)
+    loc_run_start[1:] = x[1:] != x[:-1]
+    
+    # Get run properties using efficient numpy operations
+    run_starts = np.nonzero(loc_run_start)[0]
+    run_values = x[run_starts]
+    
+    # Calculate run lengths using vectorized subtraction
+    run_lengths = np.empty_like(run_starts)
+    run_lengths[:-1] = run_starts[1:] - run_starts[:-1]
+    run_lengths[-1] = n - run_starts[-1]
+    
+    return run_values, run_starts, run_lengths

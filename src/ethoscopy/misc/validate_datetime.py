@@ -2,10 +2,11 @@ from datetime import datetime
 import pandas as pd
 
 def validate_datetime(data: pd.DataFrame) -> pd.DataFrame:
-    """ 
+    """
     Validate and standardize date formats in DataFrame.
     
     Converts various date formats to YYYY-MM-DD standard format.
+    Supported input formats: YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY
 
     Args:
         data (pd.DataFrame): DataFrame containing a 'date' column
@@ -16,26 +17,27 @@ def validate_datetime(data: pd.DataFrame) -> pd.DataFrame:
     Raises:
         ValueError: If date format cannot be converted to YYYY-MM-DD
     """
-    date_list = data['date'].values.tolist()
-    new_date_list = []
-    for i, date in enumerate(date_list):
+    # Define supported date formats
+    date_formats = ['%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y']
+    
+    def convert_date(date_str, row_idx):
+        for fmt in date_formats:
             try:
-                date == datetime.strptime(date, '%Y-%m-%d').strftime('%Y-%m-%d')
+                return datetime.strptime(date_str, fmt).strftime('%Y-%m-%d')
             except ValueError:
-                try:
-                    if date == datetime.strptime(date, '%d-%m-%Y').strftime('%d-%m-%Y'):
-                        date = datetime.strptime(date, '%d-%m-%Y').strftime('%Y-%m-%d')
-                        new_date_list.append(date)
-                except ValueError:
-                    try:
-                        if date == datetime.strptime(date, '%d/%m/%Y').strftime('%d/%m/%Y'):
-                            date = datetime.strptime(date, '%d/%m/%Y').strftime('%Y-%m-%d')
-                            new_date_list.append(date)
-                    except ValueError:
-                        raise ValueError("Incorrect data format, should be YYYY-MM-DD for row: " + str(i+1))
+                continue
+        raise ValueError(f"Incorrect date format in row {row_idx + 1}. "
+                        f"Supported formats: YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY")
 
-    if len(new_date_list) == 0:
-        return data
-    else:
-        data['date'] = new_date_list   
-        return data
+    # Create a copy to avoid modifying the original DataFrame
+    result = data.copy()
+    
+    # Convert dates using vectorized operations when possible
+    try:
+        result['date'] = pd.to_datetime(data['date']).dt.strftime('%Y-%m-%d')
+    except ValueError:
+        # Fallback to row-by-row processing if pandas can't automatically parse
+        result['date'] = [convert_date(date, idx) 
+                         for idx, date in enumerate(data['date'])]
+    
+    return result

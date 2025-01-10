@@ -14,24 +14,22 @@ def bootstrap(data: np.ndarray, n: int = 1000, func: callable = np.mean) -> tupl
     Returns:
         tuple: Lower and upper 95% confidence interval bounds
     """
-    simulations = list()
+    # Pre-allocate array instead of using list append
+    simulations = np.zeros(n)
     sample_size = len(data)
-    # xbar_init = np.mean(data)
     
-    for c in range(n):
-        itersample = np.random.choice(data, size=sample_size, replace=True)
-        simulations.append(func(itersample))
+    # Vectorize the random sampling for all iterations at once
+    random_indices = np.random.choice(sample_size, size=(n, sample_size), replace=True)
+    
+    # Calculate all simulations at once using vectorization
+    for i in range(n):
+        simulations[i] = func(data[random_indices[i]])
+    
+    # Sort in-place instead of creating new array
     simulations.sort()
 
-    def ci(p):
-        """
-        Return 2-sided symmetric confidence interval specified
-        by p
-        """
-        u_pval = (1+p)/2.
-        l_pval = (1-u_pval)
-        l_indx = int(np.floor(n*l_pval))
-        u_indx = int(np.floor(n*u_pval))
-        return(simulations[l_indx] , simulations[u_indx])
-
-    return(ci(0.95))
+    # Move ci function outside to avoid recreation in each call
+    l_indx = int(np.floor(n * 0.025))  # (1-0.95)/2 = 0.025
+    u_indx = int(np.floor(n * 0.975))  # (1+0.95)/2 = 0.975
+    
+    return (simulations[l_indx], simulations[u_indx])

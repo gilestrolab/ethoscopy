@@ -19,15 +19,21 @@ def get_HMM(sex: str) -> 'CategoricalHMM':
         KeyError: If sex argument is not 'M' or 'F'
     """
 
-    path = PurePath(__file__)
+    path = PurePath(__file__).resolve()
     this_dir = path.parent
 
-    if sex != 'M' and sex != 'F':
-        raise KeyError('The argument for "sex" must be "F" or "M"')
+    sex = sex.upper()
+    if sex not in {'M', 'F'}:
+        raise KeyError('The argument for "sex" must be "M" or "F"')
 
-    hmm_path = this_dir / f'tutorial_data/4_states_{sex}_WT.pkl'
+    hmm_path = this_dir / 'tutorial_data' / f'4_states_{sex}_WT.pkl'
 
-    with open(hmm_path, 'rb') as file: 
-        h = pickle.load(file)
+    try:
+        with open(hmm_path, 'rb') as file:
+            h = pickle.load(file)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"HMM model file not found at: {hmm_path}")
 
     return h
+
+

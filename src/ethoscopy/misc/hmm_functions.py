@@ -16,23 +16,15 @@ def hmm_pct_transition(state_array: np.ndarray, total_states: np.ndarray) -> pd.
         pd.DataFrame: Proportions of each state occurrence
     """
 
-    v, s, l = rle(state_array)
-
-    states_dict = {}
-
-    def average(a):
-        total = a.sum()
-        count = len(a)
-        av = total / count
-        return av
-
-    for i in total_states:
-        states_dict[i] = average(np.where(v == i, 1, 0))
-
-    state_list = [states_dict]
-    df = pd.DataFrame(state_list)
-
-    return df
+    v, _, _ = rle(state_array)
+    
+    # Vectorized calculation of average
+    states_dict = {
+        state: np.mean(v == state) 
+        for state in total_states
+    }
+    
+    return pd.DataFrame([states_dict])
 
 def hmm_mean_length(state_array: np.ndarray, delta_t: int = 60, 
                    raw: bool = False, func: str = 'mean') -> pd.DataFrame:
@@ -50,23 +42,23 @@ def hmm_mean_length(state_array: np.ndarray, delta_t: int = 60,
     Returns:
         pd.DataFrame: Mean lengths or raw runs of each state
     """
-    assert(isinstance(raw, bool))
+    assert isinstance(raw, bool)
     delta_t_mins = delta_t / 60
 
-    v, s, l = rle(state_array)
-
-    df = pd.DataFrame(data = zip(v, l), columns = ['state', 'length'])
-    df['length_adjusted'] = df['length'].map(lambda l: l * delta_t_mins)
+    v, _, l = rle(state_array)
     
-    if raw == True:
+    df = pd.DataFrame({
+        'state': v,
+        'length': l,
+        'length_adjusted': l * delta_t_mins 
+    })
+    
+    if raw:
         return df
-    else:
-        gb_bout = df.groupby('state').agg(**{
-                            'mean_length' : ('length_adjusted', func)
-        })
-        gb_bout.reset_index(inplace = True)
-
-        return gb_bout
+    
+    return (df.groupby('state')
+             .agg(**{'mean_length': ('length_adjusted', func)})
+             .reset_index())
 
 def hmm_pct_state(state_array: np.ndarray, time: np.ndarray, 
                   total_states: np.ndarray, avg_window: int = 30) -> pd.DataFrame:
@@ -84,19 +76,21 @@ def hmm_pct_state(state_array: np.ndarray, time: np.ndarray,
     Returns:
         pd.DataFrame: State percentages per window with columns [t, state_1, state_2, ...]
     """
-    states_dict = {}
-
-    def moving_average(a, n) :
-        ret = np.cumsum(a, dtype=float)
-        ret[n:] = ret[n:] - ret[:-n]
-        return ret[n - 1:] / n
-
-    for i in total_states:
-        states_dict['state_{}'.format(i)] = moving_average(np.where(state_array == i, 1, 0), n = avg_window)
-
-    adjusted_time = time[avg_window-1:]
-
-    df = pd.DataFrame.from_dict(states_dict)
-    df.insert(0, 't', adjusted_time)
-                        
+    # Pre-calculate window size for efficiency
+    n = avg_window
+    
+    def moving_average(a: np.ndarray) -> np.ndarray:
+        """Vectorized moving average calculation"""
+        cumsum = np.cumsum(a, dtype=float)
+        cumsum[n:] = cumsum[n:] - cumsum[:-n]
+        return cumsum[n - 1:] / n
+    
+    states_dict = {
+        f'state_{i}': moving_average(state_array == i) 
+        for i in total_states
+    }
+    
+    df = pd.DataFrame(states_dict)
+    df.insert(0, 't', time[n-1:])
+    
     return df
