@@ -3,6 +3,39 @@ from ethoscopy.behavpy_plotly import behavpy_plotly
 from ethoscopy.behavpy_seaborn import behavpy_seaborn
 
 def behavpy(data, meta, palette = None, long_palette = None, check = False, index= None, columns=None, dtype=None, copy=True, canvas='plotly'):
+    """
+    Factory function that creates a behavpy object with the specified visualisation backend.
+
+    The behavpy class extends pandas DataFrame to provide specialised functionality for handling and analysing
+    behavioural data from ethoscope experiments. It maintains a link between experimental data and corresponding 
+    metadata, with methods for data manipulation, analysis, and visualisation.
+
+    Args:
+        data (pd.DataFrame): Experimental data, typically loaded via load_ethoscope(). Must contain:
+            - 'id' column with unique specimen IDs
+            - 't' column with timestamps in seconds
+        meta (pd.DataFrame): Metadata containing experimental conditions, genotypes etc. Must have:
+            - One row per unique specimen ID
+            - IDs matching those in the data DataFrame
+        palette (str, optional): Color palette name for visualizations with ≤11 groups.
+            Defaults to 'Safe' for Plotly and 'deep' for Seaborn.
+        long_palette (str, optional): Color palette name for visualizations with >11 groups.
+            Defaults to 'Dark24' for Plotly and 'deep' for Seaborn.
+        check (bool, optional): If True, validates that all data IDs exist in metadata and removes
+            redundant columns from link_meta_index. Defaults to False.
+        index (pd.Index, optional): Index to use for the DataFrame. Defaults to None.
+        columns (pd.Index, optional): Column labels to use for the DataFrame. Defaults to None.
+        dtype (np.dtype, optional): Data type to force. Defaults to None.
+        copy (bool, optional): Copy data from inputs. Defaults to True.
+        canvas (str, optional): Visualisation backend to use - 'plotly', 'seaborn', or None. Defaults to 'plotly'.
+
+    Returns:
+        behavpy_core: A behavpy object with methods for manipulating, analysing and plotting
+            time series behavioural data, using the specified visualisation backend.
+
+    Raises:
+        ValueError: If an invalid canvas type is specified.
+    """
 
     if canvas == 'plotly':
 

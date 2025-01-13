@@ -20,7 +20,24 @@ from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length #, 
 
 class behavpy_draw(behavpy_core):
     """
-    Default drawing class containing some general methods that can be used by all children drawing classes
+    Drawing class that extends @behavpy_core to provide visualization capabilities.
+
+    This class inherits all data manipulation and analysis methods from behavpy_core and adds plotting functionality. 
+    The key relationship between these classes is:
+
+    1. Data Processing (behavpy_core):
+        - Handles data filtering, grouping, and statistical calculations
+        - Manages metadata and core data structures
+        - Provides analysis methods like sleep detection and bout analysis
+
+    2. Visualization (behavpy_draw):
+        - Uses processed data from behavpy_core methods to create plots
+        - Supports multiple plotting backends (Plotly and Seaborn)
+        - Provides consistent styling and color schemes across plots
+        - Handles faceting and complex multi-plot layouts
+
+    The class is designed to seamlessly integrate data processing and visualization, allowing direct 
+    chaining of analysis and plotting methods.
     """
 
     _hmm_colours = ['darkblue', 'dodgerblue', 'red', 'darkred']
@@ -379,7 +396,7 @@ class behavpy_draw(behavpy_core):
             upper, trace, lower = self._plot_line(df = gb_df, x_col = t_col, name = name, marker_col = col)
             return upper, trace, lower, t_min, t_max
         else:
-            KeyError(f'Wrong plot type in back end: {plot_type}')
+            KeyError(f'Wrong plot type in back end: {self.canvas}')
 
     def heatmap_dataset(self, variable, t_column):
         """
