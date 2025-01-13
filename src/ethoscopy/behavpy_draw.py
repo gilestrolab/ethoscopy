@@ -16,7 +16,7 @@ import PIL
 from ethoscopy.behavpy_core import behavpy_core
 from ethoscopy.misc.bootstrap_CI import bootstrap
 from ethoscopy.misc.general_functions import concat
-from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
+from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length #, hmm_pct_state
 
 class behavpy_draw(behavpy_core):
     """

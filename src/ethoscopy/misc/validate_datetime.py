@@ -18,7 +18,7 @@ def validate_datetime(data: pd.DataFrame) -> pd.DataFrame:
         ValueError: If date format cannot be converted to YYYY-MM-DD
     """
     # Define supported date formats
-    date_formats = ['%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y']
+    date_formats = ['%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%Y/%d/%m']
     
     def convert_date(date_str, row_idx):
         for fmt in date_formats:

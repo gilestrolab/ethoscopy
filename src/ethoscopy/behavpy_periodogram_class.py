@@ -2,14 +2,20 @@ from ethoscopy.behavpy_core import behavpy_core
 
 class behavpy_periodogram(behavpy_core):
     """
-    An inheritor class to aid with backwards compatability prior to version 2.0.0, so that old saved pickles of data can still be loaded
-
-    When old data is loaded it will only have the core functionalities  no plotting methods. The user must re-intiated either a plotly or
-    seaborn behavpy class with the data and metadata, i.e.
-
-    old_df = pd.read_pickle('path_to_data')
-    new_df = etho.behavpy(old_df, old_df.meta, check = True, canvas = 'seaborn')
+    A compatibility class that inherits from behavpy_core to support loading data from versions prior to 2.0.0.
     
+    This class allows loading of legacy pickled behavpy data files while maintaining core functionality.
+    Note that plotting methods are not available in the initial loaded state.
+
+    To access plotting functionality, the data must be re-instantiated with either the plotly or 
+    seaborn canvas option.
+
+    Both HMM and circadian classes have been folded into the one class as of 2.0.0.
+
+    Example
+    -------
+    >>> old_hmm_df = pd.read_pickle('path_to_data')
+    >>> new_df = etho.behavpy(old_df, old_df.meta, check=True, canvas='seaborn')
     """
     # set meta as permenant attribute
     _metadata = ['meta']

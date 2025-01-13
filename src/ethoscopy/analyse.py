@@ -41,6 +41,7 @@ def max_velocity_detector(data: pd.DataFrame,
         return None
 
     required_columns = ['t', 'x', 'y', 'w', 'h', 'phi', 'xy_dist_log10x1000']
+    # optional columns is a legacy of the R version. All ethoscope data should have it now
     optional_columns = ['has_interacted']
 
     # Prepare and bin the data

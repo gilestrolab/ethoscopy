@@ -16,6 +16,8 @@ from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
 from ethoscopy.misc.periodogram_functions import chi_squared, lomb_scargle, fourier, wavelet #, welch
 
+from typing import Optional, List, Union, Tuple, Dict, Any, Callable
+
 class behavpy_core(pd.DataFrame):
     """
     The behavpy class is a store of information for data from the ethoscope system with corresponding methods to augment and manipulate
@@ -60,7 +62,9 @@ class behavpy_core(pd.DataFrame):
         def _from_axes(self, *args, **kwargs):
             return self.cls._from_axes(*args, **kwargs)
 
-    def __init__(self, data, meta, palette = None, long_palette = None, check = False, index= None, columns=None, dtype=None, copy=True):
+    def __init__(self, data: pd.DataFrame, meta: pd.DataFrame, palette: Optional[str] = None, long_palette: Optional[str] = None, 
+                 check: bool = False, index: Optional[pd.Index] = None, columns: Optional[pd.Index] = None, 
+                 dtype: Optional[np.dtype] = None, copy: bool = True):
         super(behavpy_core, self).__init__(data=data,
                                         index=index,
                                         columns=columns,
@@ -73,14 +77,22 @@ class behavpy_core(pd.DataFrame):
         self.attrs = {'sh_pal' : palette, 'lg_pal' : long_palette}
 
     @staticmethod
-    def _check_conform(dataframe):
+    def _check_conform(dataframe: pd.DataFrame) -> None:
         """ 
-        Checks the data augument is a pandas dataframe
-        If metadata is provided and skip is False it will check as above and check the ID's in
-        metadata match those in the data
-        """
+        Validates data format and metadata matching.
         
-        if isinstance(dataframe.meta, pd.DataFrame) is not True:
+        Checks if metadata is a pandas DataFrame and if all IDs in the data exist in metadata.
+        Removes unnecessary columns from metadata.
+
+        Args:
+            dataframe (pd.DataFrame): The behavpy DataFrame to validate
+
+        Raises:
+            TypeError: If metadata is not a pandas DataFrame
+            KeyError: If 'id' column missing from data or metadata
+            RuntimeError: If IDs in data don't match metadata
+        """
+        if not isinstance(dataframe.meta, pd.DataFrame):
             raise TypeError('Metadata input is not a pandas dataframe')
 
         drop_col_names = ['path', 'file_name', 'file_size', 'machine_id']
@@ -103,11 +115,25 @@ class behavpy_core(pd.DataFrame):
         if check_data is not True:
             raise RuntimeError("There are ID's in the data that are not in the metadata, please check")
 
-    def _check_lists(self, f_col, f_arg, f_lab):
+    def _check_lists(self, f_col: Optional[str], f_arg: Optional[List], f_lab: Optional[List]) -> tuple[List, List]:
         """
-        Check if the facet arguments match the labels or populate from the column if not.
-        """
+        Validate and populate facet arguments and labels.
+        
+        Checks if facet column exists and matches provided arguments/labels.
+        Auto-populates missing arguments/labels from column values.
 
+        Args:
+            f_col (list[str]): Name of facet column in metadata
+            f_arg (list[str]): List of facet arguments to filter by
+            f_lab (list[str]): List of labels for facet arguments
+
+        Returns:
+            tuple[List, List]: Validated facet arguments and labels
+
+        Raises:
+            KeyError: If facet column doesn't exist in metadata
+            ValueError: If label length doesn't match argument length
+        """
         if f_col is not None:
             if f_col not in self.meta.columns:
                 raise KeyError(f'Column "{f_col}" is not a metadata column')
@@ -140,7 +166,7 @@ class behavpy_core(pd.DataFrame):
 
         return f_arg, f_lab
 
-    def display(self):
+    def display(self) -> None:
         """
         Alternative to print(), displays both the metadata and data with corresponding headers
 
@@ -148,17 +174,20 @@ class behavpy_core(pd.DataFrame):
         """
         print('\n ==== METADATA ====\n\n{}\n ====== DATA ======\n\n{}'.format(self.meta, self))
 
-    def xmv(self, column, *args):
+    def xmv(self, column: str, *args: Any) -> "behavpy_core":
         """
-        Filter your data and metadata by a column and groups from the metadata.
+        Filter data and metadata by column values.
 
         Args:
-            column (str): Column heading from the metadata of the behavpy object
-            *args (pandas cell input): Arguments corresponding to groups from the column given, can be given as a list or several args, but not a mix.
+            column (str): Column heading from metadata
+            *args (Any): Values to filter by from the specified column
 
-        returns a behavpy object with filtered data and metadata
+        Returns:
+            behavpy_core: Filtered behavpy object with matching data and metadata
+
+        Raises:
+            KeyError: If column or filter values don't exist
         """
-
         if type(args[0]) == list or type(args[0]) == np.array:
             args = args[0]
 
@@ -196,7 +225,7 @@ class behavpy_core(pd.DataFrame):
         self.meta = self.meta[self.meta.index.isin(new_index_list)]
         return self
 
-    def remove(self, column, *args):
+    def remove(self, column: str, *args: Any) -> "behavpy_core":
         """ 
         A variation of xmv to remove all rows from a data table whose ID matches those specified from the metadata
 
@@ -246,18 +275,18 @@ class behavpy_core(pd.DataFrame):
             return self
 
 
-    def summary(self, detailed = False, t_column = 't'):
+    def summary(self, detailed: bool = False, t_column: str = 't') -> None:
         """ 
         Prints a table with summary statistics of metadata and data counts.
             
-        Args:
-            detailed (bool, optional): If detailed is True count and range of data points will be broken down per 'id'. Default is False.
+            Args:
+                detailed (bool, optional): If detailed is True count and range of data points will be broken down per 'id'. Default is False.
             
         Returns:
             no return
         """
 
-        def print_table(table):
+        def print_table(table: List[List[Any]]) -> None:
             longest_cols = [
                 (np.nanmax([len(str(row[i])) for row in table]) + 3)
                 for i in range(len(table[0]))
@@ -282,7 +311,7 @@ class behavpy_core(pd.DataFrame):
 
         if detailed is True:
 
-            def time_range(data):
+            def time_range(data: pd.Series) -> str:
                 return (str(min(data)) + '  ->  ' + str(np.nanmax(data)))
 
 
@@ -293,18 +322,21 @@ class behavpy_core(pd.DataFrame):
 
             print(group)
 
-    def add_day_phase(self, t_column = 't', day_length = 24, lights_off = 12, inplace = True):
-        """ 
-        Adds a column called 'phase' with either light or dark as catergories according to its time compared to the reference hour
-        Adds a column with the day the row is in, starting with 1 as the first day and increasing sequentially.
+    def add_day_phase(self, t_column: str = 't', day_length: int = 24, 
+                     lights_off: int = 12, inplace: bool = True) -> Optional["behavpy_core"]:
+        """
+        Add phase and day columns based on time data.
+        
+        Adds 'phase' column with 'light'/'dark' categories and 'day' column with sequential day numbers.
 
         Args:
-            t_column (str): The name of column containing the timing data (in seconds). Default is 't'.
-            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
-            lights_off (int, optional): The time point when the lights are turned off in an experimental day, assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
-            inplace (bool, optional): 
-            
-        returns a new df is inplace is False, else nothing
+            t_column (str, optional): Column containing timestamps in seconds. Default is 't'.
+            day_length (int, optional): Length of experimental day in hours. Default is 24.
+            lights_off (int, optional): Hour when lights turn off (0-day_length). Default is 12.
+            inplace (bool, optional): Modify existing DataFrame if True, return new one if False.
+
+        Returns:
+            Optional[behavpy_core]: Modified behavpy object if inplace=False, None otherwise
         """
         day_in_secs = 60*60*day_length
         night_in_secs = lights_off * 60 * 60
@@ -322,7 +354,7 @@ class behavpy_core(pd.DataFrame):
 
             return new_df
 
-    def t_filter(self, start_time = 0, end_time = np.inf, t_column = 't'):
+    def t_filter(self, start_time: int = 0, end_time: int = np.inf, t_column: str = 't') -> "behavpy_core":
         """
         Filters the data to only be inbetween the provided start and end points
         argument is given in hours and converted to seconds.
@@ -339,7 +371,7 @@ class behavpy_core(pd.DataFrame):
 
         return self[(self[t_column] >= (start_time * 60 * 60)) & (self[t_column] < (end_time * 60 * 60))]
 
-    def rejoin(self, new_column, check = True):
+    def rejoin(self, new_column: pd.DataFrame, check: bool = True) -> None:
         """
         Joins a new column to the metadata. 
 
@@ -388,7 +420,8 @@ class behavpy_core(pd.DataFrame):
 
     #     return new
 
-    def stitch_consecutive(self, machine_name_col = 'machine_name', region_id_col = 'region_id', date_col = 'date'):
+    def stitch_consecutive(self, machine_name_col: str = 'machine_name', region_id_col: str = 'region_id', 
+                           date_col: str = 'date') -> "behavpy_core":
         """ 
         A method to stitch the data together for ROIs of the same machine in the dataframe. Use this for when you needed to stop and restart an experiment with the same specimens in it.
         The method selectes all the unique machine names and ROI numbers and merges those that match, taking the start date of the experiment to calculate how much to modify the time.
@@ -410,8 +443,8 @@ class behavpy_core(pd.DataFrame):
         mach_list = set(self.meta[machine_name_col].tolist())
         roi_list = set(self.meta[region_id_col].tolist())
 
-        def augment_time(d):
-            d.meta['day_diff'] = (pd.to_datetime(d.meta['date']) - pd.to_datetime(d.meta['date'].min())).dt.days
+        def augment_time(d: "behavpy_core") -> "behavpy_core":
+            d.meta['day_diff'] = (pd.to_datetime(d.meta[date_col]) - pd.to_datetime(d.meta[date_col].min())).dt.days
             indx_map = d.meta[['day_diff']].to_dict()['day_diff']
             d['day'] = indx_map
             d['t'] = (d['day'] * 86400) + d['t']
@@ -436,7 +469,7 @@ class behavpy_core(pd.DataFrame):
 
         return df_list[0].concat(*df_list[1:])
 
-    def analyse_column(self, column, function):
+    def analyse_column(self, column: Union[str, List[str]], function: Union[str, Callable]) -> pd.DataFrame:
         """ 
         Wrapper for the groupby pandas method to split by groups in a column and apply a function to said groups
 
@@ -470,7 +503,7 @@ class behavpy_core(pd.DataFrame):
 
         return pivot
 
-    def wrap_time(self, wrap_time = 24, time_column = 't'):
+    def wrap_time(self, wrap_time: int = 24, time_column: str = 't') -> "behavpy_core":
         """
         Replaces linear values of time in column 't' with a value which is a decimal of the wrap_time input
 
@@ -486,7 +519,7 @@ class behavpy_core(pd.DataFrame):
         new[time_column] = new[time_column] % hours_in_seconds
         return new
 
-    def baseline(self, column, t_column = 't', day_length = 24):
+    def baseline(self, column: str, t_column: str = 't', day_length: int = 24) -> "behavpy_core":
         """
         A function to add days to the time series data per animal to align interaction times per user discretion
 
@@ -506,10 +539,10 @@ class behavpy_core(pd.DataFrame):
 
         new = self.copy(deep = True)
         new['tmp_col'] = new.index.to_series().map(day_dict)
-        new[t_column] = new[t_column] + (new['tmp_col'] * (60*60*24))
+        new[t_column] = new[t_column] + (new['tmp_col'] * (60*60*day_length))
         return new.drop(columns = ['tmp_col'])
 
-    def curate(self, points):
+    def curate(self, points: int) -> "behavpy_core":
         """
         A method to remove specimens without enough data points. The user must work out the number of points that's equivalent to their wanted time coverage.
 
@@ -520,7 +553,7 @@ class behavpy_core(pd.DataFrame):
             A behavpy object with specimens of low data points removed from the metadata and data
         """
 
-        def wrapped_curate(data, limit = points):
+        def wrapped_curate(data: pd.DataFrame, limit: int = points) -> pd.DataFrame:
             if len(data) < limit:
                 id_list.append(list(set(data['id']))[0])
                 return data
@@ -534,7 +567,7 @@ class behavpy_core(pd.DataFrame):
         return self.remove('id', id_list)
 
     @staticmethod
-    def _find_runs(mov, time, id):
+    def _find_runs(mov: pd.Series, time: pd.Series, id: str) -> Dict[str, Any]:
         _, _, l = rle(mov)
         # count_list = np.concatenate([np.append(np.arange(1, cnt + 1, 1)[: -1], np.nan) for cnt in l], dtype = float)
         count_list = np.concatenate([np.arange(1, cnt + 1, 1) for cnt in l], dtype = float)
@@ -545,7 +578,8 @@ class behavpy_core(pd.DataFrame):
         return {'id': id, 't' : time, 'moving' : mov, 'previous_moving' : previous_mov, 'activity_count' : count_list, 'previous_activity_count' : previous_count_list}
 
 
-    def remove_sleep_deprived(self, start_time, end_time, remove = False, sleep_column = 'asleep', t_column = 't'):
+    def remove_sleep_deprived(self, start_time: int, end_time: int, remove: Union[bool, float] = False, 
+                              sleep_column: str = 'asleep', t_column: str = 't') -> Union["behavpy_core", pd.DataFrame]:
         """ Removes specimens that during a period of sleep deprivation are asleep a certain percentage of the period
 
         Args:
@@ -595,19 +629,19 @@ class behavpy_core(pd.DataFrame):
             return self.remove('id', remove_ids)
 
     @staticmethod
-    def _time_alive(df, facet_col, repeat = False, t_column = 't'):
+    def _time_alive(df: pd.DataFrame, facet_col: Optional[str], repeat: bool = False, t_column: str = 't') -> pd.DataFrame:
         """ Method to call to the function that finds the amount of time a specimen has survived.
         If repeat is True then the function will look for a column in the metadata called 'repeat' and use it to sub filter the dataframe. 
         """
 
-        def _wrapped_time_alive(df, name):
+        def _wrapped_time_alive(df: pd.DataFrame, name: str) -> pd.DataFrame:
             """ The wrapped method called by _time_alive. This function finds the max and min time per specimen and creates an aranged list
             per hour. These are then stacked and divided by the max to find the percentage alive at a given hour.
             The returned data frame is formatted for use with dataframe plotters such as Seaborne and Plotly express.
             """
             gb = df.groupby(df.index).agg(**{
-                'tmin' : ('t', 'min'),
-                'tmax' : ('t', 'max')
+                'tmin' : (t_column, 'min'),
+                'tmax' : (t_column, 'max')
                 })
             gb['time_alive'] = round(((gb['tmax'] - gb['tmin']) / 86400) * 24)
             gb.drop(columns = ['tmax', 'tmin'], inplace = True)   
@@ -640,7 +674,8 @@ class behavpy_core(pd.DataFrame):
     # GROUPBY SECTION
 
     @staticmethod
-    def _wrapped_bout_analysis(data, var_name, as_hist, bin_size, max_bins, time_immobile, asleep, t_column = 't'):
+    def _wrapped_bout_analysis(data: pd.DataFrame, var_name: str, as_hist: bool, bin_size: int, max_bins: int, 
+                               time_immobile: int, asleep: bool, t_column: str = 't') -> pd.DataFrame:
         """ Finds runs of bouts of immobility or moving and sorts into a historgram per unqiue specimen if as_hist is True. """
 
         index_name = data['id'].iloc[0]
@@ -689,7 +724,8 @@ class behavpy_core(pd.DataFrame):
         else:
             return bout_times
 
-    def sleep_bout_analysis(self, sleep_column = 'asleep', as_hist = False, bin_size = 1, max_bins = 60, time_immobile = 5, asleep = True, t_column = 't'):
+    def sleep_bout_analysis(self, sleep_column: str = 'asleep', as_hist: bool = False, bin_size: int = 1, max_bins: int = 60, 
+                            time_immobile: int = 5, asleep: bool = True, t_column: str = 't') -> "behavpy_core":
         """ 
         Augments a behavpy objects sleep column to have duration and start of the sleep bouts, must contain a column with boolean values for sleep.
         If as_hist is True then the a dataframe containing the data needed to make a histogram of the data is created. Use plot_sleep_bouts to automatically
@@ -726,7 +762,8 @@ class behavpy_core(pd.DataFrame):
 
 
     @staticmethod
-    def _wrapped_curate_dead_animals(data, time_var, moving_var, time_window, prop_immobile, resolution, time_dict = False): 
+    def _wrapped_curate_dead_animals(data: pd.DataFrame, time_var: str, moving_var: str, time_window: int, 
+                                     prop_immobile: float, resolution: int, time_dict: Optional[Dict[str, List[int]]] = None) -> pd.DataFrame:
 
         time_window = (60 * 60 * time_window)
         d = data[[time_var, moving_var]].copy(deep = True)
@@ -736,16 +773,17 @@ class behavpy_core(pd.DataFrame):
         first_death_point = np.where(local_means <= prop_immobile, True, False)
 
         if any(first_death_point) is False:
-            if time_dict is not False:
+            if time_dict is not None:
                 time_dict[data['id'].iloc[0]] = [data[time_var].min(), data[time_var].max()]
             return data
 
         last_valid_point = target_t[first_death_point]
-        if time_dict is not False:
+        if time_dict is not None:
             time_dict[data['id'].iloc[0]] = [data[time_var].min(), last_valid_point[0]]
         return data[data[time_var].between(data[time_var].min(), last_valid_point[0])]
 
-    def curate_dead_animals(self, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
+    def curate_dead_animals(self, t_column: str = 't', mov_column: str = 'moving', time_window: int = 24, 
+                            prop_immobile: float = 0.01, resolution: int = 24) -> "behavpy_core":
         
         """ 
         This function detects when individuals have died based on their first (very) long bout of immobility and removes that and subsequent data
@@ -776,7 +814,9 @@ class behavpy_core(pd.DataFrame):
                                                                                                             resolution = resolution
         )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
-    def curate_dead_animals_interactions(self, mov_df, t_column = 't', mov_column = 'moving', time_window = 24, prop_immobile = 0.01, resolution = 24):
+    def curate_dead_animals_interactions(self, mov_df: "behavpy_core", t_column: str = 't', mov_column: str = 'moving', 
+                                         time_window: int = 24, prop_immobile: float = 0.01, 
+                                         resolution: int = 24) -> Tuple["behavpy_core", "behavpy_core"]:
         """ 
         A variation of curate dead animals to remove responses after an animal is presumed to have died.
         
@@ -793,7 +833,7 @@ class behavpy_core(pd.DataFrame):
             second the movement behavpy dataframe. Both filted to remove specimens where presumed dead.
         """
 
-        def curate_filter(df, dict):
+        def curate_filter(df: pd.DataFrame, dict: Dict[str, List[int]]) -> pd.DataFrame:
             return df[df[t_column].between(dict[df['id'].iloc[0]][0], dict[df['id'].iloc[0]][1])]
 
         if t_column not in self.columns.tolist() or t_column not in mov_df.columns.tolist():
@@ -817,7 +857,7 @@ class behavpy_core(pd.DataFrame):
         return self.__class__(curated_puff, tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'],check = True), self.__class__(curated_df, tdf2.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'],check = True), 
 
     @staticmethod
-    def _wrapped_interpolate_lin(data, var, step, t_col = 't'):
+    def _wrapped_interpolate_lin(data: pd.DataFrame, var: str, step: int, t_col: str = 't') -> pd.DataFrame:
         """ Take the min and max time, create a time series at a given time step and interpolate missing values from the data """
 
         id = data['id'].iloc[0]
@@ -831,7 +871,7 @@ class behavpy_core(pd.DataFrame):
         return  pd.DataFrame(data = {'id' : [id] * len(sample_seq), t_col : sample_seq, var : f})
 
 
-    def interpolate_linear(self, variable, step_size, t_column = 't'):
+    def interpolate_linear(self, variable: str, step_size: int, t_column: str = 't') -> "behavpy_core":
         """ A method to interpolate data from a given dataset according to a new time step size.
             The data must be ints or floats and have a linear distribution.
 
@@ -854,7 +894,8 @@ class behavpy_core(pd.DataFrame):
         data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
-    def _wrapped_bin_data(data, column, bin_column, function, bin_secs):
+    def _wrapped_bin_data(data: pd.DataFrame, column: Union[str, List[str]], bin_column: str, 
+                          function: Union[str, Callable], bin_secs: int) -> pd.DataFrame:
         """ a method that will bin all data poits to a larger time bin and then summarise a column """
         # print(data)
         index_name = data['id'].iloc[0]
@@ -875,7 +916,8 @@ class behavpy_core(pd.DataFrame):
 
         return bout_gb
 
-    def bin_time(self, variable, bin_secs, function = 'mean', t_column = 't'):
+    def bin_time(self, variable: Union[str, List[str]], bin_secs: int, function: Union[str, Callable] = 'mean', 
+                 t_column: str = 't') -> "behavpy_core":
         """
         A method bin the time series data into a user desired sized bin and further applying a function to a single column of choice across the new bins.
         
@@ -906,7 +948,7 @@ class behavpy_core(pd.DataFrame):
                                                                                                 bin_secs = bin_secs
         )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
-    def remove_first_last_bout(self, variable):
+    def remove_first_last_bout(self, variable: str) -> "behavpy_core":
         """
         A method to remove the first and last runs of a value per specimen, only use for columns like 'moving' and 'asleep', 
         that have continuous runs of True and False variables. For use with plotting and analysis where you are not sure if the starting and 
@@ -919,8 +961,8 @@ class behavpy_core(pd.DataFrame):
             returns a modified behavpy object with fewer rows
         """
         
-        def _wrapped_remove_first_last_bout(data):
-            v = data['moving'].tolist() 
+        def _wrapped_remove_first_last_bout(data: pd.DataFrame) -> pd.DataFrame:
+            v = data[variable].tolist() 
             try:
                 change_list = np.where(np.roll(v,1)!=v)[0]
                 ind1 = np.where(np.roll(v,1)!=v)[0][0]
@@ -934,7 +976,8 @@ class behavpy_core(pd.DataFrame):
                 tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
-    def _wrapped_motion_detector(data, time_window_length, velocity_correction_coef, masking_duration, optional_columns):
+    def _wrapped_motion_detector(data: pd.DataFrame, time_window_length: int, velocity_correction_coef: float, 
+                                 masking_duration: int, optional_columns: Optional[List[str]]) -> pd.DataFrame:
         
         index_name = data['id'].iloc[0]
         
@@ -949,7 +992,8 @@ class behavpy_core(pd.DataFrame):
 
         return df    
 
-    def motion_detector(self, time_window_length = 10, velocity_correction_coef = 3e-3, masking_duration = 0, optional_columns = None):
+    def motion_detector(self, time_window_length: int = 10, velocity_correction_coef: float = 3e-3, masking_duration: int = 0, 
+                        optional_columns: Optional[List[str]] = None) -> "behavpy_core":
         """
         Method version of the motion detector without sleep annotation varaiables.
         Max_velocity_detector is the default movement classification for real-time ethoscope experiments.
@@ -969,13 +1013,15 @@ class behavpy_core(pd.DataFrame):
                                                                                                         time_window_length = time_window_length,
                                                                                                         velocity_correction_coef = velocity_correction_coef,
                                                                                                         masking_duration = masking_duration,
-                                                                                                        optional_columns = optional_columns
+                                                                                                        velocity_threshold = velocity_threshold,
+                                                                                                        walk_threshold = walk_threshold
         )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
-    def _wrapped_sleep_contiguous(d_small, mov_column, t_column, time_window_length, min_time_immobile):
+    def _wrapped_sleep_contiguous(d_small: pd.DataFrame, mov_column: str, t_column: str, time_window_length: int, 
+                                  min_time_immobile: int) -> pd.DataFrame:
 
-        def sleep_contiguous(moving, fs, min_valid_time = 300):
+        def sleep_contiguous(moving: pd.Series, fs: int, min_valid_time: int = 300) -> List[bool]:
             """ 
             Checks if contiguous bouts of immobility are greater than the minimum valid time given
 
@@ -1013,7 +1059,8 @@ class behavpy_core(pd.DataFrame):
 
         return d_small  
 
-    def sleep_contiguous(self, mov_column = 'moving', t_column = 't', time_window_length = 10, min_time_immobile = 300):
+    def sleep_contiguous(self, mov_column: str = 'moving', t_column: str = 't', time_window_length: int = 10, 
+                         min_time_immobile: int = 300) -> "behavpy_core":
         """
         Method version of the sleep annotation function.
         This function first uses a motion classifier to decide whether an animal is moving during a given time window.
@@ -1035,8 +1082,9 @@ class behavpy_core(pd.DataFrame):
                                                                                                         min_time_immobile = min_time_immobile
         )), tdf.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
-    def feeding(self, food_position, dist_from_food = 0.05, micro_mov = 'micro', left_rois = [1,2,3,4,5,6,7,8,9,10], right_rois = [11,12,13,14,15,16,17,18,19,20], 
-        add_walk = False, x_position = 'x', t_column = 't'):
+    def feeding(self, food_position: str, dist_from_food: float = 0.05, micro_mov: str = 'micro', 
+                left_rois: List[int] = [1,2,3,4,5,6,7,8,9,10], right_rois: List[int] = [11,12,13,14,15,16,17,18,19,20], 
+                add_walk: bool = False, x_position: str = 'x') -> "behavpy_core":
         """
         A method that approximates the time spent feeding for flies in the ethoscope given their micromovements near to the food.
         The default settings are for a standard 20 short tube ethoscope setup. It can be altered to match other tube designs, but will take more thought.
@@ -1055,7 +1103,6 @@ class behavpy_core(pd.DataFrame):
                     see Note below.
                     If add_walk is True, the conditional is changed to 'moving' and the function infers feeding from if the fly is moving and near the food. Default is False.
                 x_position = string, the name of the column that contains the x postion
-                t_column (str, optional): The name of column containing the timing data (in seconds). Default is 't'
 
         Returns:
             returns an augmented behavpy object with an addtional column 'feeding' with boolean variables where True equals predicted feeding.
@@ -1083,7 +1130,7 @@ class behavpy_core(pd.DataFrame):
         if add_walk is True:
             micro_mov = 'moving'
 
-        def find_feed(d):
+        def find_feed(d: pd.DataFrame) -> pd.DataFrame:
             
             # if there's only 1 data point then add the column and fill with nan value
             if len(d) < 2:
@@ -1114,7 +1161,8 @@ class behavpy_core(pd.DataFrame):
     # HMM SECTION
 
     @staticmethod
-    def _hmm_decode(d, h, b, var, fun, t, return_type = 'array'):
+    def _hmm_decode(d: pd.DataFrame, h: Any, b: int, var: str, fun: Union[str, Callable], 
+                    t: str, return_type: str = 'array') -> Union[Tuple[List[np.ndarray], List[pd.Series]], pd.DataFrame]:
 
         # change the movement column of choice to intergers, 1 == active, 0 == inactive
         if var == 'moving' or var == 'asleep':
@@ -1155,14 +1203,14 @@ class behavpy_core(pd.DataFrame):
             return df
 
     @staticmethod
-    def hmm_display(self, hmm, states:list, observables:list):
+    def hmm_display(hmm: Any, states: List[str], observables: List[str]) -> None:
         """
         Prints to screen the transion probabilities for the hidden state and observables for a given hmmlearn hmm object
 
             Args:
                 hmm (hmmlearn trained model): The hmmlearn model whose probabilities you want to print.
                 states (list([str])): A list of names for the states in order. Must be the same length as the number of hidden states in the model.
-                observables (list([str]))): A list of names of the observables of the model, i.e. ['inactive', 'active']. Must be the same lenght as 
+                observables (list([str])): A list of names of the observables of the model, i.e. ['inactive', 'active']. Must be the same lenght as 
                     the number of emissions in the model.
         Returns:
             None. Prints to screen.
@@ -1180,7 +1228,10 @@ class behavpy_core(pd.DataFrame):
         df_e = pd.DataFrame(hmm.emissionprob_, index = states, columns = observables)
         print(tabulate(df_e, headers = 'keys', tablefmt = "github") + "\n")
 
-    def hmm_train(self, states, observables, var_column, file_name, trans_probs = None, emiss_probs = None, start_probs = None, iterations = 10, hmm_iterations = 100, tol = 50, t_column = 't', bin_time = 60, test_size = 10, verbose = False):
+    def hmm_train(self, states: List[str], observables: List[str], var_column: str, file_name: str, 
+                  trans_probs: Optional[np.ndarray] = None, emiss_probs: Optional[np.ndarray] = None, 
+                  start_probs: Optional[np.ndarray] = None, iterations: int = 10, hmm_iterations: int = 100, 
+                  tol: int = 50, t_column: str = 't', bin_time: int = 60, test_size: int = 10, verbose: bool = False) -> "behavpy_core":
         """
         Behavpy wrapper for the hmmlearn package which generates a Hidden Markov Model using the movement data from ethoscope data.
         If users want a restricted framework ,
@@ -1233,7 +1284,7 @@ class behavpy_core(pd.DataFrame):
             t_delta = data[t_column].iloc[1] - data[t_column].iloc[0]
             if t_delta != bin:
                 data[t_column] = data[t_column].map(lambda t: bin * floor(t / bin))
-                bin_gb = data.groupby(['id', t_var]).agg(**{
+                bin_gb = data.groupby(['id', t_column]).agg(**{
                     mov_var : (var_column, stat)
                 })
                 bin_gb.reset_index(level = 1, inplace = True)
@@ -1337,7 +1388,8 @@ class behavpy_core(pd.DataFrame):
                 self._hmm_table(start_prob = h.startprob_, trans_prob = h.transmat_, emission_prob = h.emissionprob_, state_names = states, observable_names = observables)
                 return h
 
-    def get_hmm_raw(self, hmm, variable = 'moving', t_bin = 60, func = 'max', t_column = 't'):
+    def get_hmm_raw(self, hmm: hmm.CategoricalHMM, variable: str = 'moving', t_bin: int = 60, func: str = 'max', 
+                    t_column: str = 't') -> "behavpy_core":
         """
         Decode all the time series per specimin, returning an augmented behavpy dataframe that has just one row per specimin and two columns, 
         one containing the decoded timeseries as a list and one with the given observable variable as a list
@@ -1357,7 +1409,7 @@ class behavpy_core(pd.DataFrame):
 
     # PERIODOGRAM SECTION
 
-    def anticipation_score(self, variable:str, day_length:int=24, lights_off:int=12, t_column:str='t'):
+    def anticipation_score(self, variable: str, day_length: int = 24, lights_off: int = 12, t_column: str = 't') -> "behavpy_core":
         """
         A method to find the anticipation score, a metric for measuring circadian rythmn. The score is calculated as the percentage
         of activity in the last six hours before lights on or off that is present in the last 3 hours. A higher score indicates greater
@@ -1404,13 +1456,14 @@ class behavpy_core(pd.DataFrame):
 
         return self.__class__(ant_df, self.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
-    def _validate(self):
+    def _validate(self) -> None:
         """ Validator to check further periodogram methods if the data is produced from the periodogram method """
         if  any([i not in self.columns.tolist() for i in ['period', 'power']]):
             raise AttributeError('This method is for the computed periodogram data only, please run the periodogram method on your data first')
         
 
-    def _check_periodogram_input(self, v, per, per_range, t_col, wavelet_type = False):
+    def _check_periodogram_input(self, v: str, per: str, per_range: Union[List[int], np.ndarray], 
+                                 t_col: str, wavelet_type: bool = False) -> Callable:
         """ Method to check the input to periodogram methods"""
 
         periodogram_list = ['chi_squared', 'lomb_scargle', 'fourier']#, 'welch'] ## remove welch for now
@@ -1443,7 +1496,8 @@ class behavpy_core(pd.DataFrame):
 
         return fun
 
-    def periodogram(self, mov_variable, periodogram, period_range = [10, 32], sampling_rate = 15, alpha = 0.01, t_column = 't', **kwargs):
+    def periodogram(self, mov_variable: str, periodogram: str, period_range: List[int] = [10, 32], 
+                    sampling_rate: int = 15, alpha: float = 0.01, t_column: str = 't', **kwargs) -> "behavpy_core":
         """ 
         A method to apply a periodogram analysis to given behavioural data, typically movement data. 
         Call this method first to create an analysed dataset that can be plotted with the other periodogram methods.
@@ -1483,11 +1537,13 @@ class behavpy_core(pd.DataFrame):
             data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
 
     @staticmethod
-    def wavelet_types():
-        wave_types = ['morl', 'cmor', 'mexh', 'shan', 'fbsp', 'gaus1', 'gaus2', 'gaus3', 'gaus4', 'gaus5', 'gaus6', 'gaus7', 'gaus8', 'cgau1', 'cgau2', 'cgau3', 'cgau4', 'cgau5', 'cgau6', 'cgau7', 'cgau8']
+    def wavelet_types() -> List[str]:
+        wave_types = ['morl', 'cmor', 'mexh', 'shan', 'fbsp', 'gaus1', 'gaus2', 'gaus3', 'gaus4', 'gaus5', 
+                      'gaus6', 'gaus7', 'gaus8', 'cgau1', 'cgau2', 'cgau3', 'cgau4', 'cgau5', 'cgau6', 'cgau7', 'cgau8']
         return wave_types
 
-    def _format_wavelet(self, mov_variable, sampling_rate = 15, wavelet_type = 'morl', t_col = 't'):
+    def _format_wavelet(self, mov_variable: str, sampling_rate: int = 15, wavelet_type: str = 'morl', 
+                        t_col: str = 't') -> Tuple[Callable, pd.DataFrame]:
         """ A background method for the preperation of data for a wavelet plot.
             Head to https://pywavelets.readthedocs.io/en/latest/ for information about the pacakage and the other wavelet types
             This method will produce a single wavelet transformation plot, averaging the the data from across all specimens. It is therefore recommended you filter your dataset accordingly before applying 
@@ -1509,7 +1565,7 @@ class behavpy_core(pd.DataFrame):
         return fun, avg_data
 
     @staticmethod
-    def _wrapped_find_peaks(data, num, height = None):
+    def _wrapped_find_peaks(data: pd.DataFrame, num: int, height: Optional[bool] = None) -> pd.DataFrame:
         if height is True:
             peak_ind, _ = find_peaks(x = data['power'].to_numpy(), height = data['sig_threshold'].to_numpy())
         else:
@@ -1529,7 +1585,7 @@ class behavpy_core(pd.DataFrame):
 
         return data
     
-    def find_peaks(self, num_peaks):
+    def find_peaks(self, num_peaks: int) -> "behavpy_core":
         """ Find the peaks in a computed periodogram, a wrapper for the scipy find_peaks function"""
         self._validate()
         data = self.copy(deep=True)
