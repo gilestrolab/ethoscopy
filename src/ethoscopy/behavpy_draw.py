@@ -46,7 +46,17 @@ class behavpy_draw(behavpy_core):
     @staticmethod
     def _check_boolean(lst):
         """
-        Checks to see if a column of data (as a list) max and min is 1 and 0, so as to make a appropriately scaled y-axis
+        Checks if the input list contains only binary values (0 and 1).
+
+        If the list is binary, returns the y-axis range and tick interval for scaling. 
+        Otherwise, returns False for both.
+
+        Args:
+            lst (list): A list of numerical values.
+        Returns:
+            tuple: A tuple containing:
+                - y_range (list or bool): The y-axis range for plotting if the list is binary, otherwise False.
+                - dtick (float or bool): The tick interval for the y-axis if the list is binary, otherwise False.
         """
         if np.nanmax(lst) == 1 and np.nanmin(lst) == 0:
             y_range = [-0.025, 1.01]
@@ -59,65 +69,105 @@ class behavpy_draw(behavpy_core):
     # Internal methods for checking data/arguments before plotting
     def _check_hmm_shape(self, hm, lab, col):
         """
-        Check the colours and labels passed to a plotting method are of equal length. If None then it will be populated with the defaults.
+        Validates the lengths of colors and labels for a Hidden Markov Model (HMM) plotting method.
+
+        This method checks if the provided labels and colors match the number of states in the HMM. 
+        If either is None, it populates them with default values based on the number of states. 
+        The method also ensures that the lengths of labels and colors are equal, raising an error if they are not.
+
+        Args:
+            hm (HMM or list): A Hidden Markov Model or a list of HMMs. If a list is provided, 
+                              the model with the maximum number of states will be selected.
+            lab (list or None): A list of labels for the states. If None, defaults will be used.
+            col (list or None): A list of colors for the states. If None, defaults will be used.
+
+        Returns:
+            tuple: A tuple containing:
+                - _labels (list): The validated list of labels for the states.
+                - _colours (list): The validated list of colors for the states.
+
+        Raises:
+            ValueError: If the lengths of labels and colors do not match.
         """
-        if isinstance(hm, list): # find the number of states in each model and seleect the longest one
+        if isinstance(hm, list):  # Select the HMM with the maximum number of states
             len_hmms = [h.transmat_.shape[0] for h in hm]
             hm = hm[len_hmms.index(max(len_hmms))]
 
-        if hm.transmat_.shape[0] == 4:
-            if lab == None and col == None:
-                _labels = self._hmm_labels
-                _colours = self._hmm_colours
-            elif lab == None and col != None:
-                _labels = self._hmm_labels
-                _colours = col
-            elif lab != None and col == None:
-                _labels = lab
-                _colours = self._hmm_colours
+        num_states = hm.transmat_.shape[0]
 
-        elif hm.transmat_.shape[0] != 4:
-            if lab == None and col == None:
-                # give generic names and populate with colours from the given palette 
-                _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
-                _colours = self._get_colours(hm.transmat_)[:len(_labels)]
-            elif lab != None and col == None:
-                _colours = self._get_colours(hm.transmat_)[:len(lab)]
-                _labels = lab
-            elif lab == None and col != None:
-                _colours = col
-                _labels = [f'state_{i}' for i in range(0, hm.transmat_.shape[0])]
+        if lab is not None and col is not None:
+            if num_states == len(lab) and num_states == len(col):
+                return lab, col
             else:
-                if len(col) != len(lab):
-                    raise ValueError('You have more or less states than colours, please rectify so the lists are equal in length')
-                _labels = lab
-                _colours = col
-        else:
-            _labels = lab
-            _colours = col
+                raise ValueError('The number of labels and colours does not match the number of states in the HMM')
 
-        if len(_labels) != len(_colours):
-            raise ValueError('Internal check failed: You have more or less states than colours, please rectify so they are equal in length')
-        
-        return _labels, _colours
+        elif num_states == 4:
+            if lab == None:
+                lab = self._hmm_labels
+            if col == None:
+                col = self._hmm_colours
+
+        elif num_states != 4:
+            if lab == None:
+                lab = [f'state_{i}' for i in range(0, num_states)]
+            if col == None:
+                col = self._get_colours(hm.transmat_)[:len(lab)]
+
+        if len(lab) != len(col):
+            raise ValueError('Internal check failed: There are more or less states than colours')
+
+        return lab, col
 
     def _check_lists_hmm(self, f_col, f_arg, f_lab, h, b):
         """
-        Check if the facet arguments match the labels or populate from the column if not.
-        Check if there is more than one HMM object for HMM comparison. Populate hmm and bin lists accordingly.
-        """
+        Validates and prepares the facet arguments, labels, and HMM models for plotting.
 
+        This method checks if the provided facet arguments match the labels and ensures that 
+        the number of HMM models corresponds to the number of bin integers. If necessary, it 
+        populates the lists with default values or raises errors for mismatches.
+
+        Args:
+            f_col (str or None): The name of the column used for faceting. If None, no faceting is applied.
+            f_arg (list or None): A list of arguments for faceting. If None, it will be populated based on f_col.
+            f_lab (list or None): A list of labels corresponding to f_arg. If None, it will be generated from f_arg.
+            h (HMM or list): A Hidden Markov Model or a list of HMMs. If a list is provided, it checks for consistency.
+            b (int orlist): A list of integers for binning the time. Must match the length of h if h is a list.
+
+        Returns:
+            tuple: A tuple containing:
+                - f_arg (list): The validated list of facet arguments.
+                - f_lab (list): The validated list of facet labels.
+                - h_list (list): The list of HMMs, ensuring consistency with the number of facet arguments.
+                - b_list (list): The list of bin integers, ensuring consistency with the number of facet arguments.
+
+        Raises:
+            AssertionError: If the lengths of HMMs and bin integers do not match the number of facet arguments.
+            ValueError: If the lengths of facet arguments and labels do not match.
+            KeyError: If any argument in f_arg is not found in the metadata column specified by f_col.
+        """
+        # Handle multiple HMMs
         if isinstance(h, list):
-            assert isinstance(b, list), "If providing a list of HMMs, also provide a list of ints to bin the time by (t_bin)"
-            if f_col is not None: # if faceting then the user must provide an equal length list of bin times and facet args
-                assert isinstance(f_arg, list), "If providing a list of HMMs, also provide a list of groups to filter by via facet_arg"
-                if len(h) != len(f_arg) or len(b) != len(f_arg):
-                    raise ValueError('There are not enough hmm models or bin intergers for the different groups or vice versa')
-                else:
-                    h_list = h
-                    b_list = b
-            else: # if a list of HMMs but no facet, populate fake lists with None and names to trick the system
-                return [None for c in range(len(h))], [f'HMM-{c+1}' for c in range(len(h))], h, b
+            assert isinstance(b, list), (
+                "If providing a list of HMMs, also provide a list of ints to bin the time by (t_bin)"
+            )
+            if len(h) != len(b):
+                raise ValueError('The number of HMMs and bin integers do not match')
+            # If faceting then the user must provide an equal length list of bin times and facet args
+            if f_col is not None:
+                assert isinstance(f_arg, list), (
+                    "If providing a list of HMMs, also provide a list of groups to filter by via facet_arg"
+                )
+                if len(h) != len(f_arg):
+                    raise ValueError(
+                        'There are not enough HMM models or bin integers for the different groups or vice versa'
+                    )
+                h_list, b_list = h, b
+            # If just a list of HMMs but no facet, populate fake lists with None and names to trick the system
+            else:
+                f_arg = [None] * len(h)
+                f_lab = [f'HMM-{i+1}' for i in range(len(h))]
+                b_list = [b] * len(h)
+                return f_arg, f_lab, h, b_list
 
         if f_col is not None:
             if f_arg is None:
@@ -444,7 +494,7 @@ class behavpy_draw(behavpy_core):
 
         return gbm, np.array(time_list), id_list
 
-    def _hmm_response(self, mov_df, hmm, variable, response_col, labels, colours, facet_col, facet_arg, t_bin, facet_labels, func, t_column):
+    def _hmm_response(self, mov_df, hmm, variable, response_col, labels, facet_col, facet_arg, t_bin, facet_labels, func, t_column):
         """ an internal method for all hmm response plotters. Decodes the movement dataset and merges it with the response dataset """ 
         data_summary = {
             "%s_mean" % response_col : (response_col, 'mean'),
@@ -466,7 +516,8 @@ class behavpy_draw(behavpy_core):
             if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
                 mdata = self.__class__(self._hmm_decode(mdata, hmm, t_bin, variable, func, t_column, return_type='table'), mdata.meta, check=True)
             else:
-                mdata = concat(*[self.__class__(self._hmm_decode(mdata.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
+                mdata = concat(*[self.__class__(self._hmm_decode(mdata.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), 
+                                                mdata.meta, check=True) for arg, h, b in zip(facet_arg, hmm, t_bin)])
 
         # merge the two df's and check if the interaction happened in the right time point
         def alter_merge(response, mov, tb):
@@ -483,7 +534,8 @@ class behavpy_draw(behavpy_core):
         if isinstance(t_bin, list) is False: # if only 1 bin but is faceted, apply to whole df
             data = self.__class__(alter_merge(data, mdata, t_bin), data.meta, check=True)
         else:
-            data = concat(*[self.__class__(alter_merge(data.xmv(facet_col, arg), mdata.xmv(facet_col, arg), b), data.meta, check=True) for arg, b in zip(facet_arg, b_list)])
+            data = concat(*[self.__class__(alter_merge(data.xmv(facet_col, arg), mdata.xmv(facet_col, arg), b), 
+                                           data.meta, check=True) for arg, b in zip(facet_arg, t_bin)])
 
         grouped_data = data.groupby([data.index, 'previous_state', 'has_interacted']).agg(**data_summary)
         grouped_data = grouped_data.reset_index()
@@ -909,7 +961,7 @@ class behavpy_draw(behavpy_core):
                 decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
             else:
                 decoded_data = concat(*[self.__class__(self._hmm_decode(data.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), 
-                                            mdata.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
+                                            data.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
 
         return decoded_data, labels, colours, facet_arg, facet_labels
 

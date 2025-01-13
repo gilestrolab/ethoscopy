@@ -2439,8 +2439,8 @@ class behavpy_core(pd.DataFrame):
             ValueError: If `num_peaks` is not a positive integer.
 
         Example:
-            # Find the top 5 peaks in the periodogram
-            peaks_df = df.find_peaks(num_peaks=5)
+            # Find the top 3 peaks in the periodogram
+            peaks_df = df.find_peaks(num_peaks=3)
         """
         # Validate num_peaks
         if not isinstance(num_peaks, int) or num_peaks <= 0:
@@ -2449,7 +2449,7 @@ class behavpy_core(pd.DataFrame):
         self._validate()
         data = self.copy(deep=True)
         data = data.reset_index()
-        
+
         if 'sig_threshold' in data.columns.tolist():
             return self.__class__(data.groupby('id', group_keys=False).apply(
                 partial(self._wrapped_find_peaks, num=num_peaks, height=True)), 

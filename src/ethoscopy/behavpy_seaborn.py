@@ -5,19 +5,13 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
 
-from math import floor, ceil, sqrt
-from scipy.stats import zscore
-from functools import partial, update_wrapper
-from colour import Color
+from math import floor, ceil
+from functools import partial
 
 from ethoscopy.behavpy_draw import behavpy_draw
 
 from ethoscopy.misc.circadian_bars import circadian_bars
-from ethoscopy.analyse import max_velocity_detector
-from ethoscopy.misc.rle import rle
-from ethoscopy.misc.bootstrap_CI import bootstrap
-from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
-from ethoscopy.misc.general_functions import concat
+from ethoscopy.misc.hmm_functions import hmm_pct_state
 
 class behavpy_seaborn(behavpy_draw):
     """
@@ -1937,12 +1931,16 @@ class behavpy_seaborn(behavpy_draw):
         if response_col not in self.columns.tolist():
             raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analysed the dataset with stimulus_response')
 
-        labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = None)
+        labels, _ = self._check_hmm_shape(hm = hmm, lab = labels, col = None)
         facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
+        if isinstance(hmm, list):
+            t_bin = b_list # set 
+
         plot_column = f'{response_col}_mean'
 
-        grouped_data, palette_dict, h_order = self._hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, colours = colours, 
-                                            facet_col = facet_col, facet_arg = facet_arg, facet_labels = facet_labels, t_bin = t_bin, func = func, t_column = t_column)
+        grouped_data, palette_dict, h_order = self._hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, facet_col = facet_col,
+                                            facet_arg = facet_arg, facet_labels = facet_labels, t_bin = t_bin, func = func, t_column = t_column)
+        print(palette_dict)
         # (0,0) means automatic size
         if figsize == (0,0):
             figsize = (4*len(facet_arg)+2, 8)

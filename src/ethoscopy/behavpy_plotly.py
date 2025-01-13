@@ -2380,7 +2380,7 @@ class behavpy_plotly(behavpy_draw):
                     Default is None.
                 colours (list[str/RGB], optional): The name of the colours you wish to represent the different states, must be the same length as labels. 
                     If None the colours are by default for 4 states (blue and red), if not 4 then colours from the palette are chosen. 
-                    It accepts a specific colour or an array of numbers that are acceptable to Seaborn. Default is None.
+                    It accepts a specific colour or an array of numbers that are acceptable to Plotly. Default is None.
                 facet_col (str, optional): The name of the column to use for faceting, must be from the metadata. Default is None.
                 facet_arg (list, optional): The arguments to use for faceting. If None then all distinct groups will be used. 
                     Default is None.
@@ -2389,7 +2389,7 @@ class behavpy_plotly(behavpy_draw):
                 t_bin (int, optional): The time in seconds you want to bin the movement data to. Default is 60 or 1 minute
                 col_uniform (bool, optional): Unique to the plotly version of this method. 
                     When True the colour scheme is based on the states and not the faceted column. 
-                    When false the colour palette is used instead as in the Seaborn version. Default is False.
+                    When false the colour palette is used instead as in the Plotly version. Default is False.
                 func (str, optional): When binning to the above what function should be applied to the grouped data. 
                     Default is "max" as is necessary for the "moving" variable.
                 z_score (bool, optional): If True (Default) the z-score for each entry is found the those above/below zero are removed. 
@@ -2413,7 +2413,7 @@ class behavpy_plotly(behavpy_draw):
             raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analysed the dataset with stimulus_response')
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
+        facet_arg, facet_labels, _, _ = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
         plot_column = f'{response_col}_mean'
 
         grouped_data, palette_dict, h_order = self._hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, colours = colours, 
