@@ -792,9 +792,6 @@ class behavpy_core(pd.DataFrame):
             if not len(df):
                 raise ValueError("Empty DataFrame provided")
                 
-            if t_column not in df.columns:
-                raise KeyError(f"Time column '{t_column}' not found")
-                
             # Calculate survival times
             gb = df.groupby(df.index).agg(**{
                 'tmin': (t_column, 'min'),
@@ -827,10 +824,8 @@ class behavpy_core(pd.DataFrame):
                 'label': [name] * len(col)
             })
 
-        # Get group name
+        # Get group name if facet_col is provided
         if facet_col is not None:
-            if facet_col not in df.columns:
-                raise KeyError(f"Facet column '{facet_col}' not found")
             name = df[facet_col].iloc[0]
         else:
             name = ''
@@ -986,9 +981,6 @@ class behavpy_core(pd.DataFrame):
             df.sleep_bout_analysis(as_hist=True, asleep=False)
         """
 
-        if sleep_column not in self.columns:
-            raise KeyError(f'Column heading "{sleep_column}", is not in the data table')
-
         tdf = self.reset_index().copy(deep = True)
         return self.__class__(tdf.groupby('id', group_keys = False).apply(partial(self._wrapped_bout_analysis, 
                                                                                                 var_name = sleep_column, 
@@ -1084,13 +1076,7 @@ class behavpy_core(pd.DataFrame):
             ValueError: If resolution is not positive or larger than time_window
             TypeError: If mov_column does not contain boolean values
         """
-
-        if t_column not in self.columns.tolist():
-            raise KeyError(f'Variable name entered, {t_column}, for t_column is not a column heading!')
-        
-        if mov_column not in self.columns.tolist():
-            raise KeyError(f'Variable name entered, {mov_column}, for mov_column is not a column heading!')
-
+        # Check
         if not pd.api.types.is_bool_dtype(self[mov_column]):
             raise TypeError(f'Column {mov_column} must contain boolean values')
 
@@ -1145,12 +1131,6 @@ class behavpy_core(pd.DataFrame):
             if specimen_id not in dict:
                 return pd.DataFrame()  # Return empty frame for missing IDs
             return df[df[t_column].between(dict[specimen_id][0], dict[specimen_id][1])]
-
-        # Check if t_column and mov_column are valid
-        if t_column not in self.columns.tolist() or t_column not in mov_df.columns.tolist():
-            raise KeyError(f'Variable name entered, {t_column}, for t_column is not a column heading!')
-        if mov_column not in mov_df.columns.tolist():
-            raise KeyError(f'Variable name entered, {mov_column}, for mov_column is not a column heading!')
 
         # Validate movement column contains boolean values
         if not pd.api.types.is_bool_dtype(mov_df[mov_column]):
@@ -1257,10 +1237,6 @@ class behavpy_core(pd.DataFrame):
             df = df.interpolate_linear('distance', step_size=60)
         """
         # Input validation
-        if variable not in self.columns:
-            raise KeyError(f"Variable column '{variable}' not found in data")
-        if t_column not in self.columns:
-            raise KeyError(f"Time column '{t_column}' not found in data")
         if step_size <= 0:
             raise ValueError("Step size must be positive")
 
@@ -1383,16 +1359,13 @@ class behavpy_core(pd.DataFrame):
             df = df.bin_time(['x', 'y'], bin_secs=60, function=lambda x: x.max() - x.min())
         """
         # Validate bin_secs
-        if not isinstance(bin_secs, (int, float)) or bin_secs <= 0:
+        if not isinstance(bin_secs, int) or bin_secs <= 0:
             raise ValueError("bin_secs must be a positive number")
         
         if isinstance(variable, str):
             variable = [variable]
 
-        # Validate column names
-        if t_column not in self.columns:
-            raise KeyError(f"Time column '{t_column}' not found in data")
-            
+        # Validate column names        
         for var in variable:
             if not isinstance(var, str):
                 raise TypeError(f"All variables must be strings, got {type(var)} for variable: {var}")
@@ -1455,9 +1428,6 @@ class behavpy_core(pd.DataFrame):
             # Remove first/last sleep bouts that may be incomplete
             df = df.remove_first_last_bout('asleep')
         """
-        # Validate inputs
-        if variable not in self.columns:
-            raise KeyError(f"Column '{variable}' not found in data")
             
         if not pd.api.types.is_bool_dtype(self[variable]):
             raise TypeError(f"Column '{variable}' must contain boolean values")
@@ -1629,16 +1599,12 @@ class behavpy_core(pd.DataFrame):
 
         Raises:
             KeyError: If mov_column or t_column not found in data
+            ValueError: If time_window_length or min_time_immobile is not a positive number
 
         Example:
             # Identify sleep with 1-minute windows and 5-minute threshold
             df = df.sleep_contiguous(time_window_length=60, min_time_immobile=300)
         """
-
-        if mov_column not in self.columns.tolist():
-            raise KeyError(f'The movement column {mov_column} is not in the dataset')
-        if t_column not in self.columns.tolist():
-            raise KeyError(f'The time column {t_column} is not in the dataset')
 
         # Validate time_window_length
         if not isinstance(time_window_length, int) or time_window_length <= 0:
@@ -1711,14 +1677,6 @@ class behavpy_core(pd.DataFrame):
         # Validate dist_from_food range
         if not 0 <= dist_from_food <= 1:
             raise ValueError("dist_from_food must be between 0 and 1")
-
-        # Check required columns exist
-        if x_position not in self.columns:
-            raise KeyError(f"x_position column '{x_position}' not found in data")
-        if micro_mov not in self.columns:
-            raise KeyError(f"micro_mov column '{micro_mov}' not found in data")
-        if 'region_id' not in self.meta.columns:
-            raise KeyError("region_id column not found in metadata")
 
         # Validate ROI lists
         if not left_rois or not right_rois:
@@ -2157,23 +2115,57 @@ class behavpy_core(pd.DataFrame):
 
     # PERIODOGRAM SECTION
 
-    def anticipation_score(self, variable: str, day_length: int = 24, lights_off: int = 12, t_column: str = 't') -> "behavpy_core":
+    def anticipation_score(self, variable: str, day_length: int = 24, lights_off: int = 12, 
+                           t_column: str = 't') -> "behavpy_core":
         """
-        A method to find the anticipation score, a metric for measuring circadian rythmn. The score is calculated as the percentage
-        of activity in the last six hours before lights on or off that is present in the last 3 hours. A higher score indicates greater
-        anticipation.
+        Calculate anticipation scores to measure circadian rhythm strength.
+
+        Computes an anticipation score by comparing activity levels in the 3 hours 
+        immediately before a transition (lights on/off) to activity in the 6 hours before.
+        The score is calculated as: (activity in last 3hrs / activity in last 6hrs) * 100.
+        Higher scores indicate stronger anticipatory behavior.
 
         Args:
-            variable (str): The name of the column containing the variable that measures activity.
-            day_length (int, optional): The lenght in hours the experimental day is. Default is 24.
-            lights_off (int, optional): The time point when the lights are turned off in an experimental day, 
-                assuming 0 is lights on. Must be number between 0 and day_lenght. Default is 12.
-        
+            variable (str): Column name containing activity measurements to analyze
+            day_length (int, optional): Length of experimental day in hours. Defaults to 24.
+            lights_off (int, optional): Hour when lights turn off, measured from lights on (0).
+                Must be between 0 and day_length. Defaults to 12.
+            t_column (str, optional): Column containing timestamps in seconds.
+                Defaults to 't'.
+
         Returns:
-            An amended behavpy dataframe with anticipation scores.
-        Note:
-            This method is used internally in the plot_anticipation_score method.
+            behavpy_core: New behavpy object with addtional columns:
+                - anticipation_score: Percentage of 6-hour activity in final 3 hours
+                - phase: Either 'Lights On' or 'Lights Off'
+
+        Raises:
+            KeyError: If variable or t_column not found in data
+            ValueError: If lights_off not between 0 and day_length
+
+        Example:
+            # Calculate anticipation scores for movement data
+            df = df.anticipation_score('moving')
+
+            # Custom day length and lights-off time
+            df = df.anticipation_score('moving', day_length=12, lights_off=6)
+
+        Notes:
+            - Data is first wrapped to day_length hours using wrap_time()
+            - NaN values are dropped before calculation
+            - Scores are calculated separately for lights-on and lights-off transitions
+            - Used internally by plot_anticipation_score()
         """
+
+        # Validate lights_off is between 0 and day_length
+        if not 0 <= lights_off <= day_length:
+            raise ValueError(f"lights_off ({lights_off}) must be between 0 and day_length ({day_length})")
+
+        # Validate we have enough hours before transitions for calculation
+        if lights_off < 6:
+            raise ValueError("lights_off must be at least 6 hours after lights on for anticipation calculation")
+        if day_length - lights_off < 6:
+            raise ValueError("lights_off must be at least 6 hours before end of day for anticipation calculation")
+
         def _ap_score(total, small):
             try:
                 return (small / total) * 100
