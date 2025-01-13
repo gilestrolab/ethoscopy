@@ -14,7 +14,6 @@ from scipy.stats import zscore
 from ethoscopy.misc.general_functions import concat
 from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.rle import rle
-# from ethoscopy.misc.periodogram_functions import chi_squared, lomb_scargle, fourier, wavelet, welch
 
 from typing import Optional, List, Union, Tuple, Dict, Any, Callable
 
@@ -52,6 +51,7 @@ class behavpy_core(pd.DataFrame):
         behavpy_core: A behavpy object with methods for manipulating, analyzing and plotting
             time series behavioral data.
     """
+
     # set meta as permenant attribute
     _metadata = ['meta']
     _canvas = None
@@ -308,7 +308,8 @@ class behavpy_core(pd.DataFrame):
         Args:
             detailed (bool, optional): If True, show count and time range of data points per ID.
                 Defaults to False.
-            t_column (str, optional): Column containing timestamps. Defaults to 't'.
+            t_column (str, optional): Column containing timestamps. 
+                Defaults to 't'.
 
         Returns:
             None
@@ -2198,13 +2199,42 @@ class behavpy_core(pd.DataFrame):
 
     def _validate(self) -> None:
         """ Validator to check further periodogram methods if the data is produced from the periodogram method """
-        if  any([i not in self.columns.tolist() for i in ['period', 'power']]):
+        if any([i not in self.columns.tolist() for i in ['period', 'power']]):
             raise AttributeError('This method is for the computed periodogram data only, please run the periodogram method on your data first')
         
 
     def _check_periodogram_input(self, v: str, per: str, per_range: Union[List[int], np.ndarray], 
                                  t_col: str, wavelet_type: bool = False) -> Callable:
-        """ Method to check the input to periodogram methods"""
+        """
+        Internal method to validate inputs for periodogram analysis and return the appropriate function.
+
+        Validates column names exist in data, periodogram type is supported, and period range is valid.
+        Returns the corresponding periodogram function for analysis.
+
+        Args:
+            v (str): Name of column containing values to analyze
+            per (str): Name of periodogram function to use
+            per_range (Union[List[int], np.ndarray]): Two-element list/array containing 
+                [min_period, max_period] in hours
+            t_col (str): Name of column containing timestamps
+            wavelet_type (bool, optional): If True, return wavelet function without additional
+                validation. Defaults to False.
+
+        Returns:
+            Callable: Selected periodogram function for analysis
+
+        Raises:
+            KeyError: If v or t_col not found in data columns
+            AttributeError: If per is not a supported periodogram type
+            TypeError: If per_range is not a list/array or doesn't have exactly 2 elements
+            ValueError: If per_range contains negative values
+
+        Notes:
+            Supported periodogram types are:
+            - chi_squared
+            - lomb_scargle  
+            - fourier
+        """
 
         periodogram_list = ['chi_squared', 'lomb_scargle', 'fourier']#, 'welch'] ## remove welch for now
 
@@ -2239,33 +2269,43 @@ class behavpy_core(pd.DataFrame):
     def periodogram(self, mov_variable: str, periodogram: str, period_range: List[int] = [10, 32], 
                     sampling_rate: int = 15, alpha: float = 0.01, t_column: str = 't', **kwargs) -> "behavpy_core":
         """ 
-        A method to apply a periodogram analysis to given behavioural data, typically movement data. 
-        Call this method first to create an analysed dataset that can be plotted with the other periodogram methods.
-        Four types of rhymicity analysing algorithms can be used with this method, 'chi_squared', 'lomb_scargle',
-        'fourier', 'welch'.
+        Apply a periodogram analysis to behavioral data, typically movement data.
 
-            Args:
-                mov_varible (str): THe name of the column in the data containing the movement data.
-                periodogram (str); The name of the function as a string to analyse the dataset with.
-                    Choose one of ['chi_squared', 'lomb_scargle', 'fourier', 'welch'].
-                period_range (list([int,int]). optional): A list of two containing the minimum and maximum values to find the 
-                    frequency power (in hours). Default is [10, 32].
-                sampling_rate (int, optional): The frquency to resample the data at (in seconds). Default is 15.
-                alpha (float, optional): The significance level. Default is 0.01.
+        This method creates an analysed dataset that can be plotted with other periodogram methods.
+        Supported periodogram types include 'chi_squared', 'lomb_scargle', 'fourier', and 'welch'.
+
+        Args:
+            mov_variable (str): The name of the column in the data containing the movement data.
+            periodogram (str): The name of the function to analyze the dataset with.
+                Choose one of ['chi_squared', 'lomb_scargle', 'fourier', 'welch'].
+            period_range (List[int], optional): A list containing the minimum and maximum values to find the 
+                frequency power (in hours). Default is [10, 32].
+            sampling_rate (int, optional): The frequency to resample the data at (in seconds). Default is 15.
+            alpha (float, optional): The significance level. Default is 0.01.
+            **kwargs: Additional keyword arguments for the periodogram function.
+
         Returns:
-            An ammended behavpy dataframe with new columns 'period' and 'power'
+            behavpy_core: An amended behavpy dataframe with new columns 'period' and 'power'.
+
         Raises:
-            AttributeError:
-                If an unknown periodogram function is given. If you want to add your own implementation edit the base code or
-                raise an issue in the GitHub.
+            AttributeError: If an unknown periodogram function is given. If you want to add your own implementation, e
+            dit the base code or raise an issue on GitHub.
         """
+
+        # Validate period_range is between 0 and max, and validate alpha
+        if not 0 <= period_range[0] <= period_range[1]:
+            raise ValueError(f"period_range ({period_range}) must be greater than 0 and period_range[0] < period_range[1]")
+        if not alpha > 0:
+            raise ValueError(f"alpha ({alpha}) must be greater than 0")
 
         fun = self._check_periodogram_input(mov_variable, periodogram, period_range, t_column)
         sampling_rate = 1 / (sampling_rate * 60)  # Converts to frequency
         
         data = self.copy(deep = True)
+        # populate sample data 
         sampled_data = data.interpolate_linear(variable = mov_variable, step_size = 1 / sampling_rate)
         sampled_data = sampled_data.reset_index()
+
         return self.__class__(sampled_data.groupby('id', group_keys = False)[[t_column, mov_variable]].apply(
             partial(fun, 
                     var = mov_variable, 
@@ -2278,16 +2318,42 @@ class behavpy_core(pd.DataFrame):
 
     @staticmethod
     def wavelet_types() -> List[str]:
+        """
+        Retrieve a list of supported wavelet types for wavelet analysis.
+        See https://pywavelets.readthedocs.io/en/latest/ref/wavelets.html for more information.
+
+        Returns:
+            List[str]: A list of strings representing the names of available wavelet types.
+        """
         wave_types = ['morl', 'cmor', 'mexh', 'shan', 'fbsp', 'gaus1', 'gaus2', 'gaus3', 'gaus4', 'gaus5', 
                       'gaus6', 'gaus7', 'gaus8', 'cgau1', 'cgau2', 'cgau3', 'cgau4', 'cgau5', 'cgau6', 'cgau7', 'cgau8']
         return wave_types
 
     def _format_wavelet(self, mov_variable: str, sampling_rate: int = 15, wavelet_type: str = 'morl', 
                         t_col: str = 't') -> Tuple[Callable, pd.DataFrame]:
-        """ A background method for the preperation of data for a wavelet plot.
-            Head to https://pywavelets.readthedocs.io/en/latest/ for information about the pacakage and the other wavelet types
-            This method will produce a single wavelet transformation plot, averaging the the data from across all specimens. It is therefore recommended you filter your dataset accordingly before applying 
-            this method, i.e. by different experimental groups or a single specimen.
+        """
+        Prepare data for wavelet analysis by resampling and averaging across specimens.
+
+        This internal method checks the validity of the specified wavelet type, resamples the data 
+        at the given sampling rate, and computes the average of the specified movement variable 
+        across all specimens. It is recommended to filter the dataset before applying this method 
+        to focus on specific experimental groups or individual specimens.
+
+        Args:
+            mov_variable (str): Name of the column containing movement data to analyze.
+            sampling_rate (int, optional): Frequency to resample the data at (in seconds). 
+                Defaults to 15.
+            wavelet_type (str, optional): Type of wavelet to use for analysis. Defaults to 'morl'.
+            t_col (str, optional): Name of the column containing timestamps. Defaults to 't'.
+
+        Returns:
+            Tuple[Callable, pd.DataFrame]: A tuple containing:
+                - Callable: The wavelet function corresponding to the specified wavelet type.
+                - pd.DataFrame: DataFrame with averaged movement data across specimens.
+
+        Notes:
+            - For more information on wavelet types, refer to the PyWavelets documentation:
+                - https://pywavelets.readthedocs.io/en/latest/ref/wavelets.html 
         """
         # check input and return the wavelet function with given wave type
         fun = self._check_periodogram_input(v = mov_variable, per = 'wavelet', per_range = None, t_col = t_col, wavelet_type = wavelet_type)
@@ -2305,7 +2371,33 @@ class behavpy_core(pd.DataFrame):
         return fun, avg_data
 
     @staticmethod
-    def _wrapped_find_peaks(data: pd.DataFrame, num: int, height: Optional[bool] = None) -> pd.DataFrame:
+    def _wrapped_find_peaks(data: pd.DataFrame, num: int, height: Optional[bool] = False) -> pd.DataFrame:
+        """
+        Identify peaks in a computed periodogram.
+
+        This internal method uses the `find_peaks` function from `scipy.signal` to detect peaks 
+        in the power spectrum of the provided data. It ranks the detected peaks based on their 
+        power values and assigns a rank to each peak. The method also allows for the use of a 
+        significance threshold for peak detection.
+
+        Args:
+            data (pd.DataFrame): DataFrame containing the periodogram data with columns:
+                - 'power': The power values corresponding to each period.
+                - 'period': The periods associated with the power values.
+                - 'sig_threshold' (optional): A threshold for peak significance, used if height is True.
+            num (int): The maximum rank number for peaks to be considered significant. 
+                Peaks with a rank greater than this value will be marked as False.
+            height (bool, optional): If True, uses the 'sig_threshold' column to filter peaks 
+                based on their height. If None, no height filtering is applied. Defaults to None.
+
+        Returns:
+            pd.DataFrame: The input DataFrame with an additional column 'peak' indicating the rank of 
+            each period. If a period is not a peak or exceeds the specified rank limit, it will be marked as False.
+
+        Notes:
+            - Ensure that the input DataFrame contains the required columns before calling this method.
+        """
+
         if height is True:
             peak_ind, _ = find_peaks(x = data['power'].to_numpy(), height = data['sig_threshold'].to_numpy())
         else:
@@ -2326,11 +2418,43 @@ class behavpy_core(pd.DataFrame):
         return data
     
     def find_peaks(self, num_peaks: int) -> "behavpy_core":
-        """ Find the peaks in a computed periodogram, a wrapper for the scipy find_peaks function"""
+        """
+        Identify significant peaks in a computed periodogram.
+
+        This method uses the `find_peaks` function from `scipy.signal` to detect peaks in the power spectrum
+        of the provided data. It ranks the detected peaks based on their power values and assigns a rank to each peak.
+        The method can filter peaks based on a significance threshold if the 'sig_threshold' column is present.
+
+        Args:
+            num_peaks (int): The maximum rank number for peaks to be considered significant. 
+                             Peaks with a rank greater than this value will be marked as False.
+
+        Returns:
+            behavpy_core: A new behavpy object containing the original data with an additional column 'peak' 
+                          indicating the rank of each period. If a period is not a peak or exceeds the specified 
+                          rank limit, it will be marked as False.
+
+        Raises:
+            AttributeError: If the data does not contain the required columns for peak detection.
+            ValueError: If `num_peaks` is not a positive integer.
+
+        Example:
+            # Find the top 5 peaks in the periodogram
+            peaks_df = df.find_peaks(num_peaks=5)
+        """
+        # Validate num_peaks
+        if not isinstance(num_peaks, int) or num_peaks <= 0:
+            raise ValueError("num_peaks must be a positive integer")    
+            
         self._validate()
         data = self.copy(deep=True)
         data = data.reset_index()
+        
         if 'sig_threshold' in data.columns.tolist():
-            return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks, height = True)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
+            return self.__class__(data.groupby('id', group_keys=False).apply(
+                partial(self._wrapped_find_peaks, num=num_peaks, height=True)), 
+                data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check=True)
         else:
-            return  self.__class__(data.groupby('id', group_keys = False).apply(partial(self._wrapped_find_peaks, num = num_peaks)), data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check = True)
+            return self.__class__(data.groupby('id', group_keys=False).apply(
+                partial(self._wrapped_find_peaks, num=num_peaks)), 
+                data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check=True)

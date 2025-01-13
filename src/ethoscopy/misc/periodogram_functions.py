@@ -3,11 +3,9 @@ import numpy as np
 
 from pywt import cwt
 
-from functools import partial
-
 from scipy.stats import chi2
 from scipy.special import chdtri
-from scipy.signal import welch as internal_welch
+# from scipy.signal import welch as internal_welch
 from scipy.fftpack import fft
 
 from astropy.timeseries import LombScargle
