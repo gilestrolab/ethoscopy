@@ -61,11 +61,15 @@ install.packages(
 c('behavr', 
   'ggetho', 
   'damr',
-  'scopr', 
+#  'scopr', 
   'sleepr', 
   'zeitgebr'
   ),
   repos= 'http://cran.uk.r-project.org'
 )
+
+#As of Jan 2024 scopr does not seem to be on CRAN for whatever reason so we need to install from github
+library(devtools)
+devtools::install_github("rethomics/scopr")
 
 IRkernel::installspec(user = FALSE)

@@ -57,3 +57,41 @@ Note that in this latter case the credential files will be mounted as `ro` and c
 
 The environment variables in the example below are used in conjunction with nginx-proxy and nginx-proxy-companion.
 
+# docker compose yaml
+The following can be used as an example of `docker-compose.yml` file
+
+```
+---
+services:
+  ethoscope-lab:
+    image: ggilestro/ethoscope-lab:latest
+    container_name: ethoscope-lab
+    ports:
+      - 8082:8000
+    volumes:
+      - /mnt/data/results:/mnt/ethoscope_results:ro
+      - /mnt/data/ethoscope_metadata:/opt/ethoscope_metadata
+      - /mnt/homes:/home
+      - /mnt/cache:/home/cache
+      - /mnt/homes/secrets/passwd:/etc/passwd:ro
+      - /mnt/homes/secrets/group:/etc/group:ro
+      - /mnt/homes/secrets/shadow:/etc/shadow:ro
+    environment:
+      UID: 1000
+      GID: 984
+      VIRTUAL_HOST: "jupyter.lab.gilest.ro"
+      LETSENCRYPT_HOST: "jupyter.lab.gilest.ro"
+      LETSENCRYPT_EMAIL: "giorgio@gilest.ro"
+    restart: always
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+
+networks:
+  default:
+    name: nginx-proxy
+    external: true
+```
+
