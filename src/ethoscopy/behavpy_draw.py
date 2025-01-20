@@ -166,45 +166,36 @@ class behavpy_draw(behavpy_core):
             else:
                 f_arg = [None] * len(h)
                 f_lab = [f'HMM-{i+1}' for i in range(len(h))]
-                b_list = [b] * len(h)
-                return f_arg, f_lab, h, b_list
+                return f_arg, f_lab, h, b
 
-        if f_col is not None:
-            if f_arg is None:
-                f_arg = list(set(self.meta[f_col].tolist()))
-                if f_lab is None:
-                    string_args = []
-                    for i in f_arg:
-                        if i not in self.meta[f_col].tolist():
-                            raise KeyError(f'Argument "{i}" is not in the meta column {f_col}')
-                        string_args.append(str(i))
-                    f_lab = string_args
-                elif len(f_arg) != len(f_lab):
-                    print("The facet labels don't match the length of the variables in the column. Using column variables instead")
-                    f_lab = f_arg
-            else:
-                if f_lab is None:
-                    string_args = []
-                    for i in f_arg:
-                        string_args.append(str(i))
-                    f_lab = string_args
-                elif len(f_arg) != len(f_lab):
-                    print("The facet labels don't match the entered facet arguments in length. Using column variables instead")
-                    f_lab = f_arg
         else:
+            h_list = h
+            b_list = b
+
+        if f_col is None: # is no facet column, then return fake lists
             f_arg = [None]
-            if f_lab is None:
-                f_lab = ['']
+            f_lab = ['']
+            return f_arg, f_lab, h_list, b_list 
 
-        if isinstance(h, list) is False:
-            h_list = [h]
-            b_list = [b]
-            if len(h_list) != len(f_arg):
-                h_list = [h_list[0]] * len(f_arg)
-            if len(b_list) != len(f_arg):
-                b_list = [b_list[0]] * len(f_arg)
+        if f_arg is not None: # check if all the facet args are in the meta column
+            for i in f_arg:
+                if i not in self.meta[f_col].tolist():
+                    raise KeyError(f'Argument "{i}" is not in the meta column {f_col}')
+                
+        if f_col is not None and f_arg is not None and f_lab is not None: # is user provides all, just check for length match
+            if len(f_arg) != len(f_lab):
+                print("The facet labels don't match the length of the variables in the column. Using column variables names instead")
+                f_lab = [str(arg) for arg in f_arg]
+            return f_arg, f_lab, h_list, b_list 
 
-        return f_arg, f_lab, h_list, b_list
+        if f_col is not None and f_arg is not None and f_lab is None: # if user provides a facet column and args but no labels
+            f_lab = [str(arg) for arg in f_arg]
+            return f_arg, f_lab, h_list, b_list 
+
+        if f_col is not None and f_arg is None and f_lab is None: # if user provides a facet column but no args or labels
+            f_arg = list(set(self.meta[f_col].tolist()))
+            f_lab = [str(arg) for arg in f_arg]
+            return f_arg, f_lab, h_list, b_list 
 
     @staticmethod
     def _zscore_bootstrap(array:np.array, z_score:bool = True, second_array:np.array = None, min_max:bool = False):
@@ -391,10 +382,11 @@ class behavpy_draw(behavpy_core):
 
     # GENERAL PLOT HELPERS
 
-    def facet_merge(self, data, facet_col, facet_arg, facet_labels, hmm_labels = None):
+    @staticmethod
+    def facet_merge(data, meta, facet_col, facet_arg, facet_labels, hmm_labels = None):
         """ A internal method for joining a metadata column with its data for plotting purposes """
         # merge the facet_col column and replace with the labels
-        data = data.join(self.meta[[facet_col]])
+        data = data.join(meta[[facet_col]])
         data[facet_col] = data[facet_col].astype('category')
         map_dict = {k : v for k, v in zip(facet_arg, facet_labels)}
         data[facet_col] = data[facet_col].map(map_dict)
@@ -559,7 +551,7 @@ class behavpy_draw(behavpy_core):
             grouped_data['state'] = grouped_data['state'].map(hmm_dict)
             grouped_data[''] = grouped_data['has_interacted']
         else:
-            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels)
+            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels) # chnage to have meta given as arg
             grouped_data[facet_col] = grouped_data[facet_col].astype('str')
             grouped_data[facet_col] = grouped_data[facet_col] + " " + grouped_data['has_interacted']
 
@@ -798,7 +790,7 @@ class behavpy_draw(behavpy_core):
         # map stim names and create column to facet by
         grouped_data[interaction_id_col] = grouped_data[interaction_id_col].map(map_dict)
         if facet_col:
-            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
+            grouped_data = self.facet_merge(grouped_data, self.meta, facet_col, facet_arg, facet_labels)
             grouped_data[facet_col] = grouped_data[facet_col].astype(str) + "-" + grouped_data[interaction_id_col]
         else:
             facet_col = 'stim_type'
@@ -841,7 +833,7 @@ class behavpy_draw(behavpy_core):
         if facet_col:
             palette = self._get_colours(facet_labels)
             palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
-            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
+            grouped_data = self.facet_merge(grouped_data, self.meta, facet_col, facet_arg, facet_labels)
         else:
             palette = self._get_colours(variable)
             palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(variable)} # change to grey if control
@@ -910,7 +902,7 @@ class behavpy_draw(behavpy_core):
 
         palette = self._get_colours(facet_labels)
         palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
-        if facet_col: grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
+        if facet_col: grouped_data = self.facet_merge(grouped_data, self.meta,facet_col, facet_arg, facet_labels)
 
         return grouped_data, palette_dict, facet_labels
     
@@ -933,13 +925,14 @@ class behavpy_draw(behavpy_core):
         palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
 
         if facet_col:
-            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels)
+            grouped_data = self.facet_merge(grouped_data, self.meta, facet_col, facet_arg, facet_labels)
 
         return grouped_data, palette_dict, facet_labels
 
     def _internal_plot_decoder(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels,
         t_bin, func, t_column, rm=False):
         """ contains the first part of the internal plotters for HMM quant plots """
+
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
         facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
 
@@ -954,23 +947,40 @@ class behavpy_draw(behavpy_core):
             # takes subselection of df that contains the specified facet columns
             data = self.xmv(facet_col, facet_arg)
 
+        def hmm_list_facet(data, meta, facet_label, ind):
+            d = data.copy(deep=True)
+            m = meta.copy(deep=True)
+
+            d.id = d.id + f'_{ind}'
+            m.index = m.index + f'_{ind}'
+            m['HMM'] = facet_label
+            return self.__class__(d, m, check=True)
+
         if facet_col is None:  # decode the whole dataset
-            decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
-        else:
-            if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
-                decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
+            if isinstance(hmm, list):
+                decoded_data = concat(*[hmm_list_facet(self._hmm_decode(data, h, b, variable, func, t_column, return_type='table'), data.meta, f, c+1) 
+                                for c, (h, b, f) in enumerate(zip(h_list, b_list, facet_labels))])  
+                facet_arg = facet_labels
+                facet_col = 'HMM'
             else:
+                decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)  
+        else:
+            if isinstance(hmm, list): 
                 decoded_data = concat(*[self.__class__(self._hmm_decode(data.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), 
                                             data.meta, check=True) for arg, h, b in zip(facet_arg, h_list, b_list)])
+            else: # if only 1 hmm but is faceted, decode as whole for efficiency
+                decoded_data = self.__class__(self._hmm_decode(data, hmm, t_bin, variable, func, t_column, return_type='table'), data.meta, check=True)
 
-        return decoded_data, labels, colours, facet_arg, facet_labels
+
+        return decoded_data, labels, colours, facet_col, facet_arg, facet_labels
 
     def _internal_plot_hmm_quantify(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
         t_bin, func, t_column):
         """ internal method to calculate the average amount of each state for use in plot_hmm_quantify, plotly and seaborn """
 
-        decoded_data, labels, colours, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
-        t_bin, func, t_column)
+        decoded_data, labels, colours, facet_col, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, 
+                                                                                                        facet_col, facet_arg, facet_labels, 
+                                                                                                            t_bin, func, t_column)
 
         # Count each state and find its fraction
         grouped_data = decoded_data.groupby([decoded_data.index, 'state'], sort=False).agg({'bin' : 'count'})
@@ -981,21 +991,22 @@ class behavpy_draw(behavpy_core):
         if facet_col:
             palette = self._get_colours(facet_labels)
             palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
-            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
+            grouped_data = self.facet_merge(grouped_data, decoded_data.meta, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
         else:
             palette = colours
             palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(labels)} # change to grey if control            
             hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
             grouped_data['state'] = grouped_data['state'].map(hmm_dict)
 
-        return grouped_data, labels, colours, facet_labels, palette_dict
+        return grouped_data, labels, colours, facet_col, facet_labels, palette_dict
 
     def _internal_plot_hmm_quantify_length(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
         t_bin, func, t_column):
         """ internal method to calculate the average length of each state for use in plot_hmm_quantify_length, plotly and seaborn """
 
-        decoded_data, labels, colours, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
-        t_bin, func, t_column)
+        decoded_data, labels, colours, facet_col, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, 
+                                                                                             facet_col, facet_arg, facet_labels, 
+                                                                                                    t_bin, func, t_column)
 
         # get each specimens states time series to find lengths
         states = decoded_data.groupby(decoded_data.index, sort=False)['state'].apply(list)
@@ -1012,21 +1023,22 @@ class behavpy_draw(behavpy_core):
         if facet_col:
             palette = self._get_colours(facet_labels)
             palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
-            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
+            grouped_data = self.facet_merge(grouped_data, decoded_data.meta, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
         else:
             palette = colours
             palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(labels)} # change to grey if control            
             hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
             grouped_data['state'] = grouped_data['state'].map(hmm_dict)
 
-        return grouped_data, labels, colours, facet_labels, palette_dict
+        return grouped_data, labels, colours, facet_col, facet_labels, palette_dict
 
     def _internal_plot_hmm_quantify_length_min_max(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
         t_bin, func, t_column):
         """ internal method to calculate the average length of each state for use in plot_hmm_quantify_length, plotly and seaborn """
 
-        decoded_data, labels, colours, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
-        t_bin, func, t_column, rm = True)
+        decoded_data, labels, colours, facet_col, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, 
+                                                                                                        facet_col, facet_arg, facet_labels, 
+                                                                                                            t_bin, func, t_column, rm = True)
 
         # get each specimens states time series to find lengths
         states = decoded_data.groupby(decoded_data.index, sort=False)['state'].apply(list)
@@ -1043,21 +1055,22 @@ class behavpy_draw(behavpy_core):
         if facet_col:
             palette = self._get_colours(facet_labels)
             palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
-            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
+            grouped_data = self.facet_merge(grouped_data, decoded_data.meta, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
         else:
             palette = colours
             palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(labels)} # change to grey if control            
             hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
             grouped_data['state'] = grouped_data['state'].map(hmm_dict)
 
-        return grouped_data, labels, colours, facet_labels, palette_dict
+        return grouped_data, labels, colours, facet_col, facet_labels, palette_dict
 
     def _internal_plot_hmm_quantify_transition(self, hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
         t_bin, func, t_column):
         """ An internal method to find the % of transtions into a state occur per state per individual """
 
-        decoded_data, labels, colours, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, facet_col, facet_arg, facet_labels, 
-        t_bin, func, t_column, rm = True)
+        decoded_data, labels, colours, facet_col, facet_arg, facet_labels = self._internal_plot_decoder(hmm, variable, labels, colours, 
+                                                                                                        facet_col, facet_arg, facet_labels, 
+                                                                                                            t_bin, func, t_column, rm = True)
 
         # get each specimens states time series to find lengths
         states = decoded_data.groupby(decoded_data.index, sort=False)['state'].apply(list)
@@ -1074,11 +1087,11 @@ class behavpy_draw(behavpy_core):
         if facet_col:
             palette = self._get_colours(facet_labels)
             palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(facet_labels)} # change to grey if control
-            grouped_data = self.facet_merge(grouped_data, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
+            grouped_data = self.facet_merge(grouped_data, decoded_data.meta, facet_col, facet_arg, facet_labels, hmm_labels = labels) 
         else:
             palette = colours
             palette_dict = {name : self._check_grey(name, palette[c])[1] for c, name in enumerate(labels)} # change to grey if control            
             hmm_dict = {k : v for k, v in zip(range(len(labels)), labels)}
             grouped_data['state'] = grouped_data['state'].map(hmm_dict)
 
-        return grouped_data, labels, colours, facet_labels, palette_dict
+        return grouped_data, labels, colours, facet_col, facet_labels, palette_dict

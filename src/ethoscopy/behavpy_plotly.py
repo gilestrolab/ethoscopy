@@ -606,6 +606,7 @@ class behavpy_plotly(behavpy_draw):
         """
         grouped_data, palette_dict, facet_labels = self._internal_plot_anticipation_score(variable, facet_col, facet_arg, facet_labels, 
                                                                                             day_length, lights_off, t_column)
+        palette_phase = {'Lights On' : 'goldenrod', 'Lights Off' : 'black'} # for use when no facet for extra style
 
         fig = go.Figure()
         self._plot_ylayout(fig, yrange = [0, 100], t0 = 0, dtick = 20, ylabel = 'Anticipatory Phase Score', title = title, grid = grids)
@@ -1636,7 +1637,7 @@ class behavpy_plotly(behavpy_draw):
         Raises:
             Multiple assertion of ValueErrors in regards to faceting and HMM lists
         Note:
-            If providing multiple HMMs with different number of states, then leave labels as None. Generic labels will be generated
+            If providing multiple HMMs but no facet_col, then leave labels as None. Generic labels will be generated
             for the largerst state model.
         """
         assert isinstance(wrapped, bool)
@@ -1653,7 +1654,7 @@ class behavpy_plotly(behavpy_draw):
             nrows =  2
             ncols = round(len(labels) / 2)
 
-        fig = make_subplots(rows= nrows, cols= ncols, shared_xaxes=True, shared_yaxes=True, vertical_spacing=0.02, horizontal_spacing=0.02)
+        fig = make_subplots(rows= nrows, cols= ncols, shared_xaxes=True, shared_yaxes=True, vertical_spacing=0.04, horizontal_spacing=0.02)
 
         col_list = list(range(1, ncols+1)) * nrows
         row_list = list([i] * ncols for i in range(1, nrows+1))
@@ -1664,11 +1665,11 @@ class behavpy_plotly(behavpy_draw):
             colours = [self._check_grey(name, colours[c])[1] for c, name in enumerate(facet_labels)] # change to grey if control
 
         df = self.copy(deep=True)
-        if facet_col is None:  # decode the whole dataset
+
+        if isinstance(hmm, list) is False: # if only 1 hmm with either facet_col or not, decode as whole for efficiency
             df = self.__class__(self._hmm_decode(df, hmm, t_bin, variable, func, t_column, return_type='table'), df.meta, check=True)
-        else:
-            if isinstance(hmm, list) is False: # if only 1 hmm but is faceted, decode as whole for efficiency
-                df = self.__class__(self._hmm_decode(df, hmm, t_bin, variable, func, t_column, return_type='table'), df.meta, check=True)
+            h_list = [hmm] * len(facet_arg) # change to list for loop
+            b_list = [t_bin] * len(facet_arg)
 
         for c, (arg, n, h, b) in enumerate(zip(facet_arg, facet_labels, h_list, b_list)):   
 
@@ -1782,19 +1783,19 @@ class behavpy_plotly(behavpy_draw):
                     y = 0,
                     yanchor = 'top',
                     yref = 'paper',
-                    yshift = -30
+                    yshift = -48
                 )
         fig.add_annotation(
                     font = {'size': 18, 'color' : 'black'},
                     showarrow = False,
-                    text = 'Likelihood to be in sleep state',
+                    text = 'Probability of state',
                     x = 0,
                     xanchor = 'left',
                     xref = 'paper',
                     y = 0.5,
                     yanchor = 'middle',
                     yref = 'paper',
-                    xshift =  -85,
+                    xshift =  -80,
                     textangle =  -90
         )
 
@@ -1844,10 +1845,12 @@ class behavpy_plotly(behavpy_draw):
             Multiple assertion of ValueErrors in regards to faceting and HMM lists
         """
 
-        grouped_data, labels, colours, facet_labels, palette_dict = self._internal_plot_hmm_quantify(hmm, variable, labels, colours, facet_col, 
+        grouped_data, labels, colours, facet_col, facet_labels, palette_dict = self._internal_plot_hmm_quantify(hmm, variable, labels, colours, facet_col, 
                                                                                     facet_arg, facet_labels, t_bin, func, t_column)
-        if col_uniform: # change the palette to be labels rather than facet
+        
+        if col_uniform: # change the palette to be state labels rather than facet labe
             palette_dict = {name : self._check_grey(name, colours[c])[1] for c, name in enumerate(labels)} # change to grey if control  
+
         plot_column = 'Fraction of time in each State'
         domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
 
@@ -1866,7 +1869,10 @@ class behavpy_plotly(behavpy_draw):
                     if col_uniform: col = palette_dict[state]
                     else: col = palette_dict[lab]
 
-                    mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_sub_df[plot_column].to_numpy(dtype=float), z_score = z_score)
+                    try:
+                        mean, median, q3, q1, zlist = self._zscore_bootstrap(sub_sub_df[plot_column].to_numpy(dtype=float), z_score = z_score)
+                    except IndexError:
+                        mean, median, q3, q1, zlist = 0, 0, 0, 0, [0]
 
                     fig.add_trace(self._plot_meanbox(mean = [mean], median = [median], q3 = [q3], q1 = [q1], 
                     x = [lab], colour =  col, showlegend = True, name = lab, xaxis = f'x{c+1}'))
@@ -1933,7 +1939,7 @@ class behavpy_plotly(behavpy_draw):
         Raises:
             Multiple assertion of ValueErrors in regards to faceting and HMM lists
         """
-        grouped_data, labels, colours, facet_labels, palette_dict = self._internal_plot_hmm_quantify_length(hmm, variable, labels, colours, facet_col, 
+        grouped_data, labels, colours, facet_col, facet_labels, palette_dict = self._internal_plot_hmm_quantify_length(hmm, variable, labels, colours, facet_col, 
                                                                                     facet_arg, facet_labels, t_bin, func, t_column)
         if col_uniform: # change the palette to be labels rather than facet
             palette_dict = {name : self._check_grey(name, colours[c])[1] for c, name in enumerate(labels)} # change to grey if control  
@@ -2027,7 +2033,7 @@ class behavpy_plotly(behavpy_draw):
             Any missing data points will also affect the end quantification.
         """
 
-        grouped_data, labels, colours, facet_labels, palette_dict = self._internal_plot_hmm_quantify_length_min_max(hmm, variable, labels, colours, facet_col, 
+        grouped_data, labels, colours, facet_col, facet_labels, palette_dict = self._internal_plot_hmm_quantify_length_min_max(hmm, variable, labels, colours, facet_col, 
                                                                                     facet_arg, facet_labels, t_bin, func, t_column)
         if col_uniform: # change the palette to be labels rather than facet
             palette_dict = {name : self._check_grey(name, colours[c])[1] for c, name in enumerate(labels)} # change to grey if control  
@@ -2120,7 +2126,7 @@ class behavpy_plotly(behavpy_draw):
             Any missing data points will also affect the end quantification.
         """
 
-        grouped_data, labels, colours, facet_labels, palette_dict = self._internal_plot_hmm_quantify_transition(hmm, variable, labels, colours, facet_col, 
+        grouped_data, labels, colours, facet_col, facet_labels, palette_dict = self._internal_plot_hmm_quantify_transition(hmm, variable, labels, colours, facet_col, 
                                                                                     facet_arg, facet_labels, t_bin, func, t_column)
         if col_uniform: # change the palette to be labels rather than facet
             palette_dict = {name : self._check_grey(name, colours[c])[1] for c, name in enumerate(labels)} # change to grey if control  

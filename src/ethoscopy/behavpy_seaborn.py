@@ -1374,6 +1374,7 @@ class behavpy_seaborn(behavpy_draw):
         Note:
             If providing multiple HMMs with different number of states, then leave labels as None. Generic labels will be generated
             for the largerst state model.
+            This plotting method workds much better in the Plotly version due to having to save each subplot as an image.
         """
 
         assert isinstance(wrapped, bool)
@@ -1514,7 +1515,7 @@ class behavpy_seaborn(behavpy_draw):
             Multiple assertion of ValueErrors in regards to faceting and HMM lists
         """
 
-        grouped_data, labels, _, facet_labels, palette_dict = self._internal_plot_hmm_quantify(hmm, variable, labels, colours, facet_col, 
+        grouped_data, labels, _, facet_col, facet_labels, palette_dict = self._internal_plot_hmm_quantify(hmm, variable, labels, colours, facet_col, 
                                                                                     facet_arg, facet_labels, t_bin, func, t_column)
         plot_column = 'Fraction of time in each State'
 
@@ -1586,7 +1587,7 @@ class behavpy_seaborn(behavpy_draw):
             Multiple assertion of ValueErrors in regards to faceting and HMM lists
         """
 
-        grouped_data, labels, _, facet_labels, palette_dict = self._internal_plot_hmm_quantify_length(hmm, variable, labels, colours, facet_col, 
+        grouped_data, labels, _, facet_col, facet_labels, palette_dict = self._internal_plot_hmm_quantify_length(hmm, variable, labels, colours, facet_col, 
                                                                                     facet_arg, facet_labels, t_bin, func, t_column)
         plot_column = 'Length of state bout (mins)'
 
@@ -1661,7 +1662,7 @@ class behavpy_seaborn(behavpy_draw):
             Any missing data points will also affect the end quantification.
         """
 
-        grouped_data, labels, _, facet_labels, palette_dict = self._internal_plot_hmm_quantify_length_min_max(hmm, variable, labels, colours, facet_col, 
+        grouped_data, labels, _, facet_col, facet_labels, palette_dict = self._internal_plot_hmm_quantify_length_min_max(hmm, variable, labels, colours, facet_col, 
                                                                                     facet_arg, facet_labels, t_bin, func, t_column)
         plot_column = 'Length of state bout (mins)'
 
@@ -1735,7 +1736,7 @@ class behavpy_seaborn(behavpy_draw):
             Any missing data points will also affect the end quantification.
         """
 
-        grouped_data, labels, _, facet_labels, palette_dict = self._internal_plot_hmm_quantify_transition(hmm, variable, labels, colours, facet_col, 
+        grouped_data, labels, _, facet_col, facet_labels, palette_dict = self._internal_plot_hmm_quantify_transition(hmm, variable, labels, colours, facet_col, 
                                                                                     facet_arg, facet_labels, t_bin, func, t_column)
         plot_column = 'Fraction of transitions into each state'
 

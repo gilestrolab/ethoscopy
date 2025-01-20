@@ -1408,7 +1408,7 @@ class behavpy_core(pd.DataFrame):
         """
         Remove the first and last bouts of a value per specimen.
 
-        Used for columns containing continuous runs of boolean values (like 'moving' or 'asleep')
+        Used for columns containing continuous runs of categorical integer values, such as bools,
         to remove potentially incomplete bouts at the start and end of recordings. This is useful
         when you are not sure if the starting and ending bouts were cut in two when filtering
         or stopping the experiment.
@@ -1422,16 +1422,11 @@ class behavpy_core(pd.DataFrame):
 
         Raises:
             KeyError: If variable column not found in data
-            TypeError: If variable column does not contain boolean values
-            ValueError: If data contains no state changes
 
         Example:
             # Remove first/last sleep bouts that may be incomplete
             df = df.remove_first_last_bout('asleep')
         """
-            
-        if not pd.api.types.is_bool_dtype(self[variable]):
-            raise TypeError(f"Column '{variable}' must contain boolean values")
         
         def _wrapped_remove_first_last_bout(data: pd.DataFrame) -> pd.DataFrame:
             if len(data) == 0:
