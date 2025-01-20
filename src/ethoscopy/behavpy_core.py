@@ -1077,9 +1077,9 @@ class behavpy_core(pd.DataFrame):
             ValueError: If resolution is not positive or larger than time_window
             TypeError: If mov_column does not contain boolean values
         """
-        # Check
-        if not pd.api.types.is_bool_dtype(self[mov_column]):
-            raise TypeError(f'Column {mov_column} must contain boolean values')
+        # # Check
+        # if not pd.api.types.is_bool_dtype(self[mov_column]):
+        #     raise TypeError(f'Column {mov_column} must contain boolean values')
 
         tdf = self.reset_index().copy(deep=True)
         return self.__class__(tdf.groupby('id', group_keys = False).apply(
@@ -1133,9 +1133,9 @@ class behavpy_core(pd.DataFrame):
                 return pd.DataFrame()  # Return empty frame for missing IDs
             return df[df[t_column].between(dict[specimen_id][0], dict[specimen_id][1])]
 
-        # Validate movement column contains boolean values
-        if not pd.api.types.is_bool_dtype(mov_df[mov_column]):
-            raise TypeError(f'Column {mov_column} must contain boolean values')
+        # # Validate movement column contains boolean values
+        # if not pd.api.types.is_bool_dtype(mov_df[mov_column]):
+        #     raise TypeError(f'Column {mov_column} must contain boolean values')
 
         # Check ID consistency
         interaction_ids = set(self.index.unique())

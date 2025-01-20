@@ -1933,15 +1933,17 @@ class behavpy_seaborn(behavpy_draw):
             raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analysed the dataset with stimulus_response')
 
         labels, _ = self._check_hmm_shape(hm = hmm, lab = labels, col = None)
-        facet_arg, facet_labels, h_list, b_list = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
-        if isinstance(hmm, list):
-            t_bin = b_list # set 
+        facet_arg, facet_labels, hmm, t_bin = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
+
+        if isinstance(hmm, list) and facet_col is None: # End method is trying to have mutliple HMMs with no facet
+            raise RuntimeError('This method does not support multiple HMMs and no facet_col')
 
         plot_column = f'{response_col}_mean'
 
-        grouped_data, palette_dict, h_order = self._hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, facet_col = facet_col,
-                                            facet_arg = facet_arg, facet_labels = facet_labels, t_bin = t_bin, func = func, t_column = t_column)
-        print(palette_dict)
+        grouped_data, palette_dict, h_order = self._hmm_response(mov_df, hmm, variable, response_col, labels,
+                                                                    colours, facet_col, facet_arg, facet_labels, 
+                                                                    t_bin, func, t_column)
+
         # (0,0) means automatic size
         if figsize == (0,0):
             figsize = (4*len(facet_arg)+2, 8)

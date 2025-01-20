@@ -1800,7 +1800,7 @@ class behavpy_plotly(behavpy_draw):
         )
 
         # Light-Dark annotaion bars
-        bar_shapes, min_bar = circadian_bars(t_min, t_max, min_y = 0, max_y = 1, day_length = day_length, lights_off = lights_off, split = len(labels))
+        bar_shapes, _ = circadian_bars(t_min, t_max, min_y = 0, max_y = 1, day_length = day_length, lights_off = lights_off, split = len(labels))
         fig.update_layout(shapes=list(bar_shapes.values()))
 
         return fig
@@ -2419,11 +2419,16 @@ class behavpy_plotly(behavpy_draw):
             raise KeyError(f'The column you gave {response_col}, is not in the data. Check you have analysed the dataset with stimulus_response')
 
         labels, colours = self._check_hmm_shape(hm = hmm, lab = labels, col = colours)
-        facet_arg, facet_labels, _, _ = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
+        facet_arg, facet_labels, hmm, t_bin = self._check_lists_hmm(facet_col, facet_arg, facet_labels, hmm, t_bin)
+
+        if isinstance(hmm, list) and facet_col is None: # End method is trying to have mutliple HMMs with no facet
+            raise RuntimeError('This method does not support multiple HMMs and no facet_col')
+        
         plot_column = f'{response_col}_mean'
 
-        grouped_data, palette_dict, h_order = self._hmm_response(mov_df, hmm = hmm, variable = variable, response_col=response_col, labels = labels, colours = colours, 
-                                            facet_col = facet_col, facet_arg = facet_arg, facet_labels = facet_labels, t_bin = t_bin, func = func, t_column = t_column)
+        grouped_data, palette_dict, h_order = self._hmm_response(mov_df, hmm, variable, response_col, labels,
+                                                                    colours, facet_col, facet_arg, facet_labels, 
+                                                                    t_bin, func, t_column)
         
         domains = np.arange(0, 1+(1/len(labels)), 1/len(labels))
         if facet_col is None:

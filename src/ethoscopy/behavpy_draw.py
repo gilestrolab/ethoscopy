@@ -199,8 +199,37 @@ class behavpy_draw(behavpy_core):
 
     @staticmethod
     def _zscore_bootstrap(array:np.array, z_score:bool = True, second_array:np.array = None, min_max:bool = False):
-        """ Calculate the z score of a given array, remove any values +- 3 SD and then perform bootstrapping on the remaining.
-        returns the mean and then several lists with the confidence intervals and z-scored values
+        """
+        Calculates the z-score of a given array, removes values beyond ±3 standard deviations, and performs bootstrapping on the remaining data.
+
+        This method first computes the z-scores of the input array to identify outliers. 
+        Values with an absolute z-score greater than 3 are excluded if `z_score` is set to `True`. After outlier removal, 
+        it calculates the mean and median of the filtered data. Depending on the `min_max` flag, 
+        it either determines the minimum and maximum values or performs bootstrapping to estimate the first and third quartiles. 
+        The function is capable of handling a secondary array, which is filtered based on the same z-score criteria as the primary array.
+
+        Args:
+            array (np.array): A NumPy array of numerical values to be processed.
+            z_score (bool, optional): Determines whether to apply z-score filtering. Defaults to True.
+            second_array (np.array, optional): An additional NumPy array to be filtered in tandem with the primary array. Defaults to None.
+            min_max (bool, optional): If `True`, returns the minimum and maximum values instead of bootstrapped quartiles. Defaults to False.
+
+        Returns:
+            tuple:
+                - mean (float): The mean of the filtered array.
+                - median (float): The median of the filtered array. If the median is outside the first and third quartiles, it is set to the mean.
+                - q3 (float): The third quartile of the filtered array, derived either from bootstrapping or as the maximum value if `min_max` is `True`.
+                - q1 (float): The first quartile of the filtered array, derived either from bootstrapping or as the minimum value if `min_max` is `True`.
+                - zlist (np.array): The array after z-score filtering.
+                - second_array (np.array, optional): The secondary array filtered based on the primary array's z-scores, returned only if provided.
+
+        Raises:
+            ZeroDivisionError: If the standard deviation of the array is zero, resulting in undefined z-scores.
+
+        Notes:
+            - If the input array has only one unique value, the mean, median, and quartiles are all set to that value.
+            - Bootstrapping is performed using the `bootstrap` function from `ethoscopy.misc.bootstrap_CI`.
+            - The function ensures robustness by handling cases where the median might fall outside the calculated quartiles.
         """
         try:
             if len(array) == 1 or all(array == array[0]):
@@ -239,15 +268,25 @@ class behavpy_draw(behavpy_core):
 
     @staticmethod
     def _check_rgb(lst):
-        """ checks if the colour list is RGB plotly colours, if it is it changes it to its hex code """
+        """ Convert RGB colors to hex codes """
         try:
             return [Color(rgb = tuple(np.array(eval(col[3:])) / 255)) for col in lst]
         except:
             return lst
 
     def _get_colours(self, plot_list):
-        """ returns a colour palette from plotly for plotly """
+        """
+        Retrieve a color palette based on the plotting backend and number of groups.
 
+        Args:
+            plot_list (list): List of items to determine the palette size.
+
+        Returns:
+            list: A list of color codes from Plotly or Seaborn palettes.
+
+        Raises:
+            IndexError: If the number of groups exceeds the maximum supported palette size (48).
+        """
         pl_len = len(plot_list)
 
         if self.canvas == 'plotly':
@@ -268,11 +307,28 @@ class behavpy_draw(behavpy_core):
                 return sns.color_palette('husl', len(plot_list))
 
     def _adjust_colours(self, colour_list):
-        """ 
-        Takes a list of colours written names or hex codes.
-        Returns two lists of hex colour codes. The first is a lighter version of the second which is the original.
+        """
+        Adjusts a list of colors by generating lighter versions alongside the original colors.
+        This method takes a list of color representations, which can be either color names or hexadecimal codes.
+        The color lightening is achieved by increasing the brightness of each RGB component by a specified factor.
+
+        Args:
+            colour_list (list[str]): A list of color names or hex codes (e.g., ['red', '#00FF00']).
+
+        Returns:
+            tuple:
+                - start_colours (list[str]): Hex codes of the lighter versions of the input colors.
+                - end_colours (list[str]): Hex codes of the original input colors.
+
+        Raises:
+            ValueError: If a color in `colour_list` cannot be converted to a valid color.
         """
         def adjust_color_lighten(r,g,b, factor):
+            """
+            Lightens a color by a given factor.
+            Returns:
+                list of int: Lightened RGB components.
+            """
             return [round(255 - (255-r)*(1-factor)), round(255 - (255-g)*(1-factor)), round(255 - (255-b)*(1-factor))]
 
         colour_list = self._check_rgb(colour_list)
@@ -290,59 +346,95 @@ class behavpy_draw(behavpy_core):
 
         return start_colours, end_colours
 
-    @staticmethod
-    def _is_hex_color(s):
-        """Returns True if s is a valid hex color. Otherwise False"""
-        if re.search(r'^#(?:[0-9a-fA-F]{3}){1,2}$', s):
-            return True
-        return False
+    # @staticmethod
+    # def _is_hex_color(s):
+    #     """
+    #     Returns True if s is a valid hex color. Otherwise False
+
+    #     Not currently used
+    #     """
+    #     if re.search(r'^#(?:[0-9a-fA-F]{3}){1,2}$', s):
+    #         return True
+    #     return False
+
+    # @staticmethod
+    # def _rgb_to_hex(rgb_string):
+    #     """
+    #     Takes a string defining an RGB color and converts it a string of equivalent hex
+    #     Input should be a string containing at least 3 numbers separated by a comma.
+    #     The following input will work:
+    #     rgb(123,122,100)
+    #     123,122,100
+
+    #     Not currently used
+    #     """
+
+    #     # Only keep digits and commas
+    #     filtered_string = ''.join(c for c in rgb_string if c.isdigit() or c == ',')
+
+    #     # Split the filtered string by comma and convert each part to integer
+    #     rgb_values = list(map(int, filtered_string.split(',')))
+
+    #     # Map the values to integers
+    #     r, g, b = map(int, rgb_values)
+
+    #     # Convert RGB to hex
+    #     hex_string = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+
+    #     return hex_string
 
     @staticmethod
-    # Function to convert figure to image
     def _fig2img(fig, format='png'):
+        """ Function to convert figure to still image within Seaborn plots """
         buf = io.BytesIO()
         fig.savefig(buf, format=format, bbox_inches='tight', pad_inches=0)
         buf.seek(0)
         img = PIL.Image.open(buf)
         return img
 
-    @staticmethod
-    def _rgb_to_hex(rgb_string):
-        """
-        Takes a string defining an RGB color and converts it a string of equivalent hex
-        Input should be a string containing at least 3 numbers separated by a comma.
-        The following input will all work:lblackhurst29@gmail.com
-        rgb(123,122,100)
-        123,122,100
-        """
-
-        # Only keep digits and commas
-        filtered_string = ''.join(c for c in rgb_string if c.isdigit() or c == ',')
-
-        # Split the filtered string by comma and convert each part to integer
-        rgb_values = list(map(int, filtered_string.split(',')))
-
-        # Map the values to integers
-        r, g, b = map(int, rgb_values)
-
-        # Convert RGB to hex
-        hex_string = '#{:02x}{:02x}{:02x}'.format(r, g, b)
-
-        return hex_string
-
     def save_figure(self, fig, path, width = None, height = None):
         """
-        Save the produced plot from either Plotly or Seaborn that is produced from a method
+        Save the produced plot from either Plotly or Seaborn to a specified path.
+        Behaviour varies based in plotting backend (self.canvas)
+        - **Plotly**:
+            - If `path` ends with `.html`, the figure is saved as an interactive HTML file.
+            - If 'path' ends in .jpg or .png or .svg saved as image
+            - If `width` and `height` are provided, the figure is saved with the specified dimensions.
+                - Only with non-html file types.
+                - Otherwise, the figure is saved using Plotly default dimensions.
+        
+        - **Seaborn/Matplotlib**:
+            - The figure is saved to the specified path with tight bounding boxes to minimize padding.
 
-            Args:
-                fig (Figure.object): The figure object, either from Plotly or Seaborn/Matplotlib.
-                path (str): The path of the local folder you wish to save to.
-                width (int | None, optional): The width of the exported image in layout pixels. 
-                    The Only for Plotly figures. Default is None.
-                height (int | None, optional): The height of the exported image in layout pixels. 
-                    The Only for Plotly figures. Default is None.
+        Args:
+            fig (Figure.object): 
+                The figure object to save, either from Plotly or Seaborn/Matplotlib.
+            
+            path (str): 
+                The destination file path where the figure will be saved. 
+            
+            width (int, optional): 
+                The width of the exported image in pixels. 
+                Applicable only for Plotly figures when saving as an image format. 
+                Defaults to `None`.
+            
+            height (int, optional): 
+                The height of the exported image in pixels. 
+                Applicable only for Plotly figures when saving as an image format. 
+                Defaults to `None`.
+
+        Raises:
+            AssertionError:
+                If `path` is not a string.
+            KeyError:
+                If `self.canvas` is neither `'plotly'` nor `'seaborn'`.
+
         Returns:
             None
+
+        Examples:
+            >>> fig = behavpy.plot_overtime()
+            >>> df.save_figure(fig, 'line_plot.png', width=800, height=600)
         """
         assert(isinstance(path, str))
 
@@ -363,13 +455,14 @@ class behavpy_draw(behavpy_core):
 
     @staticmethod
     def _get_subplots(length):
-        """Get the nearest higher square number"""
+        """ Get the nearest higher square number """
         square = np.sqrt(length) 
         closest = [floor(square)**2, ceil(square)**2]
         return int(sqrt(closest[1]))
 
     @staticmethod
     def _check_grey(name, col, response = False):
+        """ Checks a string contains control like words and changes palette colour to match """
         if response is False:
             if 'baseline' in name.lower() or 'control' in name.lower() or 'ctrl' in name.lower() or 'spon. mov' in name.lower():
                 col = 'grey'
@@ -384,7 +477,7 @@ class behavpy_draw(behavpy_core):
 
     @staticmethod
     def facet_merge(data, meta, facet_col, facet_arg, facet_labels, hmm_labels = None):
-        """ A internal method for joining a metadata column with its data for plotting purposes """
+        """ An internal method for joining a metadata column to its data for plotting purposes """
         # merge the facet_col column and replace with the labels
         data = data.join(meta[[facet_col]])
         data[facet_col] = data[facet_col].astype('category')
@@ -396,6 +489,42 @@ class behavpy_draw(behavpy_core):
         return data
 
     def _generate_overtime_plot(self, data, name, col, var, avg_win, wrap, day_len, light_off, t_col):
+        """
+        Prepare and process data for generating an overtime plot.
+
+        This method processes the input data by applying rolling averages, adjusting time indices,
+        and calculating statistical measures such as mean and standard error. It then prepares
+        the data for plotting using either Seaborn or Plotly based on the selected backend.
+
+        Args:
+            data (pd.DataFrame): The dataset to plot, centered around the cursor position.
+            name (str): The identifier for the current group or category being plotted.
+            col (str): The color designation for the plot elements.
+            var (str): The variable/column name in `data` to be plotted over time.
+            avg_win (int or bool): The window size for calculating the rolling average. If `False`, no averaging is applied.
+            wrap (bool): Determines whether to wrap the time column based on `day_len`.
+            day_len (int or bool): The length of the day cycle in seconds. If `False`, time wrapping is not performed.
+            light_off (int): The time in seconds indicating when the lights are turned off.
+            t_col (str): The name of the time column in `data`.
+
+        Returns:
+            tuple: Depending on the plotting backend, returns one of the following:
+                - For Seaborn:
+                    - gb_df (pd.DataFrame): Aggregated data with mean, standard deviation, and standard error.
+                    - t_min (int or None): The minimum time value after adjustment.
+                    - t_max (int or None): The maximum time value after adjustment.
+                    - col (str): The color used for the plot.
+                    - None
+                - For Plotly:
+                    - upper: Plotly trace for the upper bound of the error.
+                    - trace: Plotly trace for the main line.
+                    - lower: Plotly trace for the lower bound of the error.
+                    - t_min (int or None): The minimum time value after adjustment.
+                    - t_max (int or None): The maximum time value after adjustment.
+
+        Raises:
+            KeyError: If `self.canvas` is neither `'seaborn'` nor `'plotly'`.
+        """
 
         if len(data) == 0:
             print(f'Group {name} has no values and cannot be plotted')
@@ -442,14 +571,22 @@ class behavpy_draw(behavpy_core):
 
     def heatmap_dataset(self, variable, t_column):
         """
-        Creates an aligned heatmap of the movement data binned to 30 minute intervals
-        
-            Args:
-                variable (string): The name for the column containing the variable of interest,
-                t_column (str): The name of the time column in the DataFrame.
-        
-        returns 
-            gbm, time_list, id
+        Creates an aligned heatmap of the movement data binned into 30-minute intervals.
+
+        Args:
+            variable (str): 
+                The name of the column containing the variable of interest to be binned and visualized.
+            t_column (str): 
+                The name of the time column in the DataFrame used for binning the data.
+
+        Returns:
+            tuple:
+                - gbm (pd.Series): 
+                    A grouped and binned series of the specified variable's mean values per ID.
+                - time_list (np.ndarray): 
+                    An array of time bins in hours, representing the binned intervals.
+                - id_list (list): 
+                    A list of unique IDs corresponding to each group in the heatmap.
         """
 
         heatmap_df = self.copy(deep = True)
@@ -467,8 +604,17 @@ class behavpy_draw(behavpy_core):
                     name = 't_bin')
 
         def align_data(data):
-            """merge the individual fly groups time with the time map, filling in missing points with NaN values"""
+            """
+            Merges individual groups with the time map, filling missing points with NaN.
 
+            Args:
+                data (pd.DataFrame): 
+                    Subset of the DataFrame for a specific group identified by 'id'.
+
+            Returns:
+                pd.DataFrame: 
+                    Merged DataFrame with aligned time bins and filled NaN values.
+                """
             index_name = data.index[0]
 
             df = data.merge(time_map, how = 'right', on = 't_bin', copy = False).sort_values(by=['t_bin'])
@@ -487,7 +633,53 @@ class behavpy_draw(behavpy_core):
         return gbm, np.array(time_list), id_list
 
     def _hmm_response(self, mov_df, hmm, variable, response_col, labels, facet_col, facet_arg, t_bin, facet_labels, func, t_column):
-        """ an internal method for all hmm response plotters. Decodes the movement dataset and merges it with the response dataset """ 
+        """
+        Processes HMM responses by decoding movement data and merging it with response data.
+
+        Args:
+            mov_df (pd.DataFrame): 
+                DataFrame containing movement data to be decoded and analyzed.
+            hmm (HMM or list of HMMs): 
+                Hidden Markov Model(s) used for decoding the movement states.
+            variable (str): 
+                The column name in `mov_df` representing the variable to decode.
+            response_col (str): 
+                The column name in the response dataset to aggregate.
+            labels (list of str): 
+                List of labels corresponding to each state in the HMM.
+            facet_col (str or None): 
+                The metadata column used for faceting the plot. If None, no faceting is applied.
+            facet_arg (list or None): 
+                List of facet arguments corresponding to `facet_col`. If None, defaults are used.
+            t_bin (int or list of int): 
+                Time bin size(s) in seconds for aggregating data.
+            facet_labels (list of str): 
+                Labels for each facet used in the plot.
+            func (str): 
+                Aggregation function to apply (e.g., 'mean', 'max').
+            t_column (str): 
+                The column name representing time in the dataset.
+
+        Returns:
+            tuple:
+                - grouped_data (pd.DataFrame): 
+                    Aggregated DataFrame ready for plotting, indexed by specimen ID.
+                - palette_dict (dict): 
+                    Dictionary mapping plot categories to their corresponding colors.
+                - h_order (list of str): 
+                    Ordered list of categories for consistent plotting.
+
+        Raises:
+            ValueError:
+                If the number of labels and colors does not match the number of HMM states.
+            KeyError:
+                If specified facet arguments are not found in the metadata.
+
+        Notes:
+            - Supports both single and multiple HMMs for decoding.
+            - Automatically adjusts color palettes based on the number of states and facets.
+            - Merges interaction data within the correct time bins to ensure accurate state assignments.
+        """        
         data_summary = {
             "%s_mean" % response_col : (response_col, 'mean'),
             "%s_std" % response_col : (response_col, 'std'),
@@ -511,8 +703,10 @@ class behavpy_draw(behavpy_core):
                 mdata = concat(*[self.__class__(self._hmm_decode(mdata.xmv(facet_col, arg), h, b, variable, func, t_column, return_type='table'), 
                                                 mdata.meta, check=True) for arg, h, b in zip(facet_arg, hmm, t_bin)])
 
-        # merge the two df's and check if the interaction happened in the right time point
         def alter_merge(response, mov, tb):
+            """
+            Merge the two df's and check if the interaction happened in the right time point
+            """
             response['bin'] = response['interaction_t'].map(lambda t:  tb * floor(t / tb))
             response.reset_index(inplace = True)
 
@@ -558,7 +752,45 @@ class behavpy_draw(behavpy_core):
         return grouped_data, palette_dict, h_order
     
     def _bouts_response(self, mov_df, hmm, variable, response_col, labels, colours, x_limit, t_bin, func, t_col):
-        """ An internal method to find the response rate over runs of a variable """
+        """
+        Calculates the response rate over consecutive runs of a specified variable.
+
+        Args:
+            mov_df (pd.DataFrame): 
+                DataFrame containing movement data to analyze.
+            hmm (bool or HMM): 
+                If provided, uses the HMM to decode states; otherwise, performs direct time binning.
+            variable (str): 
+                The column name representing the variable to analyze (e.g., 'moving').
+            response_col (str): 
+                The response column to aggregate and analyze.
+            labels (list of str): 
+                Labels corresponding to each state or activity type.
+            colours (list of str): 
+                List of colors assigned to each label for plotting purposes.
+            x_limit (int): 
+                Maximum allowed value for activity counts to filter the data.
+            t_bin (int): 
+                Time bin size in seconds for aggregating data.
+            func (str): 
+                Aggregation function to apply (e.g., 'mean', 'max').
+            t_col (str): 
+                The column name representing time in the dataset.
+
+        Returns:
+            tuple:
+                - grouped_data (pd.DataFrame): 
+                    Aggregated DataFrame containing mean responses, counts, confidence intervals, and labels.
+                - palette_dict (dict): 
+                    Dictionary mapping combined state and interaction types to their corresponding colors.
+                - h_order (list[str]): 
+                    Ordered list of categories for consistent plotting.
+
+        Raises:
+            KeyError:
+                - If 'response_col' is not present in the DataFrame.
+                - If provided 'activity' argument is invalid.
+        """        
         data_summary = {
             "mean" : (response_col, 'mean'),
             "count" : (response_col, 'count'),
@@ -630,7 +862,49 @@ class behavpy_draw(behavpy_core):
         return grouped_data, palette_dict, h_order
 
     def _internal_bout_activity(self, mov_df, activity, variable, response_col, facet_col, facet_arg, facet_labels, x_limit, t_bin, t_column):
-        """ The beginning code for plot_response_over_activity for both plotly and seaborn """
+        """
+        Analyze and aggregate response data based on activity bouts for visualization.
+
+        Args:
+            mov_df (pd.DataFrame): 
+                DataFrame containing movement data to analyze.
+            activity (str): 
+                Type of activity to filter on. Must be one of `'inactive'`, `'active'`, or `'both'`.
+            variable (str): 
+                The column name in `mov_df` representing the variable to analyze.
+            response_col (str): 
+                The column name in `mov_df` representing the response to aggregate and analyze.
+            facet_col (str or None): 
+                Metadata column used for faceting the plot. If `None`, no faceting is applied.
+            facet_arg (list or None): 
+                List of facet arguments corresponding to `facet_col`. If `None`, defaults are used.
+            facet_labels (list or None): 
+                List of labels for the facets. If `None`, labels are derived from `facet_arg`.
+            x_limit (int): 
+                Maximum allowed value for activity counts to filter the data.
+            t_bin (int): 
+                Time bin size in seconds for aggregating data.
+            t_column (str): 
+                The column name representing time in the dataset.
+
+        Returns:
+            tuple:
+                - grouped_data (pd.DataFrame): 
+                    Aggregated data ready for plotting, indexed by specimen ID.
+                - h_order (list[str)]: 
+                    Ordered list of categories for consistent plotting.
+                - palette_dict (dict): 
+                    Dictionary mapping plot categories to their corresponding colors.
+
+        Raises:
+            KeyError:
+                - If `activity` is not one of `'inactive'`, `'active'`, or `'both'`.
+            ValueError:
+                - If the number of facet arguments and labels do not match.
+        
+        Notes:
+            - If `activity` is set to `'both'` and `facet_col` is provided, faceting is disabled 
+        """
 
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -672,8 +946,43 @@ class behavpy_draw(behavpy_core):
         return grouped_data, h_order, palette_dict
 
     def _internal_plot_response_overtime(self, t_bin_hours, response_col, interaction_id_col, facet_col, facet_arg, facet_labels, func, t_column):
-        """ An internal method to curate and analyse the data for both plotly and seaborn versions of plot_response_overtime """
+        """
+        Internal method to curate and analyze data for both Plotly and Seaborn versions of `plot_response_overtime`.
 
+        Args:
+            t_bin_hours (int): 
+                The number of hours per bin for aggregating the response data.
+            response_col (str): 
+                The name of the column containing the response data to aggregate.
+            interaction_id_col (str): 
+                The column name indicating the type of interaction (e.g., stimulus type).
+            facet_col (str or None): 
+                The name of the metadata column to use for faceting the plot. If `None`, no faceting is applied.
+            facet_arg (list or None): 
+                A list of arguments used to filter data based on `facet_col`. If `None`, all categories are included.
+            facet_labels (list or None): 
+                A list of labels corresponding to the `facet_arg` for labeling facets. If `None`, default labels are used.
+            func (str): 
+                The aggregation function to apply to the binned data (e.g., `'mean'`, `'sum'`).
+            t_column (str): 
+                The column name representing the time data to bin.
+
+        Returns:
+            tuple:
+                - df (behavpy_draw): 
+                    An instance of `behavpy_draw` containing the grouped and aggregated data ready for plotting.
+                - h_order (list[str]): 
+                    The order of hue categories for plotting, formatted as `"<facet_label>-<stimulus_type>"`.
+                - palette (list[str]): 
+                    A list of color codes corresponding to each hue category, adjusted for control groups if applicable.
+
+        Raises:
+            KeyError:
+                - If `facet_col` or `interaction_id_col` is provided but does not exist in the dataset.
+            ValueError:
+                - If the number of `facet_arg` does not match the number of `facet_labels`.
+                - If unexpected stimulus types are encountered in `interaction_id_col`.
+        """
         data_summary = {
             "mean" : (f'{response_col}_{func}', 'mean'),
             "count" : (f'{response_col}_{func}', 'count')
@@ -734,8 +1043,47 @@ class behavpy_draw(behavpy_core):
         return df, h_order, palette
 
     def _internal_plot_habituation(self, plot_type, t_bin_hours, response_col, interaction_id_col, facet_col, facet_arg, facet_labels, x_limit, t_column): 
-        """ An internal method to curate and analyse the data for both plotly and seaborn versions of plot_habituation """
+        """
+        Internal method to curate and analsze data for both Plotly and Seaborn versions of `plot_habituation`.
+        Args:
+            plot_type (str): 
+                Determines the type of plotting. Must be either `'time'` for time-based binning or `'number'` for stimulus number binning.
+            t_bin_hours (int): 
+                The number of hours per bin for aggregating the response data.
+            response_col (str): 
+                The name of the column containing the response data to aggregate (e.g., `'has_responded'`).
+            interaction_id_col (str): 
+                The column name indicating the type of interaction (e.g., `'interaction_id'`).
+            facet_col (str or None): 
+                The name of the metadata column to use for faceting the plot. If `None`, no faceting is applied.
+            facet_arg (list or None): 
+                A list of arguments used to filter data based on `facet_col`. If `None`, all categories are included.
+            facet_labels (list or None): 
+                A list of labels corresponding to the `facet_arg` for labeling facets. If `None`, default labels are used.
+            x_limit (int or bool): 
+                The maximum allowed value for the plot's x-axis. If `False`, it is set to the maximum value found in the data.
+            t_column (str): 
+                The column name representing the time data to bin (e.g., `'t_bin'`).
 
+        Returns:
+            tuple:
+                - grouped_final (pd.DataFrame): 
+                    Aggregated DataFrame containing mean responses, counts, confidence intervals, and stimulus counts, ready for plotting.
+                - h_order (list[str]): 
+                    The order of hue categories for plotting, formatted as `"<facet_label>-<stimulus_type>"`
+                - palette_dict (dict): 
+                    Dictionary mapping plot categories to their corresponding colors, adjusted for control groups if applicable.
+                - x_max (int): 
+                    The maximum value for the x-axis after applying `x_limit`.
+                - plot_label (str): 
+                    The label used for plotting based on `plot_type`, either `'Hours {t_bin_hours} post first stimulus'` or `'Stimulus number post first'`.
+
+        Raises:
+            KeyError:
+                - If `plot_type` is not one of `'time'` or `'number'`.
+            ValueError:
+                - If the lengths of `facet_arg` and `facet_labels` do not match when faceting is applied.
+        """
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
         plot_choice = {'time' : f'Hours {t_bin_hours} post first stimulus', 'number' : 'Stimulus number post first'}
