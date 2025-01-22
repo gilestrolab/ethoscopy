@@ -33,23 +33,11 @@ class behavpy_core(pd.DataFrame):
     The behavpy_core class is not intended to be used directly, but rather as a base class for the behavpy plotly
     and seaborn classes to extend.
 
-    Args:
-        data (pd.DataFrame): Experimental data, typically loaded via load_ethoscope(). Must contain:
-            - 'id' column with unique specimen IDs
-            - 't' column with timestamps in seconds
-        meta (pd.DataFrame): Metadata containing experimental conditions, genotypes etc. Must have:
-            - One row per unique specimen ID
-            - IDs matching those in the data DataFrame
-        palette (str, optional): Plotly / Seaborn color palette name for visualizations with ≤11 groups.
-            Defaults to 'Safe' for Plotly and 'deep' for Seaborn.
-        long_palette (str, optional): Plotly / Seaborn color palette name for visualizations with >11 groups
-            Defaults to 'Dark24' for Plotly and 'deep' for Seaborn.
-        check (bool, optional): If True, validates that all data IDs exist in metadata and removes
-            redundant columns from link_meta_index. Defaults to False.
-
-    Returns:
-        behavpy_core: A behavpy object with methods for manipulating, analyzing and plotting
-            time series behavioral data.
+    Attributes:
+        _metadata (list[str]): ensures that meta is a permenant attribute
+        _canvas (str): the canvas to be used for plotting, either 'plotly' or 'seaborn'. This is set in behavpy_plotly or behavpy_seaborn.
+        _hmm_colours (list[str]): A list of default colors for HMM states if only 4 states are provided. This is set in behavpy_draw.
+        _hmm_labels (list[str]): A list of default labels for HMM states if only 4 states are provided. This is set in behavpy_draw.
     """
 
     # set meta as permenant attribute
@@ -57,7 +45,6 @@ class behavpy_core(pd.DataFrame):
     _canvas = None
     _hmm_colours = None
     _hmm_labels = None
-
 
     @property
     def _constructor(self):

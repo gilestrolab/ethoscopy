@@ -38,6 +38,10 @@ class behavpy_draw(behavpy_core):
 
     The class is designed to seamlessly integrate data processing and visualization, allowing direct 
     chaining of analysis and plotting methods.
+
+    Attributes:
+        _hmm_colours (list[str]): A list of default colors for HMM states if only 4 states are provided.
+        _hmm_labels (list[str]): A list of default labels for HMM states if only 4 states are provided.
     """
 
     _hmm_colours = ['darkblue', 'dodgerblue', 'red', 'darkred']
@@ -1045,6 +1049,7 @@ class behavpy_draw(behavpy_core):
     def _internal_plot_habituation(self, plot_type, t_bin_hours, response_col, interaction_id_col, facet_col, facet_arg, facet_labels, x_limit, t_column): 
         """
         Internal method to curate and analsze data for both Plotly and Seaborn versions of `plot_habituation`.
+
         Args:
             plot_type (str): 
                 Determines the type of plotting. Must be either `'time'` for time-based binning or `'number'` for stimulus number binning.
@@ -1155,7 +1160,40 @@ class behavpy_draw(behavpy_core):
         return grouped_final, h_order, palette_dict, x_max, plot_choice[plot_type]
 
     def _internal_plot_quantify(self, variable, facet_col, facet_arg, facet_labels, fun):
-        """ An internal method for the quantifying plots, finds the avg and std of the individual """
+        """
+        Internal method for generating quantifying plots by calculating the average and standard deviation of specified variables.
+        This method aggregates the data based on the provided variables and applies the specified aggregation function.
+
+        Args:
+            variable (str or list[str]):
+                The name(s) of the column(s) in the dataset to be quantified.
+            facet_col (str or None): 
+                The name of the metadata column to use for faceting the plot. If `None`, no faceting is applied.
+            facet_arg (list or None): 
+                A list of arguments used to filter data based on `facet_col`. If `None`, all categories are included.
+            facet_labels (list or None): 
+                A list of labels corresponding to the `facet_arg` for labeling facets. If `None`, default labels are used.
+            fun (str):
+                The aggregation function to apply to the specified variables. Common options include `'mean'`, `'sum'`, etc.
+
+        Returns:
+            tuple:
+                - grouped_data (pd.DataFrame):
+                    A DataFrame containing the aggregated data with calculated statistics.
+                - palette_dict (dict):
+                    A dictionary mapping facet labels to their corresponding color codes. This palette is used to ensure
+                    consistent coloring across different facets in the plots.
+                - facet_labels (list of str):
+                    The list of facet labels used in the aggregation. This may be modified.
+                - variable (list[str]):
+                    The list of variables that were aggregated. Ensures consistency even if a single variable was provided as a string.
+
+        Raises:
+            KeyError:
+                - If `facet_col` is provided but does not exist in the dataset's metadata.
+            ValueError:
+                - If the `fun` argument does not correspond to a valid aggregation function.     
+        """   
         # If facet_col is provided but facet arg is not, will automatically fill facet_arg and facet_labels with all the possible values
         facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
 
@@ -1189,8 +1227,33 @@ class behavpy_draw(behavpy_core):
         return grouped_data, palette_dict, facet_labels, variable
 
     def _internal_plot_response_quantify(self, response_col, facet_col, facet_arg, facet_labels):
-        """ An internal method for the quantifying response to stimulus, finds the avg and std of the individual 
-            and generates labels for False and True stimulis
+        """
+        Internal method for generating quantifying plots for response datasets by calculating the average 
+            and standard deviation of specified variables.
+        This method aggregates the data based on the provided response column and finds the mean and standard deviation.
+
+        Args:
+            response_col (str):
+                The name of the column in the dataset that contains the responses to a stimuli, typically boolean.
+            facet_col (str or None): 
+                The name of the metadata column to use for faceting the plot. If `None`, no faceting is applied.
+            facet_arg (list or None): 
+                A list of arguments used to filter data based on `facet_col`. If `None`, all categories are included.
+            facet_labels (list or None): 
+                A list of labels corresponding to the `facet_arg` for labeling facets. If `None`, default labels are used.
+
+        Returns:
+            tuple:
+                - grouped_data (pd.DataFrame):
+                    A DataFrame containing the aggregated data with calculated statistics.
+                - h_order (list[str]): 
+                    The order of hue categories for plotting, formatted as `"<facet_label>-<stimulus_type>"`
+                - palette_dict (dict):
+                    A dictionary mapping facet labels to their corresponding color codes. This palette is used to ensure
+                    consistent coloring across different facets in the plots.
+        Raises:
+            KeyError:
+                - If `facet_col` or 'response_col' does not exist in the dataset's metadata.   
         """
 
         if response_col not in self.columns.tolist():
