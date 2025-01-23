@@ -11,9 +11,8 @@ from hmmlearn import hmm
 from scipy.signal import find_peaks
 from scipy.stats import zscore
 
-from ethoscopy.misc.general_functions import concat
+from ethoscopy.misc.general_functions import concat, rle
 from ethoscopy.analyse import max_velocity_detector
-from ethoscopy.misc.rle import rle
 
 from typing import Optional, List, Union, Tuple, Dict, Any, Callable
 

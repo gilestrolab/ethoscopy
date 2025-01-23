@@ -4,7 +4,7 @@ import numpy as np
 from math import floor
 import copy
 from random import shuffle
-from ethoscopy.misc.rle import rle
+from ethoscopy.misc.general_functions import rle
 
 def max_velocity_detector(data: pd.DataFrame, 
                         time_window_length: int = 10,

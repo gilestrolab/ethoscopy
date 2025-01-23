@@ -7,17 +7,13 @@ from plotly.express.colors import qualitative
 
 from math import floor, ceil
 from scipy.stats import zscore
-from functools import partial, update_wrapper
-from colour import Color
+from functools import partial
 
 from ethoscopy.behavpy_draw import behavpy_draw
 from ethoscopy.behavpy_seaborn import behavpy_seaborn
 
 from ethoscopy.misc.circadian_bars import circadian_bars
-from ethoscopy.analyse import max_velocity_detector
-from ethoscopy.misc.rle import rle
-from ethoscopy.misc.bootstrap_CI import bootstrap
-from ethoscopy.misc.hmm_functions import hmm_pct_transition, hmm_mean_length, hmm_pct_state
+from ethoscopy.misc.hmm_functions import hmm_pct_state
 
 class behavpy_plotly(behavpy_draw):
     """
