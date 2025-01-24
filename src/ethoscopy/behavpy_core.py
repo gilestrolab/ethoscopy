@@ -13,6 +13,7 @@ from scipy.stats import zscore
 
 from ethoscopy.misc.general_functions import concat, rle
 from ethoscopy.analyse import max_velocity_detector
+from ethoscopy.misc.periodogram_functions import chi_squared, lomb_scargle, fourier, wavelet
 
 from typing import Optional, List, Union, Tuple, Dict, Any, Callable
 
@@ -34,14 +35,14 @@ class behavpy_core(pd.DataFrame):
 
     Attributes:
         _metadata (list[str]): ensures that meta is a permenant attribute
-        _canvas (str): the canvas to be used for plotting, either 'plotly' or 'seaborn'. This is set in behavpy_plotly or behavpy_seaborn.
+        canvas (str): the canvas to be used for plotting, either 'plotly' or 'seaborn'. This is set in behavpy_plotly or behavpy_seaborn.
         _hmm_colours (list[str]): A list of default colors for HMM states if only 4 states are provided. This is set in behavpy_draw.
         _hmm_labels (list[str]): A list of default labels for HMM states if only 4 states are provided. This is set in behavpy_draw.
     """
 
     # set meta as permenant attribute
     _metadata = ['meta']
-    _canvas = None
+    canvas = None
     _hmm_colours = None
     _hmm_labels = None
 
@@ -1219,6 +1220,12 @@ class behavpy_core(pd.DataFrame):
             ValueError: If step_size is not positive
             TypeError: If variable column contains non-numeric data
 
+        Note:
+            - Ethoscopy uses numpy's interp function to interpolate, however pandas does 
+                have its own implementation of an interpolation method -> .interpolate()
+                which can make use of different methods.
+                See pandas's documentation on its use if interested.
+
         Example:
             # Interpolate 'distance' values to 1-minute intervals
             df = df.interpolate_linear('distance', step_size=60)
@@ -1347,7 +1354,7 @@ class behavpy_core(pd.DataFrame):
         """
         # Validate bin_secs
         if not isinstance(bin_secs, int) or bin_secs <= 0:
-            raise ValueError("bin_secs must be a positive number")
+            raise ValueError("bin_secs must be a positive number and an integer")
         
         if isinstance(variable, str):
             variable = [variable]
@@ -1923,6 +1930,9 @@ class behavpy_core(pd.DataFrame):
         if file_name.endswith('.pkl') is False:
             raise TypeError('enter a file name and type (.pkl) for the hmm object to be saved under')
 
+        n_states = len(states)
+        n_obs = len(observables)
+
         # Validate 
         if trans_probs is not None and trans_probs.shape != (n_states, n_states):
             raise ValueError(f"trans_probs must have shape ({n_states}, {n_states})")
@@ -1930,9 +1940,6 @@ class behavpy_core(pd.DataFrame):
             raise ValueError(f"emiss_probs must have shape ({n_states}, {n_obs})")
         if start_probs is not None and start_probs.shape != (n_states,):
             raise ValueError(f"start_probs must have shape ({n_states},)")
-
-        n_states = len(states)
-        n_obs = len(observables)
 
         hmm_df = self.copy(deep = True)
 
@@ -2046,7 +2053,7 @@ class behavpy_core(pd.DataFrame):
             if i+1 == iterations:
                 h = pickle.load(open(file_name, "rb"))
                 #print tables of trained emission probabilties, not accessible as objects for the user
-                self._hmm_table(start_prob = h.startprob_, trans_prob = h.transmat_, emission_prob = h.emissionprob_, state_names = states, observable_names = observables)
+                self.hmm_display(hmm = h, states = states, observables = observables)
                 return h
 
     def get_hmm_raw(self, hmm: Any, variable: str = 'moving', t_bin: int = 60, 
@@ -2281,10 +2288,11 @@ class behavpy_core(pd.DataFrame):
 
         fun = self._check_periodogram_input(mov_variable, periodogram, period_range, t_column)
         sampling_rate = 1 / (sampling_rate * 60)  # Converts to frequency
-        
+        step_size = int(1 / sampling_rate) # get the new t-diff to interpolate to
+
         data = self.copy(deep = True)
         # populate sample data 
-        sampled_data = data.interpolate_linear(variable = mov_variable, step_size = 1 / sampling_rate)
+        sampled_data = data.interpolate_linear(variable = mov_variable, step_size = step_size)
         sampled_data = sampled_data.reset_index()
 
         return self.__class__(sampled_data.groupby('id', group_keys = False)[[t_column, mov_variable]].apply(
@@ -2339,10 +2347,10 @@ class behavpy_core(pd.DataFrame):
         # check input and return the wavelet function with given wave type
         fun = self._check_periodogram_input(v = mov_variable, per = 'wavelet', per_range = None, t_col = t_col, wavelet_type = wavelet_type)
         sampling_rate = 1 / (sampling_rate * 60)
-
+        step_size = int(1 /  sampling_rate)
         # re-sample the data at the given rate and interpolate 
         data = self.copy(deep = True)
-        sampled_data = data.interpolate_linear(variable = mov_variable, step_size = 1 / sampling_rate)
+        sampled_data = data.interpolate_linear(variable = mov_variable, step_size = step_size)
         # average across the dataset
         avg_data = sampled_data.groupby(t_col).agg(**{
                         mov_variable : (mov_variable, 'mean')

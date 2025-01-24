@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
 
-from math import floor, ceil
+from math import floor
 from functools import partial
 
 from ethoscopy.behavpy_draw import behavpy_draw
@@ -27,7 +27,7 @@ class behavpy_seaborn(behavpy_draw):
     such this class is directly accessible to the user.
 
     Attributes:
-        _canvas (str): tells the inherited classes that this is a seaborn class
+        canvas (str): tells the inherited classes that this is a seaborn class
 
     **Example Usage:**
         df = behavpy(behavior_data, behavior_meta, check = True,canvas = 'seaborn')
@@ -94,7 +94,7 @@ class behavpy_seaborn(behavpy_draw):
 
         plt.yticks(ticks=np.arange(0, len(id), 2), labels=id[::-2], rotation=0)
 
-        if title: fig.suptitle(title, fontsize=16)
+        if title: fig.suptitle(title, fontsize=16, y = 1)
 
         return fig
 
@@ -105,7 +105,7 @@ class behavpy_seaborn(behavpy_draw):
         Generate a line plot to visualize the progression of a specified variable over the duration of an experiment or within an experimental day. 
         This plot displays the mean values along with 95% confidence intervals for each group, providing clear insights into temporal trends and 
         group comparisons.
-        Additionally, the plot includes visual indicators (white and black boxes) to denote periods when lights are on and off, which can be customized 
+        Additionally, the plot includes visual indicators (white and black boxes) to denote col = np.where(st == c, colours[c], np.NaN)ds when lights are on and off, which can be customized 
         to reflect varying day lengths or different lighting schedules.
         
         Args:
@@ -536,14 +536,14 @@ class behavpy_seaborn(behavpy_draw):
         return fig, grouped_data
     
     @staticmethod
-    def _plot_single_actogram(dt, figsize, days, title, day_length):
+    def _plot_single_actogram(dt, figsize, days, title, day_length, size):
 
         # (0,0) means automatic size
         if figsize == (0,0):
             figsize = (10, len(days)/2)
 
         fig, axes = plt.subplots(len(days)-1, 1, figsize=figsize, sharex=True)
-        axes[0].set_title(title)
+        axes[0].set_title(title, size = size)
 
         for ax, day in zip(axes, days[:-1]):
 
@@ -641,12 +641,16 @@ class behavpy_seaborn(behavpy_draw):
         data, days = self._internal_actogram(data, mov_variable, bin_window, t_column, facet_col)
 
         if facet_col:
+
+            sub_title_size = 20
+
+
             figs = []
             for subplot in facet_arg:
 
                 dt = data.loc [data[facet_col] == subplot]
                 title = "%s - %s" % (title, subplot)
-                fig = self._plot_single_actogram(dt, figsize, days, title, day_length)
+                fig = self._plot_single_actogram(dt, figsize, days, title, day_length, sub_title_size)
                 plt.close()
 
                 figs.append(fig)
@@ -673,7 +677,8 @@ class behavpy_seaborn(behavpy_draw):
             return combined_fig
 
         else:
-            return self._plot_single_actogram(data, figsize, days, title, day_length)
+            sub_title_size = 25
+            return self._plot_single_actogram(data, figsize, days, title, day_length, sub_title_size)
 
     def plot_actogram_tile(self, mov_variable:str = 'moving', labels:None|str = None, bin_window:int = 15, day_length:int = 24, t_column:str = 't', 
         title:str = '', figsize:tuple = (0,0)):
@@ -723,13 +728,14 @@ class behavpy_seaborn(behavpy_draw):
 
         # get the nearest square number to make a grid plot
         root =  self._get_subplots(len(title_list))
+        sub_title_size = 30
 
         figs = []
         for subplot, label in zip(facet_arg, title_list):
 
             dt = data.loc[data['id'] == subplot]
             subtitle = "%s" % (label)        
-            fig = self._plot_single_actogram(dt, figsize, days, subtitle, day_length)
+            fig = self._plot_single_actogram(dt, figsize, days, subtitle, day_length, sub_title_size)
             plt.close()
 
             figs.append(fig)
@@ -749,7 +755,7 @@ class behavpy_seaborn(behavpy_draw):
             c[-1].axis('off')  # Turn off axis
             c[-1].imshow( self._fig2img (f) )
 
-        combined_fig.suptitle(title, size = 7*root)
+        combined_fig.suptitle(title, size = 5.5*root, y=1)
 
         # Adjust the layout of the subplots in the combined figure
         #combined_fig.tight_layout()
@@ -1193,7 +1199,7 @@ class behavpy_seaborn(behavpy_draw):
 
         for ax in axes.flat:
             ax.set(xlabel='Period (Hours)', ylabel='Power')
-        fig.suptitle(title, size = 7*root)
+        fig.suptitle(title, size = 7*root, y=1)
 
         # Hide x labels and tick labels for top plots and y ticks for right plots.
         for ax in axes.flat:
@@ -1241,7 +1247,7 @@ class behavpy_seaborn(behavpy_draw):
 
         for data, name, col in zip(d_list, facet_labels, self._get_colours(d_list)):
 
-            gb_df, t_min, t_max, col, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = power_var, 
+            gb_df, _, _, col, _ = self._generate_overtime_plot(data = data, name = name, col = col, var = power_var, 
                                                                                     avg_win = False, wrap = False, day_len = False, 
                                                                                     light_off= False, t_col = period_var)
             if gb_df is None:
@@ -1959,11 +1965,11 @@ class behavpy_seaborn(behavpy_draw):
             st = data['state'].to_numpy()
             time = data['bin'].to_numpy()
 
-            for c, i in enumerate(colours):
+            for c, loop_col in enumerate(colours):
                 if c == 0:
-                    col = np.where(st == c, colours[c], np.NaN)
+                    col = np.where(st == c, loop_col, '')
                 else:
-                    col = np.where(st == c, colours[c], col)
+                    col = np.where(st == c, loop_col, col)
 
             axes[ax].scatter(time, st, s=25, marker="o", c=col)
             axes[ax].plot(
@@ -1986,6 +1992,7 @@ class behavpy_seaborn(behavpy_draw):
             axes[0].set_xticks(x_ticks) 
             axes[0].set_xticklabels(x_ticks, fontsize=12)  
 
+        if title: fig.suptitle(title, fontsize=20)
         fig.supxlabel("ZT Hours")
         fig.supylabel("Predicted State")
         return fig

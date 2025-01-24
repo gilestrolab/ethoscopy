@@ -40,7 +40,7 @@ def concat(*args):
     # Create new instance with metadata and preserved attributes
     return class_type(data, meta, check=True, **attrs)
 
-def bootstrap(data: np.ndarray, n: int = 1000, func: callable = np.mean) -> tuple:
+def bootstrap(data: np.ndarray, n: int = 1000, func: callable = np.mean, confidence_interval: float = 0.95) -> tuple:
     """ 
     Generate n bootstrap samples and evaluate confidence intervals.
     
@@ -68,9 +68,10 @@ def bootstrap(data: np.ndarray, n: int = 1000, func: callable = np.mean) -> tupl
     # Sort in-place 
     simulations.sort()
 
-    # Move ci function outside to avoid recreation in each call
-    l_indx = int(np.floor(n * 0.025))  # (1-0.95)/2 = 0.025
-    u_indx = int(np.floor(n * 0.975))  # (1+0.95)/2 = 0.975
+    ci = confidence_interval
+    # Calculate the lower and upper bounds for the 95% confidence interval
+    l_indx = int(np.floor(n * ((1-ci)/2) ))  # (1-0.95)/2 = 0.025
+    u_indx = int(np.floor(n * ((1+ci)/2) ))  # (1+0.95)/2 = 0.975
     
     return (simulations[l_indx], simulations[u_indx])
 

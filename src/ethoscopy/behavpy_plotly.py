@@ -29,7 +29,7 @@ class behavpy_plotly(behavpy_draw):
     such this class is directly accessible to the user.
 
     Attributes:
-        _canvas (str): tells the inherited classes that this is a plotly class
+        canvas (str): tells the inherited classes that this is a plotly class
 
     **Example Usage:**
         df = behavpy(behavior_data, behavior_meta, check = True,canvas = 'plotly')

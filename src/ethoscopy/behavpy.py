@@ -2,7 +2,7 @@ from ethoscopy.behavpy_core import behavpy_core
 from ethoscopy.behavpy_plotly import behavpy_plotly
 from ethoscopy.behavpy_seaborn import behavpy_seaborn
 
-def behavpy(data, meta, palette = None, long_palette = None, check = False, index= None, columns=None, dtype=None, copy=True, canvas='plotly'):
+def behavpy(data, meta, canvas='seaborn', palette = None, long_palette = None, check = False, index= None, columns=None, dtype=None, copy=True):
     """
     Factory function that creates a behavpy object with the specified visualisation backend.
 
