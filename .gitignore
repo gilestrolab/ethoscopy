@@ -5,4 +5,5 @@ dist/
 *vscode
 __pycache__/
 ethoscopy.egg-info/
-test/
+.gitignore
+*.pkl

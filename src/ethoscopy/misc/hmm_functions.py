@@ -1,83 +1,96 @@
 import pandas as pd 
 import numpy as np
-from ethoscopy.misc.rle import rle
+from ethoscopy.misc.general_functions import rle
 
-def hmm_pct_transition(state_array, total_states):
+def hmm_pct_transition(state_array: np.ndarray, total_states: np.ndarray) -> pd.DataFrame:
     """
-    Finds the proportion of instances of runs of each state per array/fly
-    params:
-    @state_array =  1D numpy array produced from a HMM decoder
-    @total_states = numerical array denoting the states in 'state_array'
+    Calculate proportion of occurrences for each behavioral state.
+    
+    Analyzes HMM-decoded state sequences to determine state distribution.
+
+    Args:
+        state_array (np.ndarray): Array of HMM-decoded states
+        total_states (np.ndarray): Array of possible state values
+
+    Returns:
+        pd.DataFrame: Proportions of each state occurrence
     """
 
-    v, s, l = rle(state_array)
+    v, _, _ = rle(state_array)
+    
+    # Vectorized calculation of average
+    states_dict = {
+        state: np.mean(v == state) 
+        for state in total_states
+    }
+    
+    return pd.DataFrame([states_dict])
 
-    states_dict = {}
-
-    def average(a):
-        total = a.sum()
-        count = len(a)
-        av = total / count
-        return av
-
-    for i in total_states:
-        states_dict[f'{i}'] = average(np.where(v == i, 1, 0))
-
-    state_list = [states_dict]
-    df = pd.DataFrame(state_list)
-
-    return df
-
-def hmm_mean_length(state_array, delta_t = 60, raw = False, func = 'mean'):
+def hmm_mean_length(state_array: np.ndarray, delta_t: int = 60, 
+                   raw: bool = False, func: str = 'mean') -> pd.DataFrame:
     """
-    Finds the mean length of each state run per array/fly 
-    returns a dataframe with a state column containing the states id and a mean_length column
-    params:
-    @state_array =  1D numpy array produced from a HMM decoder
-    @delta_t = the time difference between each element of the array
-    @raw = If true then length of all runs of each stae are returned, rather than the mean
+    Calculate mean duration of behavioral state runs.
+    
+    Analyzes continuous runs of HMM states to determine typical durations.
+
+    Args:
+        state_array (np.ndarray): Array of HMM-decoded states
+        delta_t (int, optional): Time difference between points in seconds. Default is 60.
+        raw (bool, optional): Return all run lengths instead of means. Default is False.
+        func (str, optional): Aggregation function for lengths. Default is 'mean'.
+
+    Returns:
+        pd.DataFrame: Mean lengths or raw runs of each state
     """
-    assert(isinstance(raw, bool))
+    assert isinstance(raw, bool)
     delta_t_mins = delta_t / 60
 
-    v, s, l = rle(state_array)
-
-    df = pd.DataFrame(data = zip(v, l), columns = ['state', 'length'])
-    df['length_adjusted'] = df['length'].map(lambda l: l * delta_t_mins)
+    v, _, l = rle(state_array)
     
-    if raw == True:
+    df = pd.DataFrame({
+        'state': v,
+        'length': l,
+        'length_adjusted': l * delta_t_mins 
+    })
+    
+    if raw:
         return df
-    else:
-        gb_bout = df.groupby('state').agg(**{
-                            'mean_length' : ('length_adjusted', func)
-        })
-        gb_bout.reset_index(inplace = True)
+    
+    return (df.groupby('state')
+             .agg(**{'mean_length': ('length_adjusted', func)})
+             .reset_index())
 
-        return gb_bout
-
-def hmm_pct_state(state_array, time, total_states, avg_window = 30):
+def hmm_pct_state(state_array: np.ndarray, time: np.ndarray, 
+                  total_states: np.ndarray, avg_window: int = 30) -> pd.DataFrame:
     """
-    Takes a window of n and finds what percentage each state is present within that window
-    returns a dataframe with columns t, and states with their corresponding percentage per window
-    params:
-    @state_array =  1D numpy array produced from a HMM decoder
-    @time = 1D numpy array of the timestamps of state_array of equal length and same order
-    @total_states = numerical array denoting the states in 'state_array'
-    @avg_window = length of window given as elements of the array
+    Calculate state percentages within sliding windows.
+    
+    Computes proportion of each state within specified time windows.
+
+    Args:
+        state_array (np.ndarray): Array of HMM-decoded states
+        time (np.ndarray): Array of timestamps
+        total_states (np.ndarray): Array of possible state values
+        avg_window (int, optional): Window size in time units. Default is 30.
+
+    Returns:
+        pd.DataFrame: State percentages per window with columns [t, state_1, state_2, ...]
     """
-    states_dict = {}
-
-    def moving_average(a, n) :
-        ret = np.cumsum(a, dtype=float)
-        ret[n:] = ret[n:] - ret[:-n]
-        return ret[n - 1:] / n
-
-    for i in total_states:
-        states_dict['state_{}'.format(i)] = moving_average(np.where(state_array == i, 1, 0), n = avg_window)
-
-    adjusted_time = time[avg_window-1:]
-
-    df = pd.DataFrame.from_dict(states_dict)
-    df.insert(0, 't', adjusted_time)
-                        
+    # Pre-calculate window size for efficiency
+    n = avg_window
+    
+    def moving_average(a: np.ndarray) -> np.ndarray:
+        """Vectorized moving average calculation"""
+        cumsum = np.cumsum(a, dtype=float)
+        cumsum[n:] = cumsum[n:] - cumsum[:-n]
+        return cumsum[n - 1:] / n
+    
+    states_dict = {
+        f'state_{i}': moving_average(state_array == i) 
+        for i in total_states
+    }
+    
+    df = pd.DataFrame(states_dict)
+    df.insert(0, 't', time[n-1:])
+    
     return df

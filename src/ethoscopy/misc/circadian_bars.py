@@ -1,5 +1,6 @@
 import plotly.graph_objs as go 
 from itertools import cycle
+from typing import Union
 
 def fancy_range(start, stop, steps=(1,)):
     """
@@ -12,7 +13,7 @@ def fancy_range(start, stop, steps=(1,)):
         val += next(steps)
 
 def make_bars(bar, bar_col, size, split, y_size1, y_size2):
-
+    """ The function to generate plotly shapes for the boxes """
     shaped_bar = go.layout.Shape(type="rect", 
                                 x0=bar, 
                                 y0= y_size1, 
@@ -29,29 +30,36 @@ def make_bars(bar, bar_col, size, split, y_size1, y_size2):
 
     return shaped_bar
 
-def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split = False):
+def circadian_bars(t_min: int|float, t_max: int|float, min_y: int|float, max_y: int|float, 
+                  day_length: int|float = 24, lights_off: int|float = 12, 
+                  split: bool|int = False, canvas: str = 'plotly') -> Union[dict, tuple]:
     """ 
-    create boxes within plotly to represent the light, dark phases in light sensitive experiments
-    @t_min = int, the minimum time point as a multiple of 12 
-    @t_max = int, the maximum time point as a multiple of 12
-    @circadian_night = int, the hour the lights turn off, must be between 1 and 23
+    Generate light/dark cycle indicator boxes for circadian plots.
+    
+    Creates visual indicators for light and dark periods in both Plotly and Seaborn plots.
+
+    Args:
+        t_min (int|float): Minimum time value (relative to lights_off)
+        t_max (int|float): Maximum time value (relative to lights_off)
+        min_y (int|float): Minimum y-axis value for scaling boxes
+        max_y (int|float): Maximum y-axis value for scaling boxes
+        day_length (int|float, optional): Length of experimental day in hours. Default is 24.
+        lights_off (int|float, optional): Hour when lights turn off. Default is 12.
+        split (bool|int, optional): Number of subplots if splitting figure. Default is False.
+        canvas (str, optional): Plot type ('plotly' or 'seaborn'). Default is 'plotly'.
+
+    Returns:
+        Union[dict, tuple]: For plotly: dict of shape objects and y-size
+                           For seaborn: tuple of (range values, box size)
     """
     if split != False:
-        if max_y > 0.2:
-            y_size1 = -max_y/20
-            y_size2 = 0
-        if max_y <= 0.2:
-            y_size1 = 0
-            y_size2 = max_y/15   
+        scale = 20
     else:
-        if max_y > 0.2:
-            y_size1 = -max_y/40
-            y_size2 = 0
-            split = 1
-        elif max_y <= 0.2:
-            y_size1 = 0
-            y_size2 = max_y/10   
-            split = 1
+        scale = 40
+        split = 1
+
+    y_size1 = min_y
+    y_size2 = min_y - ((max_y-min_y) / scale)   
 
     if lights_off < 1 or lights_off > day_length:
         raise ValueError(f"The argument for lights_off must be between 1 and {day_length}")
@@ -64,6 +72,10 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
     else:
         used_range = fancy_range(t_min, t_max, (lights_off, day_length-lights_off))
 
+    if canvas == 'seaborn':
+        size = (max_y-min_y) / scale
+        return used_range, size
+
     for i, bars in enumerate(used_range):
         for c in range(split):
             if bars % day_length == 0:
@@ -73,4 +85,4 @@ def circadian_bars(t_min, t_max, max_y, day_length = 24, lights_off = 12, split 
                 black_bar = make_bars(bar = bars, bar_col = 'black', size = day_length - lights_off, split = c, y_size1 = y_size1, y_size2 = y_size2)
                 bar_shapes[f'shape_{i}{c}'] = black_bar
 
-    return bar_shapes, y_size1
+    return bar_shapes, y_size2

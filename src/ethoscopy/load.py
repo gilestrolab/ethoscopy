@@ -414,8 +414,7 @@ def load_ethoscope_metadata(metadata):
             mdf.reset_index(inplace = True)
             mdf = mdf[1:]
 
-            mdf['date_time'] = pd.to_datetime(mdf['date_time'], unit='s')
-            mid = mdf.index[0]
+            mdf['date_time'] = pd.to_datetime(pd.to_numeric(mdf['date_time']), unit='s')
 
             d = eval(mdf['experimental_info'].iloc[0])
             exi = d
@@ -500,7 +499,7 @@ def read_single_roi(file, min_time = 0, max_time = float('inf'), reference_hour 
         date = pd.read_sql_query('SELECT value FROM METADATA WHERE field = "date_time"', conn)
 
         # isolate date_time string and parse to GMT with format YYYY-MM-DD HH-MM-SS
-        date = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(float(date.iloc[0])))      
+        date = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(float(date.iloc[0].iloc[0])))      
 
         if max_time == float('inf'):
             max_time_condtion =  ''
