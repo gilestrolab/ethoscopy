@@ -2,7 +2,7 @@
 
 A data-analysis toolbox utilising Pandas, Seaborn, and Plotly to curate, clean, analyse, and visualise behavioural time series data. Whilst the toolbix was created around the data produced from an Ethoscope (a Drosophila monitoring system), if the users data follows the same structure for time series data all methods can be utilised.
 
-<s> Head to the [tutorial](https://bookstack.lab.gilest.ro/books/ethoscopy) for an in-depth walk through. <s>
+<del> Head to the [tutorial](https://bookstack.lab.gilest.ro/books/ethoscopy) for an in-depth walk through. </del>
 - currently the above tutorial is out of date. Use the jupyter notebooks to learn how to use the package
 - I promise to update the tutorial soon to be aligned with the 2.0 version
 
