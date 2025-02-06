@@ -2447,3 +2447,11 @@ class behavpy_core(pd.DataFrame):
             return self.__class__(data.groupby('id', group_keys=False).apply(
                 partial(self._wrapped_find_peaks, num=num_peaks)), 
                 data.meta, palette=self.attrs['sh_pal'], long_palette=self.attrs['lg_pal'], check=True)
+
+## Power-Law Analysis
+
+    # implemented with inspiration from Xu et al., 2021 Quantitative investigation reveals distinct phases in Drosophila sleep, Nature Communications biology 
+
+    def power_law(self):
+        """ """
+        return None
