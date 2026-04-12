@@ -3,6 +3,7 @@ import ftplib
 import os
 import sqlite3
 import time
+from collections import OrderedDict
 from functools import partial
 from pathlib import Path, PurePath, PurePosixPath
 from urllib.parse import urlparse
@@ -50,12 +51,14 @@ def _connect_db(path):
             journal_mode = cursor.fetchone()[0].lower()
             temp_conn.close()
 
-            if journal_mode == "wal":
+            if journal_mode == 'wal':
                 # WAL mode on read-only mount: use mode=ro with nolock
                 # This prevents "database disk image is malformed" errors
                 # by avoiding operations that require WAL/SHM files
                 return sqlite3.connect(
-                    f"file:{path_str}?mode=ro&nolock=1", uri=True, timeout=10.0
+                    f"file:{path_str}?mode=ro&nolock=1",
+                    uri=True,
+                    timeout=10.0
                 )
             else:
                 # Non-WAL mode: use immutable mode for better performance
@@ -606,7 +609,7 @@ def load_ethoscope(
     return data
 
 
-def load_ethoscope_metadata(metadata):
+def load_ethoscope_metadata(metadata, reference_hour=9.0):
     """
     Extract metadata from ethoscope database files.
 
@@ -651,9 +654,15 @@ def load_ethoscope_metadata(metadata):
             exi = d
 
             d = eval(mdf["hardware_info"].iloc[0])
-            d.pop("partitions")
-            td = pd.DataFrame(d)
-            hdi = td.loc["version"].to_dict()
+            d.pop("partitions", None)
+            try:
+                td = pd.DataFrame(d)
+                if "version" in td.index:
+                    hdi = td.loc["version"].to_dict()
+                else:
+                    hdi = {}
+            except Exception:
+                hdi = {}
 
             d = eval(
                 mdf["selected_options"]
@@ -678,9 +687,50 @@ def load_ethoscope_metadata(metadata):
             )
 
             row_dict = mdf.iloc[0].to_dict()
+            # If date_range exists in DB (e.g. SD window), move it to stimulus_range
+            if "date_range" in kw:
+                sr = kw.pop("date_range")
+                if " > " not in sr:
+                    # Replace double spaces with " > " for clarity
+                    sr = sr.replace("  ", " > ")
+                row_dict["stimulus_range"] = sr
+                
             row_dict.update(kw)
             row_dict.update(exi)
             row_dict.update(hdi)
+
+            # Always compute ZT-aligned date_range and update date_time
+            if "stop_date_time" in mdf.columns and "date_time" in mdf.columns:
+                try:
+                    dt = mdf["date_time"].iloc[0]
+                    sdt_val = float(str(mdf["stop_date_time"].iloc[0]).strip("'"))
+                    sdt = pd.to_datetime(sdt_val, unit="s")
+                    
+                    from datetime import timedelta
+                    h = int(reference_hour)
+                    m = int((reference_hour - h) * 60)
+                    s = int(((reference_hour - h) * 60 - m) * 60)
+                    
+                    zt0_start = dt.replace(hour=h, minute=m, second=s, microsecond=0).floor("s")
+                    if dt < zt0_start:
+                        zt0_start -= timedelta(days=1)
+                        
+                    zt0_stop = sdt.replace(hour=h, minute=m, second=s, microsecond=0).floor("s")
+                    if sdt < zt0_stop:
+                        zt0_stop -= timedelta(days=1)
+                        
+                    start_str = zt0_start.strftime("%Y-%m-%d %H:%M:%S")
+                    stop_str = zt0_stop.strftime("%Y-%m-%d %H:%M:%S")
+                    row_dict["date_range"] = f"{start_str} > {stop_str}"
+                    row_dict["date_time"] = zt0_start
+                except Exception:
+                    row_dict["date_range"] = ""
+            else:
+                row_dict["date_range"] = ""
+            
+            # Default min_inactive_time (usually 300) only if missing
+            if "min_inactive_time" not in row_dict or row_dict["min_inactive_time"] is None:
+                row_dict["min_inactive_time"] = 300
 
             return row_dict
 
@@ -945,16 +995,12 @@ def read_single_roi_optimized(
             # Handle "database disk image is malformed" errors
             # This can occur with WAL-mode databases on read-only mounts
             if "malformed" in str(e).lower() or "disk image" in str(e).lower():
-                print(
-                    f"Warning: Database error for ROI {file['region_id']}, attempting retry with fresh connection..."
-                )
+                print(f"Warning: Database error for ROI {file['region_id']}, attempting retry with fresh connection...")
 
                 # Get database path from file metadata
                 db_path = file.get("path")
                 if not db_path:
-                    print(
-                        "Error: Cannot retry - database path not found in file metadata"
-                    )
+                    print(f"Error: Cannot retry - database path not found in file metadata")
                     raise
 
                 # Create a fresh connection just for the retry
@@ -964,9 +1010,7 @@ def read_single_roi_optimized(
                     data = pd.read_sql_query(sql_query, retry_conn)
                     print(f"Success: ROI {file['region_id']} loaded on retry")
                 except Exception as retry_error:
-                    print(
-                        f"Error: Retry failed for ROI {file['region_id']}: {retry_error}"
-                    )
+                    print(f"Error: Retry failed for ROI {file['region_id']}: {retry_error}")
                     raise
                 finally:
                     # Clean up retry connection
