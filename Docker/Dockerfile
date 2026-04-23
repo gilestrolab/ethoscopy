@@ -89,7 +89,7 @@ RUN pip3 install \
         lifelines \
         opencv-python \
         mysql-connector \
-        ethoscopy
+        ethoscopy==2.1.0
        # pycatch22
 
 # Pre-populate tutorial datasets inside the installed package so non-root
