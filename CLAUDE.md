@@ -9,7 +9,7 @@ Ethoscopy is a Python data analysis toolbox for behavioral time series data from
 ## Development Environment
 
 ### Python Environment
-- **Use Python 3.10+** (project requires >=3.10,<4.0)
+- **Use Python 3.12+** (project requires >=3.12,<4.0)
 - **Always use virtual environment** (`.venv` as mentioned in user's global instructions)
 - **Install in development mode**: `pip install -e .`
 
@@ -21,7 +21,7 @@ Ethoscopy is a Python data analysis toolbox for behavioral time series data from
 ### Key Dependencies
 - Core: pandas >=2.2.2, numpy >=2.0.0
 - Visualization: plotly >=5.22.0, seaborn >=0.13.2
-- Analysis: hmmlearn >=0.3.2, astropy >=6.1, pywavelets >=1.6.0
+- Analysis: hmmlearn >=0.3.2, astropy >=7.0, pywavelets >=1.6.0
 - Dev: ipykernel for Jupyter notebook support
 
 ## Build and Development Commands

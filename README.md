@@ -3,7 +3,7 @@
 [![CI/CD Pipeline](https://github.com/gilestrolab/ethoscopy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gilestrolab/ethoscopy/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/gilestrolab/ethoscopy/branch/main/graph/badge.svg)](https://codecov.io/gh/gilestrolab/ethoscopy)
 [![PyPI version](https://img.shields.io/pypi/v/ethoscopy.svg)](https://pypi.org/project/ethoscopy/)
-[![Python versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://pypi.org/project/ethoscopy/)
+[![Python versions](https://img.shields.io/badge/python-3.12-blue.svg)](https://pypi.org/project/ethoscopy/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 A data-analysis toolbox utilising Pandas, Seaborn, and Plotly to curate, clean, analyse, and visualise behavioural time series data. Whilst the toolbix was created around the data produced from an Ethoscope (a Drosophila monitoring system), if the users data follows the same structure for time series data all methods can be utilised.

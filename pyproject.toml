@@ -1,6 +1,6 @@
 [project]
 name = "ethoscopy"
-version = "2.0.5"
+version = "2.1.0"
 description = "\"A python based toolkit to download and anlyse data from the Ethoscope hardware system.\""
 authors = [{name = "Lblackhurst29",email = "lblackhurst29@gmail.com"}]
 readme = "README.md"
@@ -13,18 +13,16 @@ dependencies = [
     "colour>=0.1.5,<0.2.0",
     "hmmlearn>=0.3.2,<0.4.0",
     "pywavelets>=1.6.0,<2.0.0",
-    "astropy>=6.1,<7.0",
+    "astropy>=7.0,<8.0",
     "nbformat>=5.10.4,<6.0.0",
 ]
-requires-python = ">=3.10,<4.0"
+requires-python = ">=3.12,<4.0"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Information Analysis",
