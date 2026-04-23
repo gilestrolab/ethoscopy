@@ -31,7 +31,7 @@ jobs:
 
     - name: Run tests
       run: |
-        python -m pytest tests/ -v --cov=ethoscopy -m "not slow"
+        python -m pytest tests/ -v --cov=ethoscopy -m "unit or integration"
 
   build-and-publish:
     needs: test
