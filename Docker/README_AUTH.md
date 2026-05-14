@@ -15,6 +15,7 @@ This JupyterHub deployment supports multiple authentication methods, configurabl
   - [Adding New Users (OAuth)](#adding-new-users-oauth)
   - [Adding New Users (Dummy Auth)](#adding-new-users-dummy-auth)
   - [Making Users Admins](#making-users-admins)
+  - [Granting Cross-User File Access (Superusers)](#granting-cross-user-file-access-superusers)
 - [Switching Authentication Methods](#switching-authentication-methods)
 - [Dockerfile Optimization](#dockerfile-optimization)
 - [Troubleshooting](#troubleshooting)
@@ -387,6 +388,33 @@ docker compose restart
 - Log in as the admin user
 - Navigate to: `https://jupyter.lab.gilest.ro/hub/admin`
 - You should see the admin panel with all users listed
+
+### Granting Cross-User File Access (Superusers)
+
+By default JupyterLab roots each user's file browser at their own home (`/home/<username>`). A **superuser** instead gets `/home` as their root, so they can browse, open, and run notebooks across every user's directory directly from their own JupyterLab session.
+
+This works because all single-user servers in this deployment run under the same container UID (see `ConfigUserSpawner` in `config/jupyterhub_config.py`), so filesystem-level access to all homes already exists — `SUPERUSERS` simply surfaces it in the UI.
+
+**Configuration**:
+
+```bash
+# .env
+SUPERUSERS=ggilestro,jdoe
+```
+
+If `SUPERUSERS` is unset, it defaults to `ADMIN_USERS`.
+
+**Apply changes**:
+```bash
+docker compose restart
+```
+
+**Verify**:
+- Log in as a superuser
+- The JupyterLab file browser should list every user's home folder
+- Opening another user's `.ipynb` runs it in place; edits and kernel output write back to that user's home
+
+**Security note**: Regular users are not isolated from each other at the filesystem level in this setup — anyone with a JupyterLab terminal can already `cd` into another user's home. `SUPERUSERS` only changes what is shown by default in the file browser. True per-user isolation would require a different spawner (e.g. `DockerSpawner` or `KubeSpawner` with distinct UIDs).
 
 ---
 

@@ -120,6 +120,17 @@ else:
     # Use imported list from users.py
     c.Authenticator.admin_users = ADMIN_USERS
 
+# Superusers: users whose JupyterLab file browser is rooted at /home instead
+# of their own home, so they can browse/open/run notebooks across every user.
+# Reason: all single-user servers run as the same container UID (see
+# ConfigUserSpawner below), so filesystem access already exists — this just
+# exposes it in the UI. Defaults to admins; override with SUPERUSERS env var.
+superusers_env = os.getenv('SUPERUSERS')
+if superusers_env is not None:
+    SUPERUSERS = {u.strip() for u in superusers_env.split(',') if u.strip()}
+else:
+    SUPERUSERS = set(c.Authenticator.admin_users)
+
 # ============================================================================
 # CUSTOM SPAWNER (Preserved - critical for current setup)
 # ============================================================================
@@ -129,25 +140,34 @@ class ConfigUserSpawner(LocalProcessSpawner):
     def make_preexec_fn(self, name):
         """Don't try to switch users - run everything as current user"""
         return None
-    
+
     def user_env(self, env):
         """Set user environment without system user lookup"""
         env = env.copy()
         home_dir = f'/home/{self.user.name}'
-        
+
         # Ensure home directory exists with proper permissions
         os.makedirs(home_dir, mode=0o755, exist_ok=True)
-        
+
         # Set environment variables
         env['USER'] = self.user.name
         env['HOME'] = home_dir
         env['SHELL'] = '/bin/bash'
         env['LOGNAME'] = self.user.name
-        
+
         return env
 
 c.JupyterHub.spawner_class = ConfigUserSpawner
-c.Spawner.notebook_dir = '/home/{username}'
+
+
+def _set_notebook_dir(spawner):
+    if spawner.user.name in SUPERUSERS:
+        spawner.notebook_dir = '/home'
+    else:
+        spawner.notebook_dir = f'/home/{spawner.user.name}'
+
+
+c.Spawner.pre_spawn_hook = _set_notebook_dir
 
 # Timeouts
 c.Spawner.http_timeout = 60
