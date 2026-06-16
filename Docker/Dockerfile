@@ -66,7 +66,7 @@ RUN ln -s /bin/tar /bin/gtar && \
 # JUPYTER INSTALLATION AND CONFIGURATION
 # ============================================================================
 
-# Install JupyterLab (version 3.6.4)
+# Install JupyterLab (latest 4.x; pip resolves the newest compatible release)
 RUN pip3 install jupyterlab --ignore-installed
 
 # To upgrade to version 4.0.2 (commented out)
@@ -74,6 +74,14 @@ RUN pip3 install jupyterlab --ignore-installed
 
 # Install Jupyter extensions (compatible with 3.x only)
 RUN pip3 install jupyterlab-spreadsheet-editor
+
+# AI assistant: Copilot-style inline completions + chat panel.
+# Reason: lightweight (declares only jupyter-server as its Jupyter dep), so it
+# does NOT pull in jupyter-collaboration / server-documents like jupyter-ai does
+# — that RTC stack is what caused "File ID could not be retrieved" on file open.
+# Pinned for reproducible builds. Supports OpenRouter via its OpenAI-compatible
+# provider (base URL https://openrouter.ai/api/v1).
+RUN pip3 install --no-cache-dir "notebook-intelligence==5.1.0"
 
 # ============================================================================
 # PYTHON PACKAGES AND ETHOSCOPE SETUP

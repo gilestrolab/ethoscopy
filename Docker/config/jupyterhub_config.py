@@ -155,6 +155,20 @@ class ConfigUserSpawner(LocalProcessSpawner):
         env['SHELL'] = '/bin/bash'
         env['LOGNAME'] = self.user.name
 
+        # Notebook Intelligence (AI assistant): forward central LLM config from
+        # the container environment so students never enter API keys themselves
+        # (avoids keys leaking into dotfiles, cf. the pxin OpenAI-key incident).
+        # LiteLLM reads OPENROUTER_API_KEY directly and routes the
+        # `openrouter/...` model id; values come from .env via docker-compose.
+        for _key in (
+            'OPENROUTER_API_KEY',
+            'NBI_CHAT_MODEL_PROVIDER', 'NBI_CHAT_MODEL_ID',
+            'NBI_INLINE_COMPLETION_MODEL_PROVIDER', 'NBI_INLINE_COMPLETION_MODEL_ID',
+        ):
+            _val = os.getenv(_key)
+            if _val:
+                env[_key] = _val
+
         return env
 
 c.JupyterHub.spawner_class = ConfigUserSpawner
