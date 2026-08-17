@@ -3,6 +3,7 @@ import ftplib
 import os
 import sqlite3
 import time
+import warnings
 
 # Reason: newer ethoscope firmwares serialize the "selected_options" METADATA
 # field with an ``OrderedDict([...])`` wrapper. ``get_meta`` below round-trips
@@ -22,57 +23,119 @@ from ethoscopy.misc.validate_datetime import validate_datetime
 pd.options.mode.chained_assignment = None
 
 
-def _connect_db(path):
-    """
-    Connect to a SQLite database with smart read-only filesystem detection.
+# Ordered ladder of read-only SQLite open modes, most faithful first.
+#
+# Reason: whether an ethoscope database can be opened is not predictable from
+# its journal mode alone. Journal mode, the presence and state of the -wal/-shm
+# sidecars and the writability of the containing directory interact, and the
+# combinations are not rare in practice -- ethoscopes write in WAL mode and the
+# results tree is usually mounted read-only. Empirically (sqlite 3.45 and 3.53,
+# read-only and writable directories):
+#
+#   * mode=ro reads every recoverable state, including a WAL database whose
+#     -shm exists, a stale or corrupt -shm, and a hot rollback journal, and it
+#     is the only mode that sees data still sitting in an uncheckpointed -wal.
+#   * immutable=1 is the sole survivor of one real case: a WAL-mode database
+#     whose sidecars are absent on a read-only mount (SQLite would have to
+#     create the -shm to read it). It ignores the -wal entirely, so it is the
+#     fallback, never the first choice -- see _warn_if_wal_ignored.
+#
+# Note nolock=1 is deliberately absent: SQLite rejects it for *every* WAL
+# database, and because sqlite3.connect() never touches the file the rejection
+# only surfaces on the first query. That is why each rung below is probed.
+_READ_STRATEGIES = ("mode=ro", "immutable=1")
 
-    When the database directory is read-only (e.g., mounted with :ro in Docker),
-    SQLite cannot create journal/WAL files and will fail to open the database.
-    This function detects read-only filesystems and uses appropriate connection
-    parameters to handle WAL-mode databases safely.
+# Errors that mean "this open mode cannot read this file" rather than "this
+# query is wrong" -- worth dropping to the next rung of the ladder for.
+_UNREADABLE_ERRORS = ("unable to open database file", "readonly database", "malformed")
+
+
+def _warn_if_wal_ignored(path_str):
+    """
+    Warn when falling back to immutable=1 would hide committed data.
+
+    immutable=1 reads the main database file only. If an uncheckpointed -wal
+    sidecar still holds committed transactions, those rows silently disappear
+    from the loaded data -- the worst possible failure for an analysis library,
+    so make it loud.
+
+    Args:
+        path_str (str): Path to the SQLite database file
+    """
+    try:
+        wal_size = os.path.getsize(f"{path_str}-wal")
+    except OSError:
+        return
+
+    if wal_size > 0:
+        warnings.warn(
+            f"{path_str} could only be opened in SQLite's immutable mode, which "
+            f"ignores its {wal_size} byte -wal sidecar: data committed to the WAL "
+            "but not yet checkpointed will be missing. Checkpoint the database "
+            "(scripts/convert_wal_to_delete.py) or make its directory writable.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
+
+def _connect_db(path, degraded=False):
+    """
+    Open an ethoscope database read-only, tolerating WAL state and read-only mounts.
+
+    ethoscopy never writes to these files, so the connection is always read-only:
+    that also stops a load from checkpointing or truncating the raw data as a side
+    effect. Each candidate open mode is probed with a real statement before being
+    handed back, because sqlite3.connect() does not touch the file and an
+    unusable mode would otherwise only fail deep inside the first data query.
 
     Args:
         path (str): Path to the SQLite database file
+        degraded (bool, optional): Skip the faithful open modes and go straight to
+            the last-resort one. Used to escalate after a connection that opened
+            cleanly fails part-way through a read. Default is False.
 
     Returns:
-        sqlite3.Connection: Database connection object
+        sqlite3.Connection: A connection that has answered at least one statement
 
-    Note:
-        For WAL-mode databases on read-only mounts, this function uses mode=ro
-        with nolock=1 to prevent "database disk image is malformed" errors.
-        Any uncommitted WAL data will not be visible, which is acceptable for
-        read-only mounts where the data cannot change anyway.
+    Raises:
+        FileNotFoundError: If path does not exist
+        sqlite3.OperationalError: If no open mode can read the file
     """
     path_str = str(path)
-    dir_path = os.path.dirname(path_str)
 
-    # Check if we can write to the directory
-    if not os.access(dir_path, os.W_OK):
-        # Read-only filesystem - check if database is in WAL mode
+    # Reason: immutable=1 happily "opens" a path that is not there, creating an
+    # empty database file and leaving the caller with a baffling
+    # "no such table: ROI_MAP". Fail on the real problem instead.
+    if not os.path.isfile(path_str):
+        raise FileNotFoundError(
+            errno.ENOENT, "No such ethoscope database file", path_str
+        )
+
+    strategies = _READ_STRATEGIES[-1:] if degraded else _READ_STRATEGIES
+
+    last_error = None
+    for strategy in strategies:
+        conn = None
         try:
-            # Try to detect WAL mode by opening in read-only mode first
-            temp_conn = sqlite3.connect(f"file:{path_str}?mode=ro", uri=True)
-            cursor = temp_conn.cursor()
-            cursor.execute("PRAGMA journal_mode;")
-            journal_mode = cursor.fetchone()[0].lower()
-            temp_conn.close()
+            conn = sqlite3.connect(
+                f"file:{path_str}?{strategy}", uri=True, timeout=10.0
+            )
+            # Probe: forces SQLite to actually reach the file and its sidecars
+            conn.execute("PRAGMA journal_mode;").fetchone()
+        except sqlite3.Error as e:
+            last_error = e
+            if conn is not None:
+                conn.close()
+            continue
 
-            if journal_mode == "wal":
-                # WAL mode on read-only mount: use mode=ro with nolock
-                # This prevents "database disk image is malformed" errors
-                # by avoiding operations that require WAL/SHM files
-                return sqlite3.connect(
-                    f"file:{path_str}?mode=ro&nolock=1", uri=True, timeout=10.0
-                )
-            else:
-                # Non-WAL mode: use immutable mode for better performance
-                return sqlite3.connect(f"file:{path_str}?immutable=1", uri=True)
-        except Exception:
-            # If detection fails, fall back to immutable mode
-            return sqlite3.connect(f"file:{path_str}?immutable=1", uri=True)
-    else:
-        # Normal read-write access
-        return sqlite3.connect(path_str)
+        if strategy == "immutable=1":
+            _warn_if_wal_ignored(path_str)
+        return conn
+
+    raise sqlite3.OperationalError(
+        f"Could not open {path_str} for reading with any of {list(strategies)}. "
+        f"Last error: {last_error}"
+    )
 
 
 def download_from_remote_dir(meta, remote_dir, local_dir, progress=True):
@@ -512,6 +575,7 @@ def load_ethoscope(
     try:
         for db_path, group in grouped_metadata:
             conn = None
+            pbar_at_db_start = pbar.n
 
             try:
                 # Open connection once per database file
@@ -602,6 +666,19 @@ def load_ethoscope(
                         continue
                     finally:
                         pbar.update(1)
+
+            except Exception as e:
+                # Reason: opening the database or reading its shared tables sits
+                # outside the per-ROI handler below, so without this one
+                # unreadable file aborts the whole load and discards every ROI
+                # already read from the other databases. Report it and move on.
+                if verbose is True:
+                    tqdm.write(
+                        "Skipping {} - none of its {} ROIs could be loaded: {}".format(
+                            db_path, len(group), e
+                        )
+                    )
+                pbar.update(len(group) - (pbar.n - pbar_at_db_start))
 
             finally:
                 # Close connection when done with this database
@@ -973,46 +1050,48 @@ def read_single_roi_optimized(
             file["region_id"], min_time, max_time_condtion
         )
 
-        # Execute query with retry logic for WAL-related errors
+        # Execute query, escalating to a degraded open mode if the shared
+        # connection turns out to be unable to read this database after all.
+        # Reason: the connection was probed at open time, but the -wal/-shm
+        # sidecars can change underneath a long read on a live mount, so the
+        # failure can still land here. Retrying with _connect_db() alone would
+        # just pick the same open mode again -- degraded=True is what makes the
+        # retry a different attempt rather than a repeat of the failed one.
         try:
             data = pd.read_sql_query(sql_query, conn)
         except sqlite3.DatabaseError as e:
-            # Handle "database disk image is malformed" errors
-            # This can occur with WAL-mode databases on read-only mounts
-            if "malformed" in str(e).lower() or "disk image" in str(e).lower():
-                tqdm.write(
-                    f"Warning: Database error for ROI {file['region_id']}, attempting retry with fresh connection..."
-                )
-
-                # Get database path from file metadata
-                db_path = file.get("path")
-                if not db_path:
-                    tqdm.write(
-                        "Error: Cannot retry - database path not found in file metadata"
-                    )
-                    raise
-
-                # Create a fresh connection just for the retry
-                retry_conn = None
-                try:
-                    retry_conn = _connect_db(db_path)
-                    data = pd.read_sql_query(sql_query, retry_conn)
-                    tqdm.write(f"Success: ROI {file['region_id']} loaded on retry")
-                except Exception as retry_error:
-                    tqdm.write(
-                        f"Error: Retry failed for ROI {file['region_id']}: {retry_error}"
-                    )
-                    raise
-                finally:
-                    # Clean up retry connection
-                    if retry_conn:
-                        try:
-                            retry_conn.close()
-                        except Exception:
-                            pass
-            else:
-                # Re-raise other database errors
+            if not any(marker in str(e).lower() for marker in _UNREADABLE_ERRORS):
+                # A genuine query error - retrying will not help
                 raise
+
+            tqdm.write(
+                f"Warning: Database error for ROI {file['region_id']} ({e}), "
+                "retrying with a fresh read-only connection..."
+            )
+
+            db_path = file.get("path")
+            if not db_path:
+                tqdm.write(
+                    "Error: Cannot retry - database path not found in file metadata"
+                )
+                raise
+
+            retry_conn = None
+            try:
+                retry_conn = _connect_db(db_path, degraded=True)
+                data = pd.read_sql_query(sql_query, retry_conn)
+                tqdm.write(f"Success: ROI {file['region_id']} loaded on retry")
+            except Exception as retry_error:
+                tqdm.write(
+                    f"Error: Retry failed for ROI {file['region_id']}: {retry_error}"
+                )
+                raise
+            finally:
+                if retry_conn:
+                    try:
+                        retry_conn.close()
+                    except Exception:
+                        pass
 
         if "id" in data.columns:
             # Check if 'id' is a primary key (reuse cursor)

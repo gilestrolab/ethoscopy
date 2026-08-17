@@ -554,13 +554,19 @@ class TestLoadOptimizationPerformance:
                     assert len(result["id"].unique()) <= n_rois
 
     @pytest.mark.performance
-    def test_connection_caching_benefit(self):
+    def test_connection_caching_benefit(self, tmp_path):
         """Test that connection caching provides performance benefit."""
+        # The paths must exist on disk: _connect_db refuses a missing file up
+        # front rather than letting SQLite invent an empty database for it.
+        db1, db2 = tmp_path / "db1.db", tmp_path / "db2.db"
+        db1.touch()
+        db2.touch()
+
         # Mock scenario where multiple ROIs share databases
         metadata = pd.DataFrame(
             {
                 "id": ["roi_1", "roi_2", "roi_3", "roi_4"],
-                "path": ["db1.db", "db1.db", "db2.db", "db2.db"],  # Two shared DBs
+                "path": [str(db1), str(db1), str(db2), str(db2)],  # Two shared DBs
                 "machine_id": ["M1", "M1", "M2", "M2"],
                 "region_id": [1, 2, 1, 2],
                 "date": ["2023-01-01"] * 4,
