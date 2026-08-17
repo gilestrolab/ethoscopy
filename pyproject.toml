@@ -1,6 +1,6 @@
 [project]
 name = "ethoscopy"
-version = "2.2.1"
+version = "2.3.0"
 description = "\"A python based toolkit to download and anlyse data from the Ethoscope hardware system.\""
 authors = [{name = "Lblackhurst29",email = "lblackhurst29@gmail.com"}]
 readme = "README.md"
