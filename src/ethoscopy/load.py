@@ -1,5 +1,6 @@
 import errno
 import ftplib
+import io
 import os
 import sqlite3
 import time
@@ -908,6 +909,401 @@ def load_ethoscope_diagnostics(
         return pd.DataFrame()
 
     return pd.concat(frames, ignore_index=True)
+
+
+def _hours_from_clock(value):
+    """
+    Parse an "HH:MM" light-schedule time into an hour of day.
+
+    Args:
+        value: The recorded string, which is routinely "" or NaN because the
+            fields only carry a value when the ethoscope drives its own light
+
+    Returns:
+        float: Hour of day in [0, 24), or nan if the field is unset or malformed
+    """
+    if value is None or not isinstance(value, str) or not value.strip():
+        return np.nan
+
+    try:
+        parts = [int(p) for p in value.strip().split(":")]
+    except ValueError:
+        return np.nan
+
+    if not parts or not 0 <= parts[0] < 24:
+        return np.nan
+
+    hour = float(parts[0])
+    if len(parts) > 1:
+        hour += parts[1] / 60
+    if len(parts) > 2:
+        hour += parts[2] / 3600
+
+    return hour
+
+
+def _circular_mean_hour(hours):
+    """
+    Average hours of day on the 24 h circle.
+
+    A plain mean of 23:50 and 00:10 is midday. These are wall-clock times and
+    have to be averaged as angles.
+
+    Args:
+        hours (Iterable[float]): Hours of day
+
+    Returns:
+        float: Mean hour of day in [0, 24), or nan if nothing was given
+    """
+    values = [h for h in hours if np.isfinite(h)]
+    if not values:
+        return np.nan
+
+    angles = np.asarray(values) * 2 * np.pi / 24
+    mean = np.arctan2(np.sin(angles).mean(), np.cos(angles).mean())
+    hours = (mean * 24 / (2 * np.pi)) % 24
+
+    # Reason: a mean angle landing a hair below zero - exactly what times
+    # straddling midnight produce - comes back from the modulo as 24.0 rather
+    # than 0.0, putting midnight lights-on outside the [0, 24) contract and,
+    # downstream, giving reference_hour=24 where 0 was meant.
+    if hours >= 24:
+        hours -= 24
+
+    return float(hours)
+
+
+def load_ethoscope_light_schedule(metadata, progress=True):
+    """
+    Read each ethoscope's recorded light schedule and reduce it to usable terms.
+
+    Ethoscopes that drive their own LED panel record the schedule they were
+    given: lights on and off times, the cycle length (which need not be 24 h),
+    an optional ZT0 anchor, and the fade parameters. This reads those fields and
+    derives the three numbers the rest of ethoscopy actually consumes -
+    ``reference_hour`` for load_ethoscope, and ``day_length_h`` / ``lights_off_h``
+    for add_day_phase and the plotting functions - so they need not be typed in
+    by hand and cannot silently disagree with what the device did.
+
+    The fields are frequently unset. They only carry a value when the ethoscope
+    itself controls the light; when an incubator does, they are empty strings and
+    the schedule has to be measured instead - see estimate_light_cycle().
+
+    Args:
+        metadata (pd.DataFrame): Metadata dataframe as returned from link_meta_index
+        progress (bool, optional): If True, show a tqdm progress bar. Default is True.
+
+    Returns:
+        pd.DataFrame: One row per recording with 'machine_id', 'machine_name',
+            'date', the raw schedule fields, and the derived 'reference_hour',
+            'day_length_h', 'lights_off_h' and 'photoperiod_h'. A 'source' column
+            reads 'anchor' when ZT0 came from light_cycle_anchor, 'recorded' when
+            it came from lights_on, and 'absent' when the device recorded no
+            schedule. Empty if nothing could be read.
+    """
+    if metadata.empty or "path" not in metadata.columns:
+        return pd.DataFrame()
+
+    meta_df = _one_row_per_database(metadata)
+
+    rows = []
+    for i in tqdm(
+        meta_df.index,
+        desc="Reading light schedule",
+        unit="db",
+        disable=not progress,
+    ):
+        row = meta_df.loc[i]
+        conn = None
+
+        try:
+            conn = _connect_db(row["path"])
+            recorded = pd.read_sql_query(
+                "SELECT value FROM METADATA WHERE field = 'experimental_info'", conn
+            )
+        except Exception as e:
+            tqdm.write(
+                "Light schedule from {} could not be read: {}".format(
+                    row["machine_name"], e
+                )
+            )
+            continue
+        finally:
+            if conn is not None:
+                conn.close()
+
+        info = {}
+        if not recorded.empty:
+            try:
+                info = eval(recorded.iloc[0].iloc[0])
+            except Exception:
+                # Reason: experimental_info is a repr'd dict written by whatever
+                # firmware was running. A malformed one should cost this machine
+                # its schedule, not the whole read.
+                info = {}
+
+        lights_on_h = _hours_from_clock(info.get("lights_on"))
+        lights_off_h = _hours_from_clock(info.get("lights_off"))
+
+        period_minutes = info.get("light_period_minutes")
+        try:
+            day_length_h = float(period_minutes) / 60
+        except (TypeError, ValueError):
+            day_length_h = np.nan
+
+        # light_cycle_anchor, when set, is an explicit unix timestamp for ZT0 and
+        # outranks lights_on: it is what the daemon actually counted from.
+        anchor = info.get("light_cycle_anchor")
+        reference_hour, source = np.nan, "absent"
+        try:
+            anchor_ts = float(anchor)
+        except (TypeError, ValueError):
+            anchor_ts = None
+
+        if anchor_ts is not None:
+            anchor_utc = time.gmtime(anchor_ts)
+            reference_hour = (
+                anchor_utc.tm_hour + anchor_utc.tm_min / 60 + anchor_utc.tm_sec / 3600
+            )
+            source = "anchor"
+        elif np.isfinite(lights_on_h):
+            reference_hour = lights_on_h
+            source = "recorded"
+
+        rows.append(
+            {
+                "machine_id": row["machine_id"],
+                "machine_name": row["machine_name"],
+                "date": row["date"],
+                "lights_on": info.get("lights_on"),
+                "lights_off": info.get("lights_off"),
+                "reference_hour": reference_hour,
+                "day_length_h": day_length_h,
+                # Hours after lights-on that lights-off falls, which is what
+                # add_day_phase and the plotting functions mean by lights_off.
+                "lights_off_h": (lights_off_h - lights_on_h) % (day_length_h or 24)
+                if np.isfinite(lights_on_h) and np.isfinite(lights_off_h)
+                else np.nan,
+                "photoperiod_h": (lights_off_h - lights_on_h) % 24
+                if np.isfinite(lights_on_h) and np.isfinite(lights_off_h)
+                else np.nan,
+                "light_cycle_anchor": anchor,
+                "fade_in_seconds": info.get("fade_in_seconds"),
+                "fade_out_seconds": info.get("fade_out_seconds"),
+                "max_light": info.get("max_light"),
+                "crepuscular": info.get("crepuscular"),
+                "source": source,
+            }
+        )
+
+    if not rows:
+        return pd.DataFrame()
+
+    schedule = pd.DataFrame(rows)
+
+    absent = schedule.loc[schedule["source"] == "absent", "machine_name"]
+    if len(absent):
+        warnings.warn(
+            "No light schedule recorded for {}: these ethoscopes were not driving "
+            "their own light, so the fields are empty. Measure the cycle with "
+            "estimate_light_cycle() instead.".format(", ".join(sorted(set(absent)))),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    # Reason: pooling machines that ran different light regimes into one
+    # experiment is an analysis error, and a silent one - every downstream ZT
+    # figure would still plot.
+    known = schedule[schedule["source"] != "absent"]
+    distinct = known[["reference_hour", "day_length_h", "lights_off_h"]].drop_duplicates()
+    if len(distinct) > 1:
+        warnings.warn(
+            "Ethoscopes in this metadata recorded {} different light schedules. "
+            "Anchoring them all to one ZT0 would be wrong; split the analysis by "
+            "schedule.".format(len(distinct)),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    return schedule
+
+
+def estimate_light_cycle(
+    metadata, stride=2, min_contrast=5.0, thumbnail=(64, 48), progress=True
+):
+    """
+    Measure the light cycle from the periodic snapshots each ethoscope stores.
+
+    Every ethoscope writes a JPEG to IMG_SNAPSHOTS every few minutes, and mean
+    frame luminance tracks the incubator or panel lights directly. That makes the
+    cycle recoverable from any recording, including ones whose firmware records
+    no schedule at all and ones where an incubator - not the ethoscope - drove
+    the light, which is the common case.
+
+    Phase is deliberately not inferred from the animals' own rhythm: using
+    behaviour to set ZT and then measuring behaviour against ZT would be circular.
+
+    Args:
+        metadata (pd.DataFrame): Metadata dataframe as returned from link_meta_index
+        stride (int, optional): Sample every nth snapshot. Snapshots land every
+            few minutes, so the default of 2 still places a transition to within
+            minutes at half the decode cost. Default is 2.
+        min_contrast (float, optional): Minimum light-to-dark difference in grey
+            levels for the result to be trusted. Below this the recording is
+            treated as constant-light or constant-dark. Default is 5.0.
+        thumbnail (tuple, optional): Size images are reduced to before averaging.
+            Only the mean matters, so full-resolution decode is waste. Default is (64, 48).
+        progress (bool, optional): If True, show a tqdm progress bar. Default is True.
+
+    Returns:
+        pd.DataFrame: One row per recording with 'machine_id', 'machine_name',
+            'date', 'lights_on_utc' and 'lights_off_utc' as hours of day,
+            'photoperiod_h', 'reference_hour' (an alias of lights_on_utc, for
+            passing to load_ethoscope), 'n_transitions' and 'contrast'. Empty if
+            no recording carried usable snapshots.
+
+    Raises:
+        ImportError: If Pillow is unavailable
+    """
+    try:
+        from PIL import Image
+    except ImportError as e:  # pragma: no cover - depends on the install
+        raise ImportError(
+            "estimate_light_cycle() needs Pillow to decode the stored snapshots. "
+            "Install it with `pip install pillow`."
+        ) from e
+
+    if metadata.empty or "path" not in metadata.columns:
+        return pd.DataFrame()
+
+    meta_df = _one_row_per_database(metadata)
+
+    rows = []
+    unusable = []
+
+    for i in tqdm(
+        meta_df.index,
+        desc="Measuring light cycle",
+        unit="db",
+        disable=not progress,
+    ):
+        row = meta_df.loc[i]
+        conn = None
+
+        try:
+            conn = _connect_db(row["path"])
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='IMG_SNAPSHOTS'"
+            )
+            if not cursor.fetchone():
+                unusable.append(row["machine_name"])
+                continue
+
+            snapshots = cursor.execute(
+                "SELECT t, img FROM IMG_SNAPSHOTS ORDER BY t"
+            ).fetchall()
+
+            start = pd.read_sql_query(
+                "SELECT value FROM METADATA WHERE field = 'date_time'", conn
+            )
+            if start.empty:
+                raise ValueError("No date_time found in METADATA table")
+            start_epoch = float(start.iloc[0].iloc[0])
+
+        except Exception as e:
+            tqdm.write(
+                "Snapshots from {} could not be read: {}".format(
+                    row["machine_name"], e
+                )
+            )
+            continue
+        finally:
+            if conn is not None:
+                conn.close()
+
+        times, brightness = [], []
+        for t_ms, blob in snapshots[::stride]:
+            if not blob:
+                continue
+            try:
+                image = Image.open(io.BytesIO(blob)).convert("L")
+                image.thumbnail(thumbnail)
+            except Exception:
+                # Reason: a truncated snapshot is common enough at the tail of an
+                # interrupted run and is not worth losing the recording over.
+                continue
+            times.append(t_ms / 1000)
+            brightness.append(float(np.asarray(image, dtype=np.float32).mean()))
+
+        if len(brightness) < 4:
+            unusable.append(row["machine_name"])
+            continue
+
+        brightness = np.asarray(brightness)
+        contrast = float(brightness.max() - brightness.min())
+
+        if contrast < min_contrast:
+            # Constant light or constant dark: there is no cycle to find, and a
+            # midpoint threshold on noise would invent one.
+            rows.append(
+                {
+                    "machine_id": row["machine_id"],
+                    "machine_name": row["machine_name"],
+                    "date": row["date"],
+                    "lights_on_utc": np.nan,
+                    "lights_off_utc": np.nan,
+                    "photoperiod_h": np.nan,
+                    "reference_hour": np.nan,
+                    "n_transitions": 0,
+                    "contrast": contrast,
+                }
+            )
+            continue
+
+        lit = brightness > (brightness.max() + brightness.min()) / 2
+        crossings = np.flatnonzero(lit[1:] != lit[:-1]) + 1
+
+        on_hours, off_hours = [], []
+        for index in crossings:
+            moment = time.gmtime(start_epoch + times[index])
+            hour = moment.tm_hour + moment.tm_min / 60 + moment.tm_sec / 3600
+            (on_hours if lit[index] else off_hours).append(hour)
+
+        lights_on_utc = _circular_mean_hour(on_hours)
+        lights_off_utc = _circular_mean_hour(off_hours)
+
+        rows.append(
+            {
+                "machine_id": row["machine_id"],
+                "machine_name": row["machine_name"],
+                "date": row["date"],
+                "lights_on_utc": lights_on_utc,
+                "lights_off_utc": lights_off_utc,
+                "photoperiod_h": (lights_off_utc - lights_on_utc) % 24
+                if np.isfinite(lights_on_utc) and np.isfinite(lights_off_utc)
+                else np.nan,
+                "reference_hour": lights_on_utc,
+                "n_transitions": len(crossings),
+                "contrast": contrast,
+            }
+        )
+
+    if unusable:
+        warnings.warn(
+            "No usable snapshots in the databases for {}: the light cycle could "
+            "not be measured for these ethoscopes.".format(
+                ", ".join(sorted(set(unusable)))
+            ),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(rows)
 
 
 def load_ethoscope_metadata(metadata, progress=True):

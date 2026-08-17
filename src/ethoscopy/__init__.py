@@ -15,9 +15,11 @@ from ethoscopy.analyse import (
 from ethoscopy.behavpy import behavpy
 from ethoscopy.load import (
     download_from_remote_dir,
+    estimate_light_cycle,
     link_meta_index,
     load_ethoscope,
     load_ethoscope_diagnostics,
+    load_ethoscope_light_schedule,
     load_ethoscope_metadata,
 )
 from ethoscopy.misc.general_functions import concat
@@ -29,10 +31,12 @@ __all__ = [
     "behavpy",
     "download_from_remote_dir",
     "download_tutorial_data",
+    "estimate_light_cycle",
     "get_tutorial",
     "link_meta_index",
     "load_ethoscope",
     "load_ethoscope_diagnostics",
+    "load_ethoscope_light_schedule",
     "load_ethoscope_metadata",
     "max_velocity_detector",
     "sleep_annotation",

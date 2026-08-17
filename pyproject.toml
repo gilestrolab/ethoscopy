@@ -16,6 +16,10 @@ dependencies = [
     "astropy>=7.0,<8.0",
     "nbformat>=5.10.4,<6.0.0",
     "tqdm>=4.66,<5.0",
+    # estimate_light_cycle() decodes the stored IMG_SNAPSHOTS JPEGs. Pillow
+    # already arrived transitively through seaborn -> matplotlib; this makes the
+    # direct dependency explicit.
+    "pillow>=10.0,<13.0",
 ]
 requires-python = ">=3.12,<4.0"
 classifiers = [
