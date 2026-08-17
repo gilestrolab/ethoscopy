@@ -17,6 +17,7 @@ from ethoscopy.load import (
     download_from_remote_dir,
     link_meta_index,
     load_ethoscope,
+    load_ethoscope_diagnostics,
     load_ethoscope_metadata,
 )
 from ethoscopy.misc.general_functions import concat
@@ -31,6 +32,7 @@ __all__ = [
     "get_tutorial",
     "link_meta_index",
     "load_ethoscope",
+    "load_ethoscope_diagnostics",
     "load_ethoscope_metadata",
     "max_velocity_detector",
     "sleep_annotation",

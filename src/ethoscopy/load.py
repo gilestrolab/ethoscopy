@@ -78,6 +78,68 @@ def _warn_if_wal_ignored(path_str):
         )
 
 
+def _rebase_time(data, date_formatted, reference_hour):
+    """
+    Convert an ethoscope 't' column from milliseconds to seconds, optionally re-zeroed.
+
+    Ethoscope tables store 't' as milliseconds since the start of that recording.
+    With a reference_hour the series is instead expressed relative to the most
+    recent occurrence of that wall-clock hour before the recording started, so
+    runs begun at different times of day can be overlaid.
+
+    Args:
+        data (pd.DataFrame): Frame with a 't' column in milliseconds; modified in place
+        date_formatted (str): Recording start as "%Y-%m-%d %H:%M:%S"
+        reference_hour (float or None): Hour of day that should map to t = 0.
+            None leaves t = 0 at the start of the recording.
+
+    Returns:
+        pd.DataFrame: The same frame, with 't' in seconds
+    """
+    if reference_hour is not None:
+        hh, mm, ss = map(int, date_formatted.split(" ")[1].split(":"))
+        hour_start = hh + mm / 60 + ss / 3600
+        t_after_ref = ((hour_start - reference_hour) % 24) * 3600 * 1e3
+        data.t = (data.t + t_after_ref) / 1e3
+    else:
+        data.t = data.t / 1e3
+
+    return data
+
+
+def _cache_path(cache, file, min_time, max_time, reference_hour):
+    """
+    Build the on-disk cache filename for one ROI.
+
+    Reason: a cached frame is specific to the time window and reference hour it
+    was read with - rows outside the window were dropped and 't' has already
+    been rebased. Keying on the ROI alone hands back silently wrong timestamps,
+    or a short frame, as soon as any of those arguments change. The default
+    arguments reproduce the historic filename, so caches written by earlier
+    versions stay valid.
+
+    Args:
+        cache (str): Directory holding the cached pickles
+        file: Metadata row for this ROI
+        min_time (float): Start of the loaded window, in seconds
+        max_time (float): End of the loaded window, in seconds
+        reference_hour (float or None): Hour of day mapped to t = 0
+
+    Returns:
+        Path: Full path of the pickle for this ROI and these arguments
+    """
+    key = "cached_{}_{}_{}".format(file["machine_id"], file["region_id"], file["date"])
+
+    if reference_hour is not None:
+        key += "_ref{:g}".format(reference_hour)
+    if min_time:
+        key += "_min{:g}".format(min_time)
+    if max_time != float("inf"):
+        key += "_max{:g}".format(max_time)
+
+    return Path(cache) / f"{key}.pkl"
+
+
 def _connect_db(path, degraded=False):
     """
     Open an ethoscope database read-only, tolerating WAL state and read-only mounts.
@@ -696,6 +758,158 @@ def load_ethoscope(
     return data
 
 
+def _one_row_per_database(metadata):
+    """
+    Reduce a per-ROI metadata table to one row per database file.
+
+    link_meta_index() returns a row per ROI, but device-level tables (METADATA,
+    DIAGNOSTICS) are written once per recording. Collapse to the first ROI of
+    each machine/date (plus time, when the metadata distinguishes several runs
+    on one day) so those tables are read once each.
+
+    Args:
+        metadata (pd.DataFrame): Metadata dataframe as returned from link_meta_index
+
+    Returns:
+        pd.DataFrame: Copy of the metadata with one row per recording
+    """
+    meta_df = metadata.copy(deep=True)
+
+    keys = ["machine_name", "date"]
+    if "time" in meta_df.columns.tolist():
+        keys.append("time")
+
+    meta_df["check"] = meta_df[keys].astype(str).agg("".join, axis=1)
+    meta_df.drop_duplicates(
+        subset=["check"], keep="first", inplace=True, ignore_index=False
+    )
+
+    return meta_df
+
+
+def load_ethoscope_diagnostics(
+    metadata,
+    min_time=0,
+    max_time=float("inf"),
+    reference_hour=None,
+    progress=True,
+):
+    """
+    Load the recording-quality DIAGNOSTICS table from each ethoscope database.
+
+    DIAGNOSTICS is sampled periodically by the tracking daemon and describes the
+    *recording* rather than any one animal - achieved frame rate, image and frame
+    noise, focus, camera jitter and CPU temperature. It is therefore keyed by
+    machine rather than by ROI, and is returned as a tidy DataFrame rather than a
+    behavpy object. Merge it onto experimental variables with the 'machine_name'
+    and 'date' columns.
+
+    Only ethoscope firmwares that record diagnostics write this table. Databases
+    without one are skipped and reported, so a mixed-firmware experiment loads
+    whatever data exists instead of failing.
+
+    Args:
+        metadata (pd.DataFrame): Metadata dataframe as returned from link_meta_index function
+        min_time (int, optional): Minimum time to load data from, with 0 being experiment
+            start (in hours). Default is 0.
+        max_time (int, optional): Maximum time to load data to (in hours). Default is infinity.
+        reference_hour (int, optional): Hour at which lights on occurs or when timestamps
+            should equal 0. None equals the start of the experiment. Default is None.
+        progress (bool, optional): If True, show a tqdm progress bar (ipywidgets-based in
+            Jupyter, text in CLI). Default is True.
+
+    Returns:
+        pd.DataFrame: One row per diagnostics sample with columns 'machine_id',
+            'machine_name', 'date', 't' (seconds) and every variable recorded by the
+            firmware. Empty if no database carried a DIAGNOSTICS table.
+
+    Raises:
+        ValueError: If min_time is larger than max_time
+    """
+    if min_time > max_time:
+        raise ValueError("Error: min_time is larger than max_time")
+
+    if metadata.empty or "path" not in metadata.columns:
+        return pd.DataFrame()
+
+    meta_df = _one_row_per_database(metadata)
+
+    time_condition = "WHERE t >= {}".format(min_time * 60 * 60 * 1000)
+    if max_time != float("inf"):
+        time_condition += " AND t < {}".format(max_time * 60 * 60 * 1000)
+
+    frames = []
+    without_table = []
+
+    for i in tqdm(
+        meta_df.index,
+        desc="Reading diagnostics",
+        unit="db",
+        disable=not progress,
+    ):
+        row = meta_df.loc[i]
+        conn = None
+
+        try:
+            conn = _connect_db(row["path"])
+
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='DIAGNOSTICS'"
+            )
+            if not cursor.fetchone():
+                without_table.append(row["machine_name"])
+                continue
+
+            diagnostics = pd.read_sql_query(
+                f"SELECT * FROM DIAGNOSTICS {time_condition}", conn
+            )
+
+            date = pd.read_sql_query(
+                'SELECT value FROM METADATA WHERE field = "date_time"', conn
+            )
+            if date.empty:
+                raise ValueError("No date_time found in METADATA table")
+            date_formatted = time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.gmtime(float(date.iloc[0].iloc[0]))
+            )
+
+        except Exception as e:
+            tqdm.write(
+                "Diagnostics from {} could not be read: {}".format(
+                    row["machine_name"], e
+                )
+            )
+            continue
+
+        finally:
+            if conn is not None:
+                conn.close()
+
+        if diagnostics.empty:
+            continue
+
+        diagnostics = _rebase_time(diagnostics, date_formatted, reference_hour)
+        diagnostics.insert(0, "date", row["date"])
+        diagnostics.insert(0, "machine_name", row["machine_name"])
+        diagnostics.insert(0, "machine_id", row["machine_id"])
+        frames.append(diagnostics)
+
+    if without_table:
+        warnings.warn(
+            "No DIAGNOSTICS table in the databases for {}: these ethoscopes ran a "
+            "firmware that does not record diagnostics, and are absent from the "
+            "returned data.".format(", ".join(sorted(set(without_table)))),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    if not frames:
+        return pd.DataFrame()
+
+    return pd.concat(frames, ignore_index=True)
+
+
 def load_ethoscope_metadata(metadata, progress=True):
     """
     Extract metadata from ethoscope database files.
@@ -794,18 +1008,7 @@ def load_ethoscope_metadata(metadata, progress=True):
             if conn is not None:
                 conn.close()
 
-    meta_df = metadata.copy(deep=True)
-
-    if "time" in meta_df.columns.tolist():
-        meta_df["check"] = meta_df["machine_name"] + meta_df["date"] + meta_df["time"]
-        meta_df.drop_duplicates(
-            subset=["check"], keep="first", inplace=True, ignore_index=False
-        )
-    else:
-        meta_df["check"] = meta_df["machine_name"] + meta_df["date"]
-        meta_df.drop_duplicates(
-            subset=["check"], keep="first", inplace=True, ignore_index=False
-        )
+    meta_df = _one_row_per_database(metadata)
 
     rows = []
 
@@ -851,10 +1054,7 @@ def read_single_roi(
         raise ValueError("Error: min_time is larger than max_time")
 
     if cache is not None:
-        cache_name = "cached_{}_{}_{}.pkl".format(
-            file["machine_id"], file["region_id"], file["date"]
-        )
-        path = Path(cache) / Path(cache_name)
+        path = _cache_path(cache, file, min_time, max_time, reference_hour)
         if path.exists():
             data = pd.read_pickle(path)
             return data
@@ -926,16 +1126,7 @@ def read_single_roi(
                 data = data.drop(columns=["id"])
             # New format - keep the id column as it's a meaningful primary key
 
-        if reference_hour is not None:
-            t = date
-            t = t.split(" ")
-            hh, mm, ss = map(int, t[1].split(":"))
-            hour_start = hh + mm / 60 + ss / 3600
-            t_after_ref = ((hour_start - reference_hour) % 24) * 3600 * 1e3
-            data.t = (data.t + t_after_ref) / 1e3
-
-        else:
-            data.t = data.t / 1e3
+        data = _rebase_time(data, date, reference_hour)
 
         roi_width = max(roi_row["w"].iloc[0], roi_row["h"].iloc[0])
         for var_n in var_df["var_name"]:
@@ -1007,10 +1198,7 @@ def read_single_roi_optimized(
         raise ValueError("Error: min_time is larger than max_time")
 
     if cache is not None:
-        cache_name = "cached_{}_{}_{}.pkl".format(
-            file["machine_id"], file["region_id"], file["date"]
-        )
-        path = Path(cache) / Path(cache_name)
+        path = _cache_path(cache, file, min_time, max_time, reference_hour)
         if path.exists():
             data = pd.read_pickle(path)
             return data
@@ -1109,15 +1297,7 @@ def read_single_roi_optimized(
                 data = data.drop(columns=["id"])
             # New format - keep the id column as it's a meaningful primary key
 
-        if reference_hour is not None:
-            t = date
-            t = t.split(" ")
-            hh, mm, ss = map(int, t[1].split(":"))
-            hour_start = hh + mm / 60 + ss / 3600
-            t_after_ref = ((hour_start - reference_hour) % 24) * 3600 * 1e3
-            data.t = (data.t + t_after_ref) / 1e3
-        else:
-            data.t = data.t / 1e3
+        data = _rebase_time(data, date, reference_hour)
 
         if cache is not None:
             data.to_pickle(path)
