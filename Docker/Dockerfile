@@ -136,7 +136,22 @@ RUN pip3 install ethoscopy==2.3.0
 # Pre-populate tutorial datasets inside the installed package so non-root
 # JupyterHub users don't have to download them on first notebook run. The
 # pickles (~36 MB total) live in the ethoscopy repo, not the PyPI wheel.
-RUN python3 -c "from ethoscopy.misc.get_tutorials import download_tutorial_data, package_tutorial_data_dir; download_tutorial_data(dest_dir=package_tutorial_data_dir(), verbose=True)"
+#
+# This is best-effort. urlretrieve() has no timeout, so a stalled connection to
+# GitHub would hang the build forever (observed: a 36 MB / ~8 s download stuck
+# >25 min); cap each connection with socket.setdefaulttimeout and retry, using
+# overwrite so a socket killed mid-write cannot leave a partial file the next
+# attempt skips as "already present". If it still cannot reach GitHub (e.g. a
+# build host whose Docker bridge network is firewalled off from GitHub while the
+# container's runtime network is not), warn and continue rather than failing the
+# whole image: ethoscopy fetches the tutorial data on demand at first use, so a
+# missing prefetch only costs a one-time download inside the user's session.
+RUN for attempt in 1 2 3; do \
+        python3 -c "import socket; socket.setdefaulttimeout(60); from ethoscopy.misc.get_tutorials import download_tutorial_data, package_tutorial_data_dir; download_tutorial_data(dest_dir=package_tutorial_data_dir(), overwrite=True, verbose=True)" && exit 0; \
+        echo "tutorial download attempt $attempt failed; retrying in 5s..."; \
+        sleep 5; \
+    done; \
+    echo "WARNING: could not pre-populate tutorial data at build time; it will download on first use at runtime." >&2
 
 # ============================================================================
 # FINAL CONFIGURATION
