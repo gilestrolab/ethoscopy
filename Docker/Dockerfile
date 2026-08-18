@@ -105,19 +105,13 @@ RUN pip3 install \
         openpyxl \
         pyarrow \
         tqdm \
-        jupyterlab-git \
-        ethoscopy==2.2.1
+        jupyterlab-git
        # pycatch22
-
-# Pre-populate tutorial datasets inside the installed package so non-root
-# JupyterHub users don't have to download them on first notebook run. The
-# pickles (~36 MB total) live in the ethoscopy repo, not the PyPI wheel.
-RUN python3 -c "from ethoscopy.misc.get_tutorials import download_tutorial_data, package_tutorial_data_dir; download_tutorial_data(dest_dir=package_tutorial_data_dir(), verbose=True)"
 
 # Install Ethoscope from source
 RUN git clone https://github.com/gilestrolab/ethoscope.git /opt/ethoscope && \
     cd /opt/ethoscope/ && git checkout dev && \
-    cd /opt/ethoscope/src/ethoscope && pip install . 
+    cd /opt/ethoscope/src/ethoscope && pip install .
 
 # ============================================================================
 # USER SETUP
@@ -126,6 +120,23 @@ RUN git clone https://github.com/gilestrolab/ethoscope.git /opt/ethoscope && \
 # Add default user ethoscopelab with password ethoscopelab
 RUN useradd -m ethoscopelab && \
     echo 'ethoscopelab:ethoscope' | chpasswd
+
+# ============================================================================
+# ETHOSCOPY (kept last on purpose)
+# ============================================================================
+# Reason: ethoscopy is the fastest-moving pin in this image and the one most
+# often bumped for a bugfix. Everything above — the ~1 h R-package compile, the
+# scientific pip stack, ethoscope-from-source — is stable, so installing
+# ethoscopy in its own late layer means a version bump rebuilds only these two
+# steps (seconds) instead of invalidating the whole pip block. Keep this the
+# last software install; put nothing slow after it. Bumping the pin below is the
+# only change needed to ship a new ethoscopy into the image.
+RUN pip3 install ethoscopy==2.3.0
+
+# Pre-populate tutorial datasets inside the installed package so non-root
+# JupyterHub users don't have to download them on first notebook run. The
+# pickles (~36 MB total) live in the ethoscopy repo, not the PyPI wheel.
+RUN python3 -c "from ethoscopy.misc.get_tutorials import download_tutorial_data, package_tutorial_data_dir; download_tutorial_data(dest_dir=package_tutorial_data_dir(), verbose=True)"
 
 # ============================================================================
 # FINAL CONFIGURATION
