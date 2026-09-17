@@ -267,3 +267,103 @@ Report: analysis scripts + published report in `~/Downloads/Alice/analysis/`.
 ### Potential Agents
 
 - None proposed.
+
+## 2026-09-17 — Land PR #12 (Kaplan–Meier survival + plot_sleep_bouts) on branch `pr12-survival`
+
+**Context.** PR #12 (Lei Guo) merges cleanly but changes results of existing
+functions and has correctness problems (see review in session). Decision:
+Option A — fix on our own branch, merge with a merge commit so the author's
+commits survive, then close the PR pointing at the merge.
+
+**Hard constraint: no behaviour change for existing users** — `baseline()`
+and `curate_dead_animals*()` must give byte-identical results to `main` with
+default arguments. New behaviour only behind new, opt-in parameters.
+
+### Plan
+- [x] `baseline()`: keep vectorised version but restore main's dtype semantics
+      (integer `t` stays integer when no specimen is shifted).
+- [x] `_wrapped_curate_dead_animals`: revert the hardcoded 75 %/10 s coverage
+      rule. Add opt-in `min_coverage: float | None = None` to
+      `curate_dead_animals()` / `curate_dead_animals_interactions()`; expected
+      samples per window derived from the specimen's own median sampling
+      interval, never a hardcoded 10 s.
+- [x] New module `src/ethoscopy/survival.py` (pure functions, numpy): sliding
+      window death detection (shared with curate), zero-run detection,
+      Kaplan–Meier with Greenwood CI, per-subject survival table.
+- [x] Subject identity: default one subject per `id` (no merging). Optional
+      `subject_cols=[...]` merges recording segments across restarts using
+      metadata columns (e.g. `machine_name`, `region_id`), instead of parsing
+      the id string. Merging requires non-overlapping `t` → raise otherwise.
+- [x] Drop `count_unique_flies` and the "def1/def2 n" heuristic (only needed
+      because identity was parsed wrongly); drop dead `_wrapped_km_death_detect`.
+- [x] `facet_col` taken from metadata via `_check_lists` (no hardcoded
+      `species`); colours via `_get_colours`/`_check_grey` like `survival_plot`.
+- [x] Shared `_km_curves()` in core; thin `km_survival_plot()` per backend.
+- [x] `plot_sleep_bouts`: reuse `sleep_bout_analysis(as_hist=True)`; drop the
+      unsubstantiated "2.2.0 constructor bug" workaround after testing single-id.
+- [x] Google-style docstrings, no in-function imports, no magic numbers.
+- [x] Tests: `tests/test_survival.py` (KM against hand-computed values, table,
+      merging, coverage opt-in, curate identical to main on tutorial data,
+      baseline dtype), plot smoke tests both canvases.
+- [x] Verify: full suite green; diff curate/baseline results vs `main` on
+      `overview` tutorial data.
+
+### Review
+
+**Retrocompatibility, verified rather than asserted.** A fingerprint harness ran
+`curate_dead_animals()` (default, `time_window=12`, `prop_immobile=0.05`) and
+`baseline()` on `main` and on this branch and compared shape, dtypes and a hash
+of every row. Identical on the real `overview` tutorial dataset (327,031 rows)
+and on synthetic data at 10 s, 60 s and 300 s sampling, with gaps, with and
+without deaths, for all-zero, numeric and string baseline columns, and for
+unsorted input.
+
+**What changed relative to PR #12**
+
+- The 75 % coverage rule no longer applies by default. It is the opt-in
+  `min_coverage` argument on both curate methods, and expected samples come from
+  each specimen's own median sampling interval instead of a hardcoded 10 s. As
+  written in the PR it silently disabled death detection for anything not
+  sampled at 10 s.
+- `baseline()` keeps the vectorised shift but reproduces the previous dtype and
+  ordering exactly: an all-integer shift keeps an integer `t`, and data that did
+  not arrive sorted by id is still sorted, which `groupby` used to do as a side
+  effect.
+- Animal identity comes from metadata via `subject_cols`, not from parsing the id
+  string. The PR's parser extracted a file-name hash as the "machine number" and
+  merged different experiments that happened to share a machine and ROI. Merging
+  now raises if the sessions overlap in time, since it needs a shared clock.
+- Death detection, the Kaplan-Meier estimator and the survival table moved to
+  `src/ethoscopy/survival.py` as pure functions, so `curate_dead_animals()` and
+  the survival table share one definition of death.
+- Dropped `count_unique_flies()` and the "def1 vs def2" n heuristic, which only
+  existed to paper over the identity bug, and the unused `_wrapped_km_death_detect`.
+- `facet_col` now comes from the metadata through `_check_lists`, so faceting
+  works on any column rather than only `species`. Colours come from
+  `_get_colours`/`_check_grey` like every other plot.
+- Plot bodies are thin: `_km_curves()` and `_km_steps()` in core, and
+  `_bout_hist_data()` in `behavpy_draw`, are shared by both backends.
+- The "2.2.0 internal constructor bug" workaround is gone.
+  `sleep_bout_analysis(as_hist=True)` was tested with single-specimen data and
+  works, so `plot_sleep_bouts()` calls the public method.
+- Bar width in `plot_sleep_bouts()` now scales with `bin_size`; the previous
+  default drew hairlines for any bin size above 1 minute. The plotly backend
+  groups bars like seaborn instead of hiding one group behind the other.
+
+**Verification.** 315 tests pass, 11 skipped. `tests/test_survival.py` adds 39,
+including the Kaplan-Meier estimate and Greenwood band against hand-computed
+values, death detection at three sampling intervals, `min_coverage` being
+opt-in, session merging and its overlap error, and plot smoke tests on both
+canvases. All four figures were rendered and inspected.
+
+**Left alone.** The three plot files remain far over the 500-line guideline;
+they were already 3,000-4,000 lines before this work and splitting them is a
+separate job. Ruff reports the same error categories as `main` (`Optional[...]`
+style), since the new code follows the conventions of the files it sits in.
+
+### Discovered During Work
+
+- `pytest.ini` still declares `[tool:pytest]`, so markers such as
+  `@pytest.mark.unit` are unregistered and every test file emits
+  `PytestUnknownMarkWarning`. Renaming the section switches on
+  `--cov-fail-under=70` at the same time, so it needs checking separately.

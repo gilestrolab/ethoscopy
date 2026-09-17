@@ -1539,6 +1539,157 @@ class behavpy_plotly(behavpy_draw):
 
         return fig
 
+    # Kaplan-Meier survival section
+
+    def km_survival_plot(
+        self,
+        facet_col: None | str = None,
+        facet_arg: None | list = None,
+        facet_labels: None | list = None,
+        title: str = "",
+        t_column: str = "t",
+        mov_column: str = "moving",
+        time_window: int = 24,
+        prop_immobile: float = 0.01,
+        resolution: int = 24,
+        subject_cols: None | list = None,
+        restart_gap: float = 1.0,
+        min_coverage: None | float = None,
+        zero_run_hours: None | float = None,
+        second_mov_column: None | str = None,
+        time_unit: str = "hours",
+        show_ci: bool = True,
+        grids: bool = False,
+    ):
+        """
+        Generates a Kaplan-Meier plot of the probability of survival over time.
+
+        Unlike survival_plot(), which reads the end of tracking as death, this
+        method detects death from sustained immobility and censors specimens that
+        were still moving when their recording ended. Death is found with the same
+        rule as curate_dead_animals(), so the two agree.
+
+        See behavpy_seaborn.km_survival_plot() for the full parameter list; this
+        backend takes the same arguments except the matplotlib-only figsize and
+        censor_marks.
+
+        Args:
+            facet_col (str, optional): The name of the column to use for faceting.
+                Must be a metadata column. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. Default is None.
+            facet_labels (list, optional): The labels to use for faceting. Default is None.
+            title (str, optional): The title of the plot. Default is an empty string.
+            t_column (str, optional): The name of the time column in the DataFrame.
+                Default is 't'.
+            mov_column (str, optional): The name of the movement column. Default is 'moving'.
+            time_window (int, optional): Size of the immobility window in hours. Default is 24.
+            prop_immobile (float, optional): Mean movement at or below which a specimen is
+                considered dead. Default is 0.01.
+            resolution (int, optional): Number of window starts per window length. Default is 24.
+            subject_cols (list, optional): Metadata columns identifying one animal recorded
+                across several sessions, e.g. ['machine_name', 'region_id']. Default is None.
+            restart_gap (float, optional): Gap in hours read as a recording restart rather than
+                missing data. Default is 1.0.
+            min_coverage (float, optional): Fraction of expected samples a window must hold
+                before it is judged. Default is None.
+            zero_run_hours (float, optional): If set, a run of zero movement this long also
+                counts as death. Default is None.
+            second_mov_column (str, optional): Second movement column; death in either column
+                counts. Default is None.
+            time_unit (str, optional): 'hours' or 'days' for the x axis. Default is 'hours'.
+            show_ci (bool, optional): Shade the 95% Greenwood confidence band. Default is True.
+            grids (bool, optional): If True, grid lines are displayed. Default is False.
+
+        Returns:
+            fig (plotly.graph_objects.Figure): Figure object of the plot.
+
+        Raises:
+            ValueError: If time_unit is not 'hours' or 'days'.
+
+        Examples:
+            # Survival by genotype, with confidence bands
+            fig = df.km_survival_plot(facet_col='genotype')
+        """
+        if time_unit not in ("hours", "days"):
+            raise ValueError("time_unit must be 'hours' or 'days'")
+
+        curves, _ = self._km_curves(
+            facet_col,
+            facet_arg,
+            facet_labels,
+            t_column=t_column,
+            mov_column=mov_column,
+            time_window=time_window,
+            prop_immobile=prop_immobile,
+            resolution=resolution,
+            subject_cols=subject_cols,
+            restart_gap=restart_gap,
+            min_coverage=min_coverage,
+            zero_run_hours=zero_run_hours,
+            second_mov_column=second_mov_column,
+        )
+
+        time_div = 24.0 if time_unit == "days" else 1.0
+        palette = self._get_colours([label for label, _, _ in curves])
+
+        fig = go.Figure()
+        x_max = 0
+
+        for i, (label, km_df, n_subjects) in enumerate(curves):
+            colour = self._check_grey(label, palette[i])[1]
+            times, survival, lower, upper = self._km_steps(km_df, time_div)
+            x_max = max(x_max, times.max())
+            name = f"{label} (n = {n_subjects})" if label else f"n = {n_subjects}"
+
+            if show_ci:
+                fig.add_trace(
+                    go.Scatter(
+                        x=np.concatenate([times, times[::-1]]),
+                        y=np.concatenate([lower, upper[::-1]]),
+                        fill="toself",
+                        fillcolor=colour,
+                        opacity=0.12,
+                        mode="lines",
+                        line=dict(width=0, shape="hv"),
+                        showlegend=False,
+                        hoverinfo="skip",
+                    )
+                )
+
+            fig.add_trace(
+                go.Scatter(
+                    x=times,
+                    y=survival,
+                    mode="lines",
+                    name=name,
+                    line=dict(color=colour, shape="hv", width=2),
+                    hovertemplate=(
+                        f"{name}<br>Time: %{{x:.1f}} {time_unit}"
+                        "<br>Survival: %{y:.1%}<extra></extra>"
+                    ),
+                )
+            )
+
+        self._plot_ylayout(
+            fig,
+            yrange=[-0.02, 1.05],
+            t0=0,
+            dtick=0.2,
+            ylabel="Survival probability",
+            title=title,
+            grid=grids,
+        )
+        self._plot_xlayout(
+            fig,
+            xrange=[0, x_max * 1.02 if x_max > 0 else 1],
+            t0=0,
+            dtick=False,
+            xlabel=f"Time ({time_unit})",
+        )
+        fig.update_layout(yaxis=dict(tickformat=".0%"))
+
+        return fig
+
     # Response AGO/mAGO section
 
     def plot_response_quantify(
@@ -4049,4 +4200,120 @@ class behavpy_plotly(behavpy_draw):
             yref="paper",
             yshift=-30,
         )
+        return fig
+
+    def plot_sleep_bouts(
+        self,
+        sleep_column="asleep",
+        facet_col=None,
+        facet_arg=None,
+        facet_labels=None,
+        bin_size=1,
+        max_bins=60,
+        time_immobile=5,
+        asleep=True,
+        title="",
+        t_column="t",
+        grids=False,
+        bar_width=None,
+        xrange=None,
+    ):
+        """
+        Generates a bar chart of the distribution of sleep or wake bout durations.
+
+        Args:
+            sleep_column (str, optional): Column containing the boolean sleep state.
+                Default is 'asleep'.
+            facet_col (str, optional): The name of the column to use for faceting.
+                Must be a metadata column. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. Default is None.
+            facet_labels (list, optional): The labels to use for faceting. Default is None.
+            bin_size (int, optional): Histogram bin width in minutes. Default is 1.
+            max_bins (int, optional): Maximum number of bins. Default is 60.
+            time_immobile (int, optional): Shortest bout in minutes to include, the
+                5-minute rule by default. Default is 5.
+            asleep (bool, optional): True plots sleep bouts, False wake bouts. Default is True.
+            title (str, optional): The title of the plot. Default is an empty string.
+            t_column (str, optional): The name of the time column in the DataFrame.
+                Default is 't'.
+            grids (bool, optional): If True, grid lines are displayed. Default is False.
+            bar_width (float, optional): Bar width in minutes. None lets plotly size the
+                bars. Default is None.
+            xrange (tuple, optional): Manual x-axis range in minutes. Default is None.
+
+        Returns:
+            fig (plotly.graph_objects.Figure): Figure object of the plot.
+
+        Raises:
+            ValueError: If no group contains bouts long enough to plot.
+
+        Examples:
+            # Sleep bout distribution in 5 minute bins
+            fig = df.plot_sleep_bouts(bin_size=5, max_bins=30)
+
+            # Wake bouts, faceted by genotype
+            fig = df.plot_sleep_bouts(facet_col='genotype', asleep=False)
+        """
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        groups = self._bout_hist_data(
+            sleep_column=sleep_column,
+            facet_col=facet_col,
+            facet_arg=facet_arg,
+            facet_labels=facet_labels,
+            bin_size=bin_size,
+            max_bins=max_bins,
+            time_immobile=time_immobile,
+            asleep=asleep,
+            t_column=t_column,
+        )
+
+        fig = go.Figure()
+        all_x, y_max = [], []
+        # Reason: bars sit side by side, so the default width has to scale with
+        # the bin spacing or the groups overlap into one block.
+        width = bar_width if bar_width is not None else 0.8 * bin_size / len(groups)
+
+        for label, colour, bins, mean, error in groups:
+            all_x.extend(bins)
+            y_max.append(np.nanmax(mean + error))
+            fig.add_trace(
+                go.Bar(
+                    showlegend=True,
+                    name=label,
+                    x=bins,
+                    y=mean,
+                    width=width,
+                    opacity=0.6,
+                    marker=dict(color=colour, line=dict(color=colour)),
+                    error_y=dict(array=error, symmetric=True),
+                )
+            )
+
+        fig.update_layout(barmode="group", bargap=0, bargroupgap=0)
+
+        self._plot_ylayout(
+            fig,
+            yrange=[0, np.nanmax(y_max) + 0.02],
+            t0=0,
+            dtick=False,
+            ylabel="Proportion of total bouts",
+            title=title,
+            grid=grids,
+        )
+
+        if xrange is not None:
+            x_limits, x_start = list(xrange), xrange[0]
+        else:
+            x_limits = [time_immobile - bin_size / 2, np.max(all_x) + bin_size / 2]
+            x_start = time_immobile
+
+        self._plot_xlayout(
+            fig,
+            xrange=x_limits,
+            t0=x_start,
+            dtick=bin_size,
+            xlabel="Bout duration (minutes)",
+        )
+
         return fig
