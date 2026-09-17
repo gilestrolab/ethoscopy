@@ -1242,197 +1242,158 @@ class behavpy_seaborn(behavpy_draw):
 
         return fig
 
-    # Kaplan-Meier survival (ROI-dedup) section
+    # Kaplan-Meier survival section
 
     def km_survival_plot(
         self,
         facet_col: None | str = None,
-        facet_arg: None | str = None,
-        facet_labels: None | str = None,
-        title: str = "Kaplan-Meier Survival",
+        facet_arg: None | list = None,
+        facet_labels: None | list = None,
+        title: str = "",
         t_column: str = "t",
         mov_column: str = "moving",
         time_window: int = 24,
         prop_immobile: float = 0.01,
         resolution: int = 24,
-        figsize: tuple = (8, 5),
-        show_ci: bool = False,
-        grid: bool = True,
-        censoring_marks: bool = False,
-        cumulative: bool = False,
-        time_unit: str = 'hours',
+        subject_cols: None | list = None,
+        restart_gap: float = 1.0,
+        min_coverage: None | float = None,
         zero_run_hours: None | float = None,
         second_mov_column: None | str = None,
+        time_unit: str = "hours",
+        show_ci: bool = True,
+        censor_marks: bool = False,
+        grids: bool = False,
+        figsize: tuple = (0, 0),
     ):
         """
-        Kaplan-Meier survival plot with ROI-based deduplication.
+        Generates a Kaplan-Meier plot of the probability of survival over time.
 
-        Unlike ``survival_plot`` (which counts tracking end as death), this
-        method uses immobility-based death detection and properly censors
-        flies that are alive when tracking ends (e.g. due to machine
-        restarts or experiment end).  Flies are identified by (machine, ROI)
-        so that the same fly re-detected after a restart is tracked as ONE
-        individual.
+        Unlike survival_plot(), which reads the end of tracking as death, this
+        method detects death from sustained immobility and censors specimens that
+        were still moving when their recording ended. Death is found with the same
+        rule as curate_dead_animals(), so the two agree.
 
-        Parameters
-        ----------
-        facet_col : str, optional
-            Metadata column for faceting (e.g. 'species').
-        facet_arg : list, optional
-            Values of facet_col to include.
-        facet_labels : list, optional
-            Display labels for each facet_arg.
-        title : str
-        t_column, mov_column : str
-        time_window : int
-            Hours of immobility required to declare death.
-        prop_immobile : float
-            Mean movement fraction below which fly is considered dead.
-        resolution : int
-            Segments per time window.
-        figsize : tuple
-        show_ci : bool
-            Show 95 % Greenwood confidence band.
-        grid : bool
-        censoring_marks : bool
-            Show tick marks for censored observations.
-        zero_run_hours : float or None
-            If set, also detect death via longest zero-movement run ≥ this
-            many hours (e.g. 12).
-        second_mov_column : str or None
-            Optional second movement column for combined detection.
-            Death is declared if EITHER column indicates death.
+        Args:
+            facet_col (str, optional): The name of the column to use for faceting.
+                Must be a metadata column. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. Default is None.
+            facet_labels (list, optional): The labels to use for faceting. Default is None.
+            title (str, optional): The title of the plot. Default is an empty string.
+            t_column (str, optional): The name of the time column in the DataFrame.
+                Default is 't'.
+            mov_column (str, optional): The name of the movement column. Default is 'moving'.
+            time_window (int, optional): Size of the immobility window in hours. Default is 24.
+            prop_immobile (float, optional): Mean movement at or below which a specimen is
+                considered dead. Default is 0.01.
+            resolution (int, optional): Number of window starts per window length. Default is 24.
+            subject_cols (list, optional): Metadata columns identifying one animal recorded
+                across several sessions, e.g. ['machine_name', 'region_id']. Default is None.
+            restart_gap (float, optional): Gap in hours read as a recording restart rather than
+                missing data. Default is 1.0.
+            min_coverage (float, optional): Fraction of expected samples a window must hold
+                before it is judged. Default is None.
+            zero_run_hours (float, optional): If set, a run of zero movement this long also
+                counts as death. Default is None.
+            second_mov_column (str, optional): Second movement column; death in either column
+                counts. Default is None.
+            time_unit (str, optional): 'hours' or 'days' for the x axis. Default is 'hours'.
+            show_ci (bool, optional): Shade the 95% Greenwood confidence band. Default is True.
+            censor_marks (bool, optional): Mark censored specimens on the curve. Default is False.
+            grids (bool, optional): If True, horizontal grid lines are displayed. Default is False.
+            figsize (tuple, optional): Figure size. (0, 0) auto-sizes. Default is (0, 0).
 
-        Returns
-        -------
-        fig : matplotlib.figure.Figure
+        Returns:
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+
+        Raises:
+            ValueError: If time_unit is not 'hours' or 'days'.
+
+        Examples:
+            # Survival by genotype, with confidence bands
+            fig = df.km_survival_plot(facet_col='genotype')
+
+            # Merge recording sessions of the same animal and plot in days
+            fig = df.km_survival_plot(
+                subject_cols=['machine_name', 'region_id'], time_unit='days'
+            )
         """
-        import numpy as np
+        if time_unit not in ("hours", "days"):
+            raise ValueError("time_unit must be 'hours' or 'days'")
 
-        surv_df = self._build_km_survival_table(
-            t_column=t_column, mov_column=mov_column,
-            time_window=time_window, prop_immobile=prop_immobile,
-            resolution=resolution, cumulative=cumulative,
+        curves, _ = self._km_curves(
+            facet_col,
+            facet_arg,
+            facet_labels,
+            t_column=t_column,
+            mov_column=mov_column,
+            time_window=time_window,
+            prop_immobile=prop_immobile,
+            resolution=resolution,
+            subject_cols=subject_cols,
+            restart_gap=restart_gap,
+            min_coverage=min_coverage,
             zero_run_hours=zero_run_hours,
             second_mov_column=second_mov_column,
         )
 
-        # Use cumulative time if available
-        time_col = 'T_cumulative' if cumulative and 'T_cumulative' in surv_df.columns else 'T'
+        time_div = 24.0 if time_unit == "days" else 1.0
+        palette = self._get_colours([label for label, _, _ in curves])
 
-        # Determine facet groups
-        if facet_col and facet_col in surv_df.columns:
-            if facet_arg is None:
-                facet_arg = sorted(surv_df[facet_col].dropna().unique())
-            if facet_labels is None:
-                facet_labels = list(facet_arg)
-        else:
-            facet_arg = ['all']
-            facet_labels = ['all']
-            surv_df['_facet'] = 'all'
-            facet_col = '_facet'
-
-        plot_df = surv_df[surv_df[facet_col].isin(facet_arg)]
-
-        # Cross-validate n: def1 (unique machine+ROI) vs def2 (max at timepoints)
-        _, def2_max = self.count_unique_flies()
-        if facet_col and facet_col in surv_df.columns:
-            def1_counts = {arg: len(plot_df[plot_df[facet_col] == arg])
-                          for arg in facet_arg}
-        else:
-            def1_counts = {'all': len(plot_df)}
-
-        # Use the *larger* of def1/def2, warn if they disagree
-        validated_n = {}
-        for arg, label in zip(facet_arg, facet_labels):
-            d1 = def1_counts.get(arg, 0)
-            # def2 maps species values -> count; match to facet_arg
-            d2 = def2_max.get(arg, d1)  # fallback to d1 if species not in def2
-            validated_n[label] = max(d1, d2)
-            if d1 != d2 and d2 > 0:
-                import warnings
-                warnings.warn(
-                    f'{label}: def1 (unique ROI)={d1}, def2 (max at timepoints)={d2}. '
-                    f'Using n={max(d1, d2)}.'
-                )
-
-        # Compute KM per group
-        km_results = {}
-        for arg, label in zip(facet_arg, facet_labels):
-            group_data = plot_df[plot_df[facet_col] == arg]
-            if len(group_data) == 0:
-                continue
-            km_df = self.kaplan_meier_estimate(
-                group_data[time_col].values, group_data['E'].values)
-            km_results[label] = (km_df, validated_n[label])
-
-        # ---- Plot ----
-        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-        palette = {label: colors[i % len(colors)]
-                   for i, label in enumerate(facet_labels)}
-
+        if figsize == (0, 0):
+            figsize = (8, 5)
         fig, ax = plt.subplots(figsize=figsize)
 
-        time_div = 24.0 if time_unit == 'days' else 1.0
+        x_max = 0
+        for i, (label, km_df, n_subjects) in enumerate(curves):
+            colour = self._check_grey(label, palette[i])[1]
+            times, survival, lower, upper = self._km_steps(km_df, time_div)
+            x_max = max(x_max, times.max())
 
-        for label, (km_df, n_flies) in km_results.items():
-            color = palette.get(label, 'black')
-
-            plot_t = np.concatenate([[0.0], km_df['time'].values]) / time_div
-            plot_s = np.concatenate([[1.0], km_df['survival'].values])
-            plot_ci_l = np.concatenate([[1.0], km_df['ci_lower'].values])
-            plot_ci_u = np.concatenate([[1.0], km_df['ci_upper'].values])
-
-            ax.step(plot_t, plot_s, where='post', color=color,
-                    label=f'{label} (n={n_flies})', linewidth=2)
-
+            ax.step(
+                times,
+                survival,
+                where="post",
+                color=colour,
+                linewidth=2,
+                label=f"{label} (n = {n_subjects})" if label else f"n = {n_subjects}",
+            )
             if show_ci:
-                ax.fill_between(plot_t, plot_ci_l, plot_ci_u,
-                                step='post', color=color, alpha=0.12)
+                ax.fill_between(
+                    times,
+                    lower,
+                    upper,
+                    step="post",
+                    color=colour,
+                    alpha=0.12,
+                    linewidth=0,
+                )
+            if censor_marks:
+                censored = km_df[km_df["n_censored"] > 0]
+                ax.plot(
+                    censored["time"].to_numpy() / time_div,
+                    censored["survival"].to_numpy(),
+                    "|",
+                    color=colour,
+                    markersize=7,
+                    markeredgewidth=1.2,
+                )
 
-            # Censoring marks
-            if censoring_marks:
-                cens = plot_df[(plot_df[facet_col] ==
-                                facet_arg[facet_labels.index(label)]) &
-                               (plot_df['E'] == 0)]
-                for _, fly in cens.iterrows():
-                    tf = fly[time_col] / time_div
-                    sv = 1.0
-                    for j in range(len(plot_t)):
-                        if j == len(plot_t) - 1 or tf < plot_t[j + 1]:
-                            sv = plot_s[j]
-                            break
-                    ax.plot(tf, sv, '|', color=color, markersize=5,
-                            alpha=0.6, markeredgewidth=1)
-
-        time_label = 'Time (days)' if time_unit == 'days' else 'Time (hours)'
-        ax.set_xlabel(time_label)
-        ax.set_ylabel('Survival probability')
-        ax.set_title(title)
-        ax.set_xlim(0, plot_df[time_col].max() / time_div * 1.02)
+        # Reason: a little headroom keeps a censor mark at the end of
+        # recording from being clipped by the axis.
+        ax.set_xlim(0, x_max * 1.02 if x_max > 0 else 1)
         ax.set_ylim(-0.02, 1.05)
-        ax.legend(loc='lower left', frameon=True)
-        ax.yaxis.set_major_formatter(
-            plt.FuncFormatter(lambda y, _: f'{y:.0%}'))
+        ax.set_xlabel(f"Time ({time_unit})")
+        ax.set_ylabel("Survival probability")
+        ax.set_title(title)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.0%}"))
+        ax.legend(loc="lower left", frameon=False)
 
-        if grid:
-            ax.grid(True, alpha=0.2, linestyle='--')
-            ax.set_axisbelow(True)
-
-        n_dead = surv_df['E'].sum()
-        n_total = len(surv_df)
-        anno_parts = [f'{n_dead}/{n_total} deaths',
-                      f'tw={time_window}h pi={prop_immobile}']
-        if zero_run_hours:
-            anno_parts.append(f'zr={zero_run_hours}h')
-        if second_mov_column:
-            anno_parts.append(f'+{second_mov_column}')
-        ax.text(0.99, 0.02,
-                ' | '.join(anno_parts),
-                transform=ax.transAxes, fontsize=7,
-                ha='right', va='bottom', color='gray', style='italic')
+        if grids:
+            ax.grid(axis="y")
 
         plt.tight_layout()
+
         return fig
 
     # Response AGO/mAGO section
@@ -3553,143 +3514,94 @@ class behavpy_seaborn(behavpy_draw):
         xrange=None,
     ):
         """
-        Generates a seaborn/matplotlib histogram showing the distribution of
-        sleep/wake bouts.
-
-        Uses ``sleep_bout_analysis`` internally to generate the data, then
-        produces a matplotlib bar chart with overlaid groups and error bars.
+        Generates a bar chart of the distribution of sleep or wake bout durations.
 
         Args:
-            sleep_column (str, optional): Column containing boolean sleep state
-                data. Defaults to ``'asleep'``.
-            facet_col (str, optional): Metadata column to facet by.
-                Defaults to ``None``.
-            facet_arg (list, optional): Groups from *facet_col* to include.
-                If ``None``, all distinct groups are used. Defaults to ``None``.
-            facet_labels (list, optional): Display labels for facet groups.
-                If ``None``, labels from metadata are used. Defaults to ``None``.
-            bin_size (int, optional): Histogram bin width in minutes.
-                Defaults to ``1``.
-            max_bins (int, optional): Maximum number of bins. Defaults to ``60``.
-            time_immobile (int, optional): Minimum bout duration in minutes to
-                include (5-minute Drosophila sleep rule). Defaults to ``5``.
-            asleep (bool, optional): ``True`` to plot sleep bouts, ``False`` for
-                wake bouts. Defaults to ``True``.
-            title (str, optional): Plot title. Defaults to ``''``.
-            t_column (str, optional): Timestamp column name (seconds).
-                Defaults to ``'t'``.
-            grids (bool, optional): Show grid lines. Defaults to ``False``.
-            figsize (tuple, optional): Figure size as ``(width, height)``.
-                ``(0, 0)`` auto-sizes. Defaults to ``(0, 0)``.
-            bar_width (float, optional): Width of each bar in data-coordinate units
-                (minutes). ``None`` auto-calculates based on number of facet groups.
-                Defaults to ``None``.
-            xrange (tuple, optional): Manual x-axis range as ``(min, max)`` in
-                minutes. ``None`` auto-calculates. Defaults to ``None``.
+            sleep_column (str, optional): Column containing the boolean sleep state.
+                Default is 'asleep'.
+            facet_col (str, optional): The name of the column to use for faceting.
+                Must be a metadata column. Default is None.
+            facet_arg (list, optional): The arguments to use for faceting. Default is None.
+            facet_labels (list, optional): The labels to use for faceting. Default is None.
+            bin_size (int, optional): Histogram bin width in minutes. Default is 1.
+            max_bins (int, optional): Maximum number of bins. Default is 60.
+            time_immobile (int, optional): Shortest bout in minutes to include, the
+                5-minute rule by default. Default is 5.
+            asleep (bool, optional): True plots sleep bouts, False wake bouts. Default is True.
+            title (str, optional): The title of the plot. Default is an empty string.
+            t_column (str, optional): The name of the time column in the DataFrame.
+                Default is 't'.
+            grids (bool, optional): If True, horizontal grid lines are displayed. Default is False.
+            figsize (tuple, optional): Figure size. (0, 0) auto-sizes. Default is (0, 0).
+            bar_width (float, optional): Bar width in minutes. None sizes bars to the
+                number of groups. Default is None.
+            xrange (tuple, optional): Manual x-axis range in minutes. Default is None.
 
         Returns:
-            matplotlib.figure.Figure
+            fig (matplotlib.figure.Figure): Figure object of the plot.
+
+        Raises:
+            ValueError: If no group contains bouts long enough to plot.
 
         Examples:
-            # Basic sleep bout histogram
+            # Sleep bout distribution in 5 minute bins
             fig = df.plot_sleep_bouts(bin_size=5, max_bins=30)
 
-            # Faceted by genotype
-            fig = df.plot_sleep_bouts(facet_col='genotype', bin_size=5)
-
-            # Wake bouts instead
-            fig = df.plot_sleep_bouts(asleep=False)
+            # Wake bouts, faceted by genotype
+            fig = df.plot_sleep_bouts(facet_col='genotype', asleep=False)
         """
-        facet_arg, facet_labels = self._check_lists(
-            facet_col, facet_arg, facet_labels
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+
+        groups = self._bout_hist_data(
+            sleep_column=sleep_column,
+            facet_col=facet_col,
+            facet_arg=facet_arg,
+            facet_labels=facet_labels,
+            bin_size=bin_size,
+            max_bins=max_bins,
+            time_immobile=time_immobile,
+            asleep=asleep,
+            t_column=t_column,
         )
 
-        if facet_col is not None:
-            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
-        else:
-            d_list = [self.copy(deep=True)]
-            facet_labels = [""]
-
-        col_list = self._get_colours(d_list)
-
         if figsize == (0, 0):
-            figsize = (2 * len(facet_labels) + 4, 5)
+            figsize = (2 * len(groups) + 4, 5)
 
         fig, ax = plt.subplots(figsize=figsize)
 
-        n_groups = len(d_list)
-        _bar_width = bar_width if bar_width is not None else 0.8 / n_groups
-        max_y = []
-        all_x = []
+        # Reason: bars are drawn side by side in data units, so the default has
+        # to scale with the bin spacing or it collapses to a hairline.
+        width = bar_width if bar_width is not None else 0.8 * bin_size / len(groups)
+        all_x, y_max = [], []
 
-        for i, (data, name, col) in enumerate(
-            zip(d_list, facet_labels, col_list)
-        ):
-            # Use a plain DataFrame for groupby().apply() to avoid a
-            # constructor bug in ethoscopy 2.2.0 with single-specimen data.
-            plain_df = pd.DataFrame(
-                data.reset_index().copy(deep=True)
-            )
-            bouts = plain_df.groupby("id", group_keys=False).apply(
-                partial(
-                    self._wrapped_bout_analysis,
-                    var_name=sleep_column,
-                    as_hist=True,
-                    bin_size=bin_size,
-                    max_bins=max_bins,
-                    time_immobile=time_immobile,
-                    asleep=asleep,
-                    t_column=t_column,
-                )
-            )
-
-            if len(bouts) < 2:
-                print(f"Group '{name}' has no values and cannot be plotted")
-                continue
-
-            # Aggregate across specimens: mean prob per bin
-            plot_gb = bouts.groupby("bins").agg(
-                mean=("prob", "mean"),
-                SD=("prob", "std"),
-                count=("prob", "count"),
-            )
-            plot_gb["SE"] = (1.96 * plot_gb["SD"]) / np.sqrt(plot_gb["count"])
-
-            x = plot_gb.index.to_numpy() / 60  # seconds → minutes
-            y = plot_gb["mean"].to_numpy()
-            se = plot_gb["SE"].to_numpy()
-            all_x.extend(x)
-            max_y.append(np.nanmax(y + se) + 0.02)
-
-            # Offset bars so groups are side-by-side
-            offset = (i - n_groups / 2 + 0.5) * _bar_width
+        for i, (label, colour, bins, mean, error) in enumerate(groups):
+            all_x.extend(bins)
+            y_max.append(np.nanmax(mean + error))
+            # Reason: offset each group so overlapping bars stay readable.
+            offset = (i - len(groups) / 2 + 0.5) * width
             ax.bar(
-                x + offset,
-                y,
-                width=_bar_width,
-                yerr=se,
-                color=col,
+                bins + offset,
+                mean,
+                width=width,
+                yerr=error,
+                color=colour,
                 alpha=0.6,
-                label=name,
+                label=label,
                 error_kw={"elinewidth": 1.5, "capsize": 2},
             )
 
         ax.set_xlabel("Bout duration (minutes)")
         ax.set_ylabel("Proportion of total bouts")
-
-        if max_y:
-            ax.set_ylim(0, np.nanmax(max_y))
-        if all_x:
-            if xrange is not None:
-                ax.set_xlim(xrange)
-            else:
-                ax.set_xlim(time_immobile - _bar_width / 2, np.max(all_x) + bin_size + 0.5)
+        ax.set_ylim(0, np.nanmax(y_max) + 0.02)
+        ax.set_xlim(
+            xrange
+            if xrange is not None
+            else (time_immobile - bin_size / 2, np.max(all_x) + bin_size / 2)
+        )
+        ax.set_title(title)
 
         if facet_col is not None:
             ax.legend(title=facet_col)
-
-        ax.set_title(title)
-
         if grids:
             ax.grid(axis="y", alpha=0.3)
 

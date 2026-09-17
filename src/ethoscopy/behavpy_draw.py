@@ -2136,3 +2136,86 @@ class behavpy_draw(behavpy_core):
             grouped_data["state"] = grouped_data["state"].map(hmm_dict)
 
         return grouped_data, labels, colours, facet_col, facet_labels, palette_dict
+
+    def _bout_hist_data(
+        self,
+        sleep_column,
+        facet_col,
+        facet_arg,
+        facet_labels,
+        bin_size,
+        max_bins,
+        time_immobile,
+        asleep,
+        t_column,
+    ):
+        """
+        Aggregate sleep or wake bout durations into a histogram per facet group.
+
+        Shared by the plotly and seaborn implementations of plot_sleep_bouts().
+
+        Args:
+            sleep_column (str): Column containing the boolean sleep state.
+            facet_col (str): Metadata column to group by, or None.
+            facet_arg (list): Values of facet_col to include.
+            facet_labels (list): Display label per group.
+            bin_size (int): Histogram bin width in minutes.
+            max_bins (int): Maximum number of bins.
+            time_immobile (int): Shortest bout in minutes to include.
+            asleep (bool): True for sleep bouts, False for wake bouts.
+            t_column (str): Column containing timestamps in seconds.
+
+        Returns:
+            list: One (label, colour, bins, mean, error) tuple per group that
+                held enough data to plot, bins being in minutes and error the
+                standard error scaled to a 95% interval.
+        """
+        if facet_col is not None:
+            d_list = [self.xmv(facet_col, arg) for arg in facet_arg]
+        else:
+            d_list = [self]
+
+        palette = self._get_colours(d_list)
+        groups = []
+
+        for i, (data, label) in enumerate(zip(d_list, facet_labels)):
+            bouts = data.sleep_bout_analysis(
+                sleep_column=sleep_column,
+                as_hist=True,
+                bin_size=bin_size,
+                max_bins=max_bins,
+                time_immobile=time_immobile,
+                asleep=asleep,
+                t_column=t_column,
+            )
+
+            if len(bouts) < 2:
+                print(f"Group '{label}' has no values and cannot be plotted")
+                continue
+
+            gb_df = bouts.groupby("bins").agg(
+                **{
+                    "mean": ("prob", "mean"),
+                    "SD": ("prob", "std"),
+                    "count": ("prob", "count"),
+                }
+            )
+            error = (1.96 * gb_df["SD"]) / np.sqrt(gb_df["count"])
+
+            groups.append(
+                (
+                    label,
+                    self._check_grey(label, palette[i])[1],
+                    gb_df.index.to_numpy() / 60,  # seconds -> minutes
+                    gb_df["mean"].to_numpy(),
+                    error.to_numpy(),
+                )
+            )
+
+        if not groups:
+            raise ValueError(
+                "No data to plot. Check that your data has bouts longer than "
+                "time_immobile minutes."
+            )
+
+        return groups

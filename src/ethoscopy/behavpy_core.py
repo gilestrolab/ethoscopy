@@ -13,6 +13,11 @@ from tqdm.auto import tqdm
 
 from ethoscopy.analyse import max_velocity_detector
 from ethoscopy.misc.general_functions import concat, rle
+from ethoscopy.survival import (
+    kaplan_meier,
+    sliding_window_death,
+)
+from ethoscopy.survival import survival_table as build_survival_table
 from ethoscopy.misc.periodogram_functions import (  # noqa: F401 — resolved by eval() in _check_periodogram_input
     chi_squared,
     fourier,
@@ -688,21 +693,31 @@ class behavpy_core(pd.DataFrame):
                 # Already numeric
                 return float(val) if val is not None else 0
 
-        # Memory-optimised: vectorised shift instead of per-fly copy+concat
+        # Vectorised shift: one pass over the data instead of a copy per specimen.
+        # Reason: specimens absent from the metadata column keep an integer 0 so
+        # that a dataset shifted only by whole-number days keeps an integer
+        # timestamp column, as the per-specimen implementation did.
         shift_map = {
-            specimen_id: convert_baseline_value(day_dict.get(specimen_id, 0))
-            * day_length_seconds
+            specimen_id: (
+                convert_baseline_value(day_dict[specimen_id]) * day_length_seconds
+                if specimen_id in day_dict
+                else 0
+            )
             for specimen_id in self.index.unique()
         }
+        shifts = self.index.map(shift_map)
 
-        # Map each row's shift via its index value
-        tdf = self.reset_index()
-        shifts = tdf['id'].map(shift_map).fillna(0).values
-        tdf[t_column] = tdf[t_column] + shifts
+        new_data = self.copy(deep=False)
+        if (shifts != 0).any():
+            # Adding the mapped array reproduces the dtype the previous
+            # per-specimen concatenation produced: integer shifts keep an
+            # integer column, fractional ones promote it to float.
+            new_data[t_column] = self[t_column].to_numpy() + shifts.to_numpy()
 
-        new_data = tdf.set_index('id')
-        # Restore the index name that reset_index cleared
-        new_data.index.name = self.index.name or 'id'
+        # Grouping by specimen used to sort the frame by id as a side effect;
+        # preserve that ordering for data that does not already arrive sorted.
+        if not new_data.index.is_monotonic_increasing:
+            new_data = new_data.sort_index(kind="stable")
 
         # Return new behavpy object
         return self.__class__(
@@ -1140,6 +1155,7 @@ class behavpy_core(pd.DataFrame):
         prop_immobile: float,
         resolution: int,
         time_dict: Optional[Dict[str, List[int]]] = None,
+        min_coverage: Optional[float] = None,
     ) -> pd.DataFrame:
         """
         Internal method to detect and remove data after presumed death for a single specimen.
@@ -1156,6 +1172,10 @@ class behavpy_core(pd.DataFrame):
             resolution (int): Number of segments to divide each time window into
             time_dict (Optional[Dict[str, List[int]]], optional): Dictionary to store valid time ranges.
                 Keys are specimen IDs, values are [start_time, death_time]. Defaults to None.
+            min_coverage (Optional[float], optional): Fraction of the expected samples a window
+                must contain before it can be judged, expected samples being derived from the
+                specimen's own median sampling interval. None judges every window, as previous
+                versions did. Defaults to None.
 
         Returns:
             pd.DataFrame: Filtered DataFrame containing only data before detected death point
@@ -1171,39 +1191,23 @@ class behavpy_core(pd.DataFrame):
             raise ValueError("resolution cannot be larger than time_window")
 
         time_window = 60 * 60 * time_window
-        d = data[[time_var, moving_var]].copy(deep=True)
-        target_t = np.array(
-            list(
-                range(
-                    d[time_var].min().astype(int),
-                    d[time_var].max().astype(int),
-                    floor(time_window / resolution),
-                )
-            )
+        first_death_time = sliding_window_death(
+            data[time_var].to_numpy(),
+            data[moving_var].to_numpy(),
+            time_window_s=time_window,
+            step=floor(time_window / resolution),
+            prop_immobile=prop_immobile,
+            min_coverage=min_coverage,
         )
-        local_means = np.full(len(target_t), np.nan)
-        for idx, i in enumerate(target_t):
-            mask = d[time_var].between(i, i + time_window)
-            n_pts = mask.sum()
-            # Require ≥ 75% of expected data points (18h out of 24h)
-            min_pts = (time_window / 10.0) * 0.75
-            if n_pts >= min_pts:
-                local_means[idx] = d.loc[mask, moving_var].mean()
-
-        # Find indices where animal is considered dead
-        death_points = np.where(local_means <= prop_immobile)[0]
 
         # If no death points found, return original data
-        if len(death_points) == 0:
+        if first_death_time is None:
             if time_dict is not None:
                 time_dict[data["id"].iloc[0]] = [
                     data[time_var].min(),
                     data[time_var].max(),
                 ]
             return data
-
-        # Get first death point
-        first_death_time = target_t[death_points[0]]
 
         if time_dict is not None:
             time_dict[data["id"].iloc[0]] = [data[time_var].min(), first_death_time]
@@ -1217,6 +1221,7 @@ class behavpy_core(pd.DataFrame):
         time_window: int = 24,
         prop_immobile: float = 0.01,
         resolution: int = 24,
+        min_coverage: Optional[float] = None,
     ) -> "behavpy_core":
         """
         Detect and remove data after specimens are presumed dead based on extended immobility.
@@ -1236,6 +1241,11 @@ class behavpy_core(pd.DataFrame):
                 to consider specimen dead (0-1). Defaults to 0.01 (1%).
             resolution (int, optional): Number of segments to divide each time window into.
                 Controls overlap between windows. Defaults to 24.
+            min_coverage (float, optional): Fraction of expected samples a window must hold
+                before it is judged, expected samples being derived from each specimen's own
+                median sampling interval. Use it when recordings contain gaps, where a short
+                stretch of data at a machine stop can otherwise read as death. None judges
+                every window, matching previous versions. Defaults to None.
 
         Returns:
             behavpy_core: Filtered behavpy object containing only data before detected death points.
@@ -1259,6 +1269,7 @@ class behavpy_core(pd.DataFrame):
                     time_window=time_window,
                     prop_immobile=prop_immobile,
                     resolution=resolution,
+                    min_coverage=min_coverage,
                 )
             ),
             tdf.meta,
@@ -1275,6 +1286,7 @@ class behavpy_core(pd.DataFrame):
         time_window: int = 24,
         prop_immobile: float = 0.01,
         resolution: int = 24,
+        min_coverage: Optional[float] = None,
     ) -> Tuple["behavpy_core", "behavpy_core"]:
         """
         Remove interaction data after specimens are presumed dead based on movement data.
@@ -1296,6 +1308,11 @@ class behavpy_core(pd.DataFrame):
                 to consider specimen dead (0-1). Defaults to 0.01 (1%).
             resolution (int, optional): Number of segments to divide each time window into.
                 Controls overlap between windows. Defaults to 24.
+            min_coverage (float, optional): Fraction of expected samples a window must hold
+                before it is judged, expected samples being derived from each specimen's own
+                median sampling interval. Use it when recordings contain gaps, where a short
+                stretch of data at a machine stop can otherwise read as death. None judges
+                every window, matching previous versions. Defaults to None.
 
         Returns:
             Tuple[behavpy_core, behavpy_core]: Tuple containing:
@@ -1339,6 +1356,7 @@ class behavpy_core(pd.DataFrame):
                 prop_immobile=prop_immobile,
                 resolution=resolution,
                 time_dict=time_dict,
+                min_coverage=min_coverage,
             )
         )
 
@@ -2967,434 +2985,216 @@ class behavpy_core(pd.DataFrame):
             )
 
     # ------------------------------------------------------------------
-    # Kaplan-Meier survival analysis with ROI-based deduplication
+    # Kaplan-Meier survival analysis
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def kaplan_meier_estimate(times, events):
+    def _subject_key(self, subject_cols: Optional[List[str]]) -> pd.Series:
         """
-        Compute Kaplan-Meier survival estimate with Greenwood confidence intervals.
+        Map every specimen id to the subject it belongs to.
 
-        Parameters
-        ----------
-        times : array-like
-            Time to event or censoring (hours).
-        events : array-like
-            1 = event (death), 0 = censored.
+        Args:
+            subject_cols (Optional[List[str]]): Metadata columns that together
+                identify one animal, typically ['machine_name', 'region_id'] when
+                the same animal was recorded in several sessions. None gives every
+                specimen id its own subject.
 
-        Returns
-        -------
-        pd.DataFrame with columns: time, n_at_risk, n_events, n_censored,
-        survival, ci_lower, ci_upper
+        Returns:
+            pd.Series: Subject key per specimen id, indexed by specimen id.
+
+        Raises:
+            KeyError: If any column in subject_cols is missing from the metadata.
         """
-        import numpy as np
+        if subject_cols is None:
+            return pd.Series(self.meta.index, index=self.meta.index)
 
-        times = np.asarray(times, dtype=float)
-        events = np.asarray(events, dtype=int)
+        missing = [c for c in subject_cols if c not in self.meta.columns]
+        if missing:
+            raise KeyError(f"Columns {missing} are not metadata columns")
 
-        order = np.argsort(times)
-        times_sorted = times[order]
-        events_sorted = events[order]
+        return self.meta[subject_cols].astype(str).agg("|".join, axis=1)
 
-        unique_times = np.unique(times_sorted[events_sorted == 1])
-        if len(unique_times) == 0:
-            unique_times = np.unique(times_sorted)
-
-        records = []
-        survival = 1.0
-        greenwood_var = 0.0
-
-        for t in unique_times:
-            at_risk = np.sum(times_sorted >= t)
-            if at_risk == 0:
-                continue
-
-            n_events = np.sum((times_sorted == t) & (events_sorted == 1))
-            n_censored = np.sum((times_sorted == t) & (events_sorted == 0))
-
-            if n_events > 0:
-                survival *= (1 - n_events / at_risk)
-                if at_risk > n_events:
-                    greenwood_var += n_events / (at_risk * (at_risk - n_events))
-                else:
-                    greenwood_var += n_events / (at_risk * max(1, at_risk - n_events))
-
-            se_log = np.sqrt(max(greenwood_var, 0))
-            z = 1.96
-            ci_lower = np.exp(np.log(max(survival, 1e-10)) - z * se_log)
-            ci_upper = np.exp(np.log(max(survival, 1e-10)) + z * se_log)
-            ci_lower = np.clip(ci_lower, 0, 1)
-            ci_upper = np.clip(ci_upper, 0, 1)
-
-            records.append({
-                'time': t,
-                'n_at_risk': at_risk,
-                'n_events': n_events,
-                'n_censored': n_censored,
-                'survival': survival,
-                'ci_lower': ci_lower,
-                'ci_upper': ci_upper,
-            })
-
-        if len(records) == 0:
-            return pd.DataFrame([{
-                'time': 0, 'n_at_risk': len(times), 'n_events': 0, 'n_censored': 0,
-                'survival': 1.0, 'ci_lower': 1.0, 'ci_upper': 1.0
-            }])
-
-        result = pd.DataFrame(records)
-
-        # Extend step to last censored time so the curve doesn't
-        # stop at the final death.
-        max_time = times.max()
-        last_event_time = result['time'].iloc[-1]
-        if max_time > last_event_time:
-            last_row = result.iloc[-1].to_dict()
-            last_row['time'] = max_time
-            last_row['n_events'] = 0
-            last_row['n_censored'] = 0
-            result = pd.concat(
-                [result, pd.DataFrame([last_row])], ignore_index=True
-            )
-
-        return result
-
-    @staticmethod
-    def _wrapped_km_death_detect(data, t_column='t', mov_column='moving',
-                                  time_window=24, prop_immobile=0.01,
-                                  resolution=24):
+    def survival_table(
+        self,
+        t_column: str = "t",
+        mov_column: str = "moving",
+        time_window: int = 24,
+        prop_immobile: float = 0.01,
+        resolution: int = 24,
+        subject_cols: Optional[List[str]] = None,
+        restart_gap: float = 1.0,
+        min_coverage: Optional[float] = None,
+        zero_run_hours: Optional[float] = None,
+        second_mov_column: Optional[str] = None,
+    ) -> pd.DataFrame:
         """
-        Detect death time for a single fly based on sustained immobility.
+        Build a per-subject time-to-death table for Kaplan-Meier analysis.
 
-        Returns death timestamp (seconds) or None if no death detected.
+        Death is detected with the same sliding window of immobility that
+        curate_dead_animals() uses, so both agree on when an animal died.
+        Subjects still moving when their recording ends are censored rather
+        than counted as deaths, which is what separates this from
+        survival_plot().
+
+        Args:
+            t_column (str, optional): Column containing timestamps in seconds.
+                Defaults to 't'.
+            mov_column (str, optional): Column containing movement data.
+                Defaults to 'moving'.
+            time_window (int, optional): Size of the immobility window in hours.
+                Defaults to 24.
+            prop_immobile (float, optional): Mean movement at or below which the
+                animal is considered dead. Defaults to 0.01.
+            resolution (int, optional): Number of window starts per window length.
+                Defaults to 24.
+            subject_cols (List[str], optional): Metadata columns identifying one
+                animal across several recordings, e.g. ['machine_name', 'region_id'].
+                Sessions merged this way must not overlap in time. None treats every
+                specimen id as its own animal. Defaults to None.
+            restart_gap (float, optional): Gap in hours above which a jump in the
+                time axis is read as a recording restart rather than missing data.
+                Defaults to 1.0.
+            min_coverage (float, optional): Fraction of expected samples a window
+                must hold before it is judged. Defaults to None.
+            zero_run_hours (float, optional): If set, a contiguous run of zero
+                movement lasting this many hours also counts as death.
+                Defaults to None.
+            second_mov_column (str, optional): Second movement column; death in
+                either column counts. Defaults to None.
+
+        Returns:
+            pd.DataFrame: One row per subject, indexed by subject key, with columns
+                'id' (a specimen id belonging to the subject), 'T' (hours from first
+                sample to death or censoring), 'E' (1 dead, 0 censored), 'start_time',
+                'end_time' and 'n_segments'.
+
+        Raises:
+            KeyError: If t_column or mov_column are missing from the data.
+            ValueError: If specimens merged into one subject overlap in time.
+
+        Examples:
+            # Time to death per specimen
+            df.survival_table()
+
+            # Merge recording sessions of the same animal
+            df.survival_table(subject_cols=['machine_name', 'region_id'])
         """
-        import numpy as np
+        for col in [t_column, mov_column] + (
+            [second_mov_column] if second_mov_column else []
+        ):
+            if col not in self.columns:
+                raise KeyError(f'Column "{col}" is not in the data')
 
-        if resolution <= 0 or resolution > time_window:
-            resolution = max(1, time_window)
-
-        time_window_s = 60 * 60 * time_window
-        d = data[[t_column, mov_column]].copy()
-
-        t_min = d[t_column].min()
-        t_max = d[t_column].max()
-
-        step = max(1, int(np.floor(time_window_s / resolution)))
-        target_t = np.arange(int(t_min), int(t_max), step)
-
-        if len(target_t) == 0:
-            return None
-
-        local_means = np.array([
-            d[d[t_column].between(i, i + time_window_s)][mov_column].mean()
-            for i in target_t
-        ])
-
-        death_points = np.where(local_means <= prop_immobile)[0]
-        if len(death_points) == 0:
-            return None
-
-        return target_t[death_points[0]]
-
-    def _build_km_survival_table(self, t_column='t', mov_column='moving',
-                                  time_window=24, prop_immobile=0.01,
-                                  resolution=24, cumulative=False,
-                                  zero_run_hours=None,
-                                  second_mov_column=None):
-        """
-        Build a per-fly survival table with ROI-based deduplication.
-
-        Flies are identified by (machine_name, ROI) rather than by ID,
-        so the same fly re-detected after a machine restart is tracked
-        as one individual.  Death is detected via three methods (earliest wins):
-          1. Sliding-window mean immobility (existing method)
-          2. Longest contiguous zero-run (optional, if zero_run_hours is set)
-          3. Second movement column check (optional, if second_mov_column is set)
-
-        Parameters
-        ----------
-        cumulative : bool
-            If True, T is computed as continuous hours from the earliest
-            data point across all flies.  Adds a 'T_cumulative' column.
-        zero_run_hours : float or None
-            If set, also detect death when the longest contiguous run of
-            zero movement exceeds this many hours (e.g. 12).
-        second_mov_column : str or None
-            Optional second movement column. Death is declared if EITHER
-            column indicates death.
-
-        Returns
-        -------
-        pd.DataFrame with columns:
-            id, T, E, species, machine_name, roi, start_time, end_time,
-            n_segments (and T_cumulative if cumulative=True)
-        """
-        import numpy as np
-
-        # --- Memory-optimised: avoid full-data copies ---
-
-        # Build species lookup dict from meta (no merge needed)
-        species_map = {}
-        meta = self.meta
-        if 'species' in meta.columns:
-            species_map = meta['species'].to_dict()
-
-        # Work with the index (fly IDs) and t/mov columns as numpy arrays
-        # to avoid converting id to str, merge, and per-fly DataFrame splits.
-        id_vals = self.index.values.astype(str)
-        t_vals = self[t_column].values.astype(np.float64)
-        mov_vals = self[mov_column].values.astype(np.float64)
-        # Second movement column (optional)
-        if second_mov_column and second_mov_column in self.columns:
-            mov2_vals = self[second_mov_column].values.astype(np.float64)
-        else:
-            mov2_vals = None
-        n_rows = len(t_vals)
-
-        # Extract machine_name and roi from id strings
-        mach_nums = np.array([s.split('_')[-1].split('|')[0] for s in id_vals])
-        machine_names = np.char.add('ETHOSCOPE_', mach_nums)
-        rois = np.array([s.split('|')[-1] for s in id_vals])
-        fly_keys = np.char.add(machine_names, '_ROI')
-        fly_keys = np.char.add(fly_keys, rois)
-
-        # Get sort order by fly_key then t
-        sort_idx = np.lexsort((t_vals, fly_keys))
-        fly_keys_sorted = fly_keys[sort_idx]
-        t_sorted = t_vals[sort_idx]
-        id_sorted = id_vals[sort_idx]
-        mov_sorted = mov_vals[sort_idx]
-        mov2_sorted = mov2_vals[sort_idx] if mov2_vals is not None else None
-        machine_sorted = machine_names[sort_idx]
-        roi_sorted = rois[sort_idx]
-
-        # Find fly group boundaries
-        fly_changes = np.where(fly_keys_sorted[:-1] != fly_keys_sorted[1:])[0] + 1
-        fly_starts = np.concatenate([[0], fly_changes])
-        fly_ends = np.concatenate([fly_changes, [len(fly_keys_sorted)]])
-
-        results = []
-        time_window_s = 60 * 60 * time_window
-        resolution = max(1, min(resolution, time_window))
-        step = max(1, int(time_window_s / resolution))
-        min_pts = (time_window_s / 10.0) * 0.75
-
-        def _detect_in_segment(seg_t, seg_mov):
-            """Returns earliest death_time in segment, or None."""
-            best = None
-            t_min, t_max = seg_t[0], seg_t[-1]
-            target_t = np.arange(int(t_min), int(t_max), step)
-
-            if len(target_t) == 0:
-                return None
-
-            # Method 1: sliding-window mean
-            local_means = np.full(len(target_t), np.nan)
-            for idx, i in enumerate(target_t):
-                mask = (seg_t >= i) & (seg_t < i + time_window_s)
-                n_pts = mask.sum()
-                if n_pts >= min_pts:
-                    local_means[idx] = seg_mov[mask].mean()
-            death_points = np.where(local_means <= prop_immobile)[0]
-            if len(death_points) > 0:
-                best = target_t[death_points[0]]
-
-            # Method 2: zero-run detection
-            if zero_run_hours is not None and zero_run_hours > 0:
-                zero_run_s = zero_run_hours * 3600.0
-                seg_mov_clean = np.nan_to_num(seg_mov, nan=1.0)
-                is_zero = (seg_mov_clean == 0)
-
-                shifted = np.roll(is_zero, 1)
-                shifted[0] = False
-                run_starts = np.where(is_zero & ~shifted)[0]
-
-                shifted_end = np.roll(is_zero, -1)
-                shifted_end[-1] = False
-                run_ends = np.where(is_zero & ~shifted_end)[0] + 1
-
-                for rs, re in zip(run_starts, run_ends):
-                    if rs < re and re <= len(seg_t):
-                        dur = seg_t[re - 1] - seg_t[rs]
-                        if dur >= zero_run_s:
-                            zr_death = seg_t[rs]
-                            if best is None or zr_death < best:
-                                best = zr_death
-
-            return best
-
-        for start, end in zip(fly_starts, fly_ends):
-            f_t = t_sorted[start:end]
-            f_mov = mov_sorted[start:end]
-            f_mov2 = mov2_sorted[start:end] if mov2_sorted is not None else None
-            fly_id = id_sorted[start]
-            machine = machine_sorted[start]
-            roi = roi_sorted[start]
-            species = str(species_map.get(fly_id, 'unknown'))
-
-            if len(f_t) == 0:
-                continue
-
-            # Split into continuous segments (gap > 3600s = restart)
-            gaps = np.diff(f_t)
-            seg_breaks = np.where(gaps > 3600)[0]
-
-            if len(seg_breaks) == 0:
-                seg_indices = [(0, len(f_t))]
-            else:
-                seg_indices = []
-                prev = 0
-                for brk in seg_breaks:
-                    seg_indices.append((prev, brk + 1))
-                    prev = brk + 1
-                seg_indices.append((prev, len(f_t)))
-
-            first_s, first_e = seg_indices[0]
-            last_s, last_e = seg_indices[-1]
-            t_first = f_t[first_s]
-            t_last = f_t[last_e - 1]
-
-            # Death detection on ALL segments — use the earliest death
-            death_time = None
-            for seg_idx in range(len(seg_indices)):
-                seg_s, seg_e = seg_indices[seg_idx]
-                seg_t = f_t[seg_s:seg_e]
-                seg_mov = f_mov[seg_s:seg_e]
-
-                # Check primary column
-                dt = _detect_in_segment(seg_t, seg_mov)
-                if dt is not None and (death_time is None or dt < death_time):
-                    death_time = dt
-
-                # Check secondary movement column (optional)
-                if f_mov2 is not None:
-                    seg_mov2 = f_mov2[seg_s:seg_e]
-                    dt2 = _detect_in_segment(seg_t, seg_mov2)
-                    if dt2 is not None and (death_time is None or dt2 < death_time):
-                        death_time = dt2
-
-            if death_time is not None:
-                T_hours = (death_time - t_first) / 3600.0
-                E = 1
-                end_time_val = death_time
-            else:
-                T_hours = (t_last - t_first) / 3600.0
-                E = 0
-                end_time_val = t_last
-
-            results.append({
-                'id': fly_id,
-                'T': T_hours,
-                'E': E,
-                'species': species,
-                'machine_name': machine,
-                'roi': roi,
-                'start_time': t_first,
-                'end_time': end_time_val,
-                'n_segments': len(seg_indices),
-            })
-
-        surv_df = pd.DataFrame(results)
-
-        if cumulative:
-            surv_df['T_cumulative'] = surv_df['end_time'] / 3600.0
-
-        return surv_df
-
-    def km_death_table(self, t_column='t', mov_column='moving',
-                       time_window=24, prop_immobile=0.01, resolution=24,
-                       cumulative=False, time_unit='hours',
-                       zero_run_hours=None, second_mov_column=None):
-        """
-        Return a DataFrame of dead flies with genotype, machine, ROI, and
-        time of death.
-
-        Parameters
-        ----------
-        time_unit : str
-            'hours' or 'days'.
-        zero_run_hours : float or None
-            If set, also detect death via longest zero-movement run >= this
-            many hours.
-        second_mov_column : str or None
-            Optional second movement column for combined detection.
-
-        Returns
-        -------
-        pd.DataFrame with columns: genotype, machine, ROI, T
-        """
-        surv = self._build_km_survival_table(
-            t_column=t_column, mov_column=mov_column,
-            time_window=time_window, prop_immobile=prop_immobile,
-            resolution=resolution, cumulative=cumulative,
+        return build_survival_table(
+            pd.DataFrame(self),
+            self._subject_key(subject_cols),
+            t_column=t_column,
+            mov_column=mov_column,
+            time_window=time_window,
+            prop_immobile=prop_immobile,
+            resolution=resolution,
+            restart_gap=restart_gap,
+            min_coverage=min_coverage,
             zero_run_hours=zero_run_hours,
             second_mov_column=second_mov_column,
         )
-        time_col = 'T_cumulative' if cumulative and 'T_cumulative' in surv.columns else 'T'
-        div = 24.0 if time_unit == 'days' else 1.0
 
-        dead = surv[surv['E'] == 1].sort_values(time_col).copy()
-        dead['T'] = dead[time_col] / div
-
-        return dead[['species', 'machine_name', 'roi', 'T']].rename(
-            columns={'species': 'genotype', 'machine_name': 'machine'}
-        ).reset_index(drop=True)
-
-    def count_unique_flies(self, timepoints=None, t_column='t'):
+    def km_death_table(
+        self,
+        meta_cols: Optional[List[str]] = None,
+        time_unit: str = "hours",
+        **kwargs,
+    ) -> pd.DataFrame:
         """
-        Count unique flies (by machine_name, ROI) active at specific
-        timepoints.  Returns the *maximum* count — the "definition 2"
-        cross-validation of the true n per genotype.
+        List the subjects detected as dead, with their time of death.
 
-        Parameters
-        ----------
-        timepoints : list of float, optional
-            Hours at which to count. Default: [0, 10, 50, 100, 150].
-        t_column : str
+        Args:
+            meta_cols (List[str], optional): Metadata columns to report alongside
+                each death, e.g. ['species', 'machine_name']. Defaults to None.
+            time_unit (str, optional): 'hours' or 'days'. Defaults to 'hours'.
+            **kwargs: Passed to survival_table(), e.g. time_window, prop_immobile,
+                subject_cols.
 
-        Returns
-        -------
-        dict : {timepoint: n_flies_per_species_dict}
-        max_n : dict, {species: max count across all timepoints}
+        Returns:
+            pd.DataFrame: Dead subjects ordered by time of death, with columns
+                'id', the requested metadata columns, and 'T'.
+
+        Raises:
+            KeyError: If a requested metadata column does not exist.
+            ValueError: If time_unit is not 'hours' or 'days'.
+
+        Examples:
+            df.km_death_table(meta_cols=['species'], time_unit='days')
         """
-        if timepoints is None:
-            timepoints = [0, 10, 50, 100, 150]
+        if time_unit not in ("hours", "days"):
+            raise ValueError("time_unit must be 'hours' or 'days'")
 
-        # Memory-optimised: use numpy arrays instead of copy+merge
-        id_vals = self.index.values.astype(str)
-        t_vals = self[t_column].values.astype(np.float64)
+        table = self.survival_table(**kwargs)
+        dead = table[table["E"] == 1].sort_values("T")
+        out = dead[["id"]].copy()
 
-        # Species via dict lookup (no merge)
-        species_map = {}
-        if 'species' in self.meta.columns:
-            species_map = self.meta['species'].to_dict()
+        for col in meta_cols or []:
+            if col not in self.meta.columns:
+                raise KeyError(f'Column "{col}" is not a metadata column')
+            out[col] = self.meta[col].reindex(dead["id"]).to_numpy()
 
-        # Build fly_key directly from id strings
-        mach_nums = np.array([s.split('_')[-1].split('|')[0] for s in id_vals])
-        machine_names = np.char.add('ETHOSCOPE_', mach_nums)
-        rois = np.array([s.split('|')[-1] for s in id_vals])
-        fly_keys = np.char.add(np.char.add(machine_names, '_ROI'), rois)
+        out["T"] = dead["T"] / (24.0 if time_unit == "days" else 1.0)
+        return out.reset_index(drop=True)
 
-        species_vals = np.array([str(species_map.get(i, 'unknown')) for i in id_vals])
+    def _km_curves(
+        self,
+        facet_col: Optional[str] = None,
+        facet_arg: Optional[List] = None,
+        facet_labels: Optional[List] = None,
+        **kwargs,
+    ) -> Tuple[List[Tuple[str, pd.DataFrame, int]], pd.DataFrame]:
+        """
+        Compute one Kaplan-Meier curve per facet group.
 
-        t_min = t_vals.min()
-        species_list = sorted(set(species_vals))
+        Shared by the plotly and seaborn km_survival_plot() implementations.
 
-        result = {}
-        max_per_species = {sp: 0 for sp in species_list}
+        Args:
+            facet_col (str, optional): Metadata column to group by. Defaults to None.
+            facet_arg (list, optional): Values of facet_col to include. Defaults to None.
+            facet_labels (list, optional): Display labels for each group. Defaults to None.
+            **kwargs: Passed to survival_table().
 
-        for tp in timepoints:
-            tp_sec = t_min + tp * 3600
-            mask = (t_vals >= tp_sec) & (t_vals < tp_sec + 3600)
+        Returns:
+            Tuple[List[Tuple[str, pd.DataFrame, int]], pd.DataFrame]: A list of
+                (label, Kaplan-Meier estimate, number of subjects) per group, and
+                the underlying survival table.
+        """
+        facet_arg, facet_labels = self._check_lists(facet_col, facet_arg, facet_labels)
+        table = self.survival_table(**kwargs)
 
-            # Unique fly_key + species pairs in window
-            pairs = set(zip(fly_keys[mask], species_vals[mask]))
+        if facet_col is not None:
+            table = table.assign(
+                **{facet_col: self.meta[facet_col].reindex(table["id"]).to_numpy()}
+            )
 
-            counts = {}
-            for sp in species_list:
-                n = sum(1 for _, s in pairs if s == sp)
-                counts[sp] = n
-                max_per_species[sp] = max(max_per_species[sp], n)
-            result[f't={tp}h'] = counts
+        curves = []
+        for arg, label in zip(facet_arg, facet_labels):
+            group = table if facet_col is None else table[table[facet_col] == arg]
+            if len(group) == 0:
+                print(f"Group '{label}' has no subjects and cannot be plotted")
+                continue
+            curves.append((label, kaplan_meier(group["T"], group["E"]), len(group)))
 
-        return result, max_per_species
+        return curves, table
+
+    @staticmethod
+    def _km_steps(km_df: pd.DataFrame, time_div: float) -> Tuple[np.ndarray, ...]:
+        """
+        Turn a Kaplan-Meier estimate into step-plot coordinates starting at (0, 1).
+
+        Args:
+            km_df (pd.DataFrame): Estimate as returned by kaplan_meier().
+            time_div (float): Divisor applied to time, 24 to plot days.
+
+        Returns:
+            Tuple[np.ndarray, ...]: Time, survival, lower and upper confidence arrays.
+        """
+        time = np.concatenate([[0.0], km_df["time"].to_numpy()]) / time_div
+        survival = np.concatenate([[1.0], km_df["survival"].to_numpy()])
+        lower = np.concatenate([[1.0], km_df["ci_lower"].to_numpy()])
+        upper = np.concatenate([[1.0], km_df["ci_upper"].to_numpy()])
+        return time, survival, lower, upper
