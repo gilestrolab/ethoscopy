@@ -8,7 +8,7 @@ The ethoscopelab docker instance lives on dockerhub at the following address: [h
 
 The files in this folder can be used to recreate the image as uploaded on dockerhub.
 
-The command to use to recreate that image is `JUPYTER_HUB_TAG=5.3.0 ETHOSCOPE_LAB_TAG=1.0 docker compose build`. This creates the image with the specified tag. For Docker Hub deployment, push the image: `docker push ggilestro/ethoscope-lab:1.0`. To also create a latest tag: `docker tag ggilestro/ethoscope-lab:1.0 ggilestro/ethoscope-lab:latest && docker push ggilestro/ethoscope-lab:latest`. You can verify your local images with `docker images | grep ethoscope-lab`.
+The command to use to recreate that image is `JUPYTER_HUB_TAG=5.4.0 ETHOSCOPE_LAB_TAG=1.5 docker compose build`. This creates the image with the specified tag. For Docker Hub deployment, push the image: `docker push ggilestro/ethoscope-lab:1.5`. To also create a latest tag: `docker tag ggilestro/ethoscope-lab:1.5 ggilestro/ethoscope-lab:latest && docker push ggilestro/ethoscope-lab:latest`. You can verify your local images with `docker images | grep ethoscope-lab`.
 
 After creation, the image can be run using the enclosed `docker-compose.yml` file, replacing values as fit.
 
