@@ -9,3 +9,16 @@ ethoscopy.egg-info/
 *.pkl
 .python-version
 tmp
+
+# JupyterHub runtime state, generated when the Docker stack first runs.
+# jupyterhub_cookie_secret signs session cookies and jupyterhub.sqlite holds
+# user records and API tokens; neither belongs in the repo. Committing the
+# secret would be the same failure as the tracked .env.keycloak removed in
+# 6cbcbbe. jupyterhub_config.py stays tracked - it is configuration, not state.
+Docker/jupyterhub_data/jupyterhub_cookie_secret
+Docker/jupyterhub_data/jupyterhub.sqlite
+
+# Coverage output
+.coverage
+htmlcov/
+coverage.xml

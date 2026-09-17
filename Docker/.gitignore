@@ -1,0 +1,17 @@
+# Environment files (contain secrets)
+.env
+!.env.*.example
+
+# JupyterHub runtime data
+jupyterhub_data/jupyterhub.sqlite
+jupyterhub_data/jupyterhub_cookie_secret
+jupyterhub_data/jupyterhub-proxy.pid
+jupyterhub_data/*.log
+
+# Backup files
+*.bak
+*~
+
+# Docker volumes
+volumes/
+.env.keycloak

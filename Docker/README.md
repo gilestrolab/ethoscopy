@@ -12,6 +12,41 @@ The command to use to recreate that image is `JUPYTER_HUB_TAG=5.3.0 ETHOSCOPE_LA
 
 After creation, the image can be run using the enclosed `docker-compose.yml` file, replacing values as fit.
 
+### The GPU does not speed up the build (it is a *runtime* resource)
+
+A recurring confusion: **`docker compose build` cannot use the GPU, no matter what.**
+The host does have an NVIDIA GPU (e.g. an RTX A4000) and the *running* container is
+given access to it via the `deploy.resources.reservations.devices: capabilities: ["gpu"]`
+block in `docker-compose.yml` — that is what GPU-aware analysis inside the notebook uses.
+But building the image is an entirely separate phase that runs on CPU: BuildKit has no
+GPU path, and every slow step here is CPU/IO-bound anyway.
+
+What actually makes the build slow (~1–1.5 h from cold) is, in order:
+
+1. **Compiling the 8 R packages** from source (`Rscript install_r_packages.r`) — by far
+   the biggest cost, and pure CPU.
+2. `pip install` of the JupyterLab / notebook-intelligence / scientific stack.
+3. `apt-get` and the `git clone` of ethoscope.
+
+None of these is GPU-accelerable. If a rebuild is taking the full hour+ it is almost
+always because the **build cache was lost**, forcing the R compile to re-run. To avoid
+re-paying it:
+
+- **Do not kill a build mid-layer.** BuildKit only commits a layer's cache when that
+  layer *finishes*; a build killed during the R step discards it and the next build
+  recompiles from scratch.
+- **Bumping `ethoscopy==X.Y.Z` only invalidates the pip layer and below.** The R compile
+  sits earlier in the `Dockerfile`, so a version-pin bump should reuse the cached R layer
+  and finish in minutes — *provided the cache still exists*. Old cache is eventually
+  evicted (`docker buildx du` shows what is reclaimable), which is the usual reason an
+  "only changed the pin" rebuild still takes an hour.
+- **Prefer pulling over building.** Regular deployments should `docker pull
+  ggilestro/ethoscope-lab:<tag>` rather than rebuild; only rebuild when the recipe itself
+  changes, then push the result so nobody else has to.
+
+Rule of thumb: reach for the GPU to make *analysis* faster, never to make the *image build*
+faster — there is nothing to accelerate there.
+
 ## Authentication and User Management
 
 This JupyterHub instance supports multiple authentication methods including:

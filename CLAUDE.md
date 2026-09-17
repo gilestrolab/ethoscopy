@@ -36,47 +36,61 @@ pip install -e ".[dev]"
 ```
 
 ### Testing
-- **No formal test suite found** - project relies on Jupyter notebooks for validation
-- Use the tutorial notebooks in `tutorial_notebook/` for testing functionality
-- Run notebooks: `jupyter notebook tutorial_notebook/`
+- **Pytest suite in `tests/`**: `python -m pytest tests/ -q` (~230 tests, seconds to run)
+- **Caveat**: `pytest.ini` declares its section as `[tool:pytest]`, which is the
+  *setup.cfg* spelling — pytest silently ignores the file, so `addopts` (coverage,
+  `--strict-markers`) and the `markers` registrations do **not** apply. Renaming the
+  section to `[pytest]` would switch on `--cov-fail-under=70` and `--strict-markers`
+  for the whole suite; check it passes before doing so.
+- Tutorial notebooks in `tutorial_notebook/` complement the suite for end-to-end checks
 
 ### Docker Environment
 - **Docker available** for JupyterHub deployment
 - Build: `JUPYTER_HUB_TAG=5.3.0 ETHOSCOPE_LAB_TAG=1.0 docker compose build`
 - Run: `docker compose up -d` (from Docker/ directory)
 
-### Troubleshooting: Database "Malformed" Errors
+### Opening databases: WAL mode and read-only mounts
 
-**Problem**: Intermittent "database disk image is malformed" errors when loading ethoscope data in Docker
+Ethoscopes record in **WAL** (Write-Ahead Logging) mode and the results tree is
+normally mounted read-only (`:ro` in Docker). That combination has broken loading
+repeatedly — as `database disk image is malformed`, and as
+`unable to open database file` on `SELECT * FROM ROI_MAP`.
 
-**Root Cause**: SQLite databases in WAL (Write-Ahead Logging) mode on read-only Docker mounts
+**How `_connect_db()` handles it** (load.py)
 
-**Solution Options**:
-1. **Convert databases to DELETE mode** (recommended for immediate fix)
-   ```bash
-   # Using the conversion script (from project root)
-   python3 scripts/convert_wal_to_delete.py /mnt/ethoscope_data/results --verbose
+ethoscopy never writes to these files, so the connection is *always* read-only —
+this also stops a load from checkpointing or truncating raw data as a side effect.
+It walks an ordered ladder of open modes, `_READ_STRATEGIES`, and **probes each
+one with a real statement** before returning it:
 
-   # Or using bash wrapper
-   ./scripts/convert_databases.sh /mnt/ethoscope_data/results
-   ```
+| rung | reads | notes |
+|---|---|---|
+| `mode=ro` | every recoverable state, incl. WAL with `-shm`, corrupt `-shm`, hot rollback journal | the only mode that sees data still in an uncheckpointed `-wal` |
+| `immutable=1` | WAL database whose sidecars are absent on a read-only mount | ignores the `-wal`; warns via `_warn_if_wal_ignored()` if it would hide committed rows |
 
-2. **Improved connection handling** (v2.0.4+)
-   - The `_connect_db()` function in `load.py` now detects WAL mode automatically
-   - Uses `mode=ro&nolock=1` URI parameters for WAL databases on read-only mounts
-   - Includes retry logic in `read_single_roi_optimized()` for resilience
+Two traps worth not rediscovering:
 
-**Key Implementation Details** (load.py):
-- Lines 18-70: `_connect_db()` - Smart connection with WAL detection and appropriate parameters
-- Lines 943-979: Retry logic in `read_single_roi_optimized()` - Handles transient errors with fresh connections
+- **Never use `mode=ro&nolock=1`.** SQLite rejects it for *every* WAL database.
+- **`sqlite3.connect()` never touches the file**, so a bad URI opens "successfully"
+  and only fails on the first query — past any `try/except` around the connect
+  call. That is why every rung is probed, and it is how the `nolock=1` bug survived
+  a fallback that looked like it covered the case.
+- `immutable=1` will also "open" a **missing** path, *creating* an empty database
+  and reporting `no such table: ROI_MAP`. `_connect_db()` checks the file exists first.
 
-**Testing After Changes**:
-```python
-import ethoscopy as etho
-metadata = etho.link_meta_index('metadata.csv', '/mnt/ethoscope_results')
-data = etho.load_ethoscope(metadata, reference_hour=9.0, FUN=etho.sleep_annotation)
-# Should load all ROIs without "malformed" errors
+`read_single_roi_optimized()` retries a failed read with `_connect_db(path,
+degraded=True)`, which skips to the last rung — a retry with the default ladder
+would just pick the same failing mode again.
+
+**Optional**: convert databases to DELETE mode to avoid the question entirely
+```bash
+python3 scripts/convert_wal_to_delete.py /mnt/ethoscope_data/results --verbose
+./scripts/convert_databases.sh /mnt/ethoscope_data/results   # bash wrapper
 ```
+
+**Tests**: `tests/test_load_wal.py` builds real SQLite files in each on-disk state
+(read-only and writable directories) rather than mocking sqlite3 — the failures
+being guarded against come from SQLite itself and only appear when a statement runs.
 
 **See Also**: `Docker/README.md` for detailed database preparation instructions
 

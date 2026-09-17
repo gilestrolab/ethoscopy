@@ -1,8 +1,10 @@
 import errno
 import ftplib
+import io
 import os
 import sqlite3
 import time
+import warnings
 
 # Reason: newer ethoscope firmwares serialize the "selected_options" METADATA
 # field with an ``OrderedDict([...])`` wrapper. ``get_meta`` below round-trips
@@ -22,57 +24,181 @@ from ethoscopy.misc.validate_datetime import validate_datetime
 pd.options.mode.chained_assignment = None
 
 
-def _connect_db(path):
-    """
-    Connect to a SQLite database with smart read-only filesystem detection.
+# Ordered ladder of read-only SQLite open modes, most faithful first.
+#
+# Reason: whether an ethoscope database can be opened is not predictable from
+# its journal mode alone. Journal mode, the presence and state of the -wal/-shm
+# sidecars and the writability of the containing directory interact, and the
+# combinations are not rare in practice -- ethoscopes write in WAL mode and the
+# results tree is usually mounted read-only. Empirically (sqlite 3.45 and 3.53,
+# read-only and writable directories):
+#
+#   * mode=ro reads every recoverable state, including a WAL database whose
+#     -shm exists, a stale or corrupt -shm, and a hot rollback journal, and it
+#     is the only mode that sees data still sitting in an uncheckpointed -wal.
+#   * immutable=1 is the sole survivor of one real case: a WAL-mode database
+#     whose sidecars are absent on a read-only mount (SQLite would have to
+#     create the -shm to read it). It ignores the -wal entirely, so it is the
+#     fallback, never the first choice -- see _warn_if_wal_ignored.
+#
+# Note nolock=1 is deliberately absent: SQLite rejects it for *every* WAL
+# database, and because sqlite3.connect() never touches the file the rejection
+# only surfaces on the first query. That is why each rung below is probed.
+_READ_STRATEGIES = ("mode=ro", "immutable=1")
 
-    When the database directory is read-only (e.g., mounted with :ro in Docker),
-    SQLite cannot create journal/WAL files and will fail to open the database.
-    This function detects read-only filesystems and uses appropriate connection
-    parameters to handle WAL-mode databases safely.
+# Errors that mean "this open mode cannot read this file" rather than "this
+# query is wrong" -- worth dropping to the next rung of the ladder for.
+_UNREADABLE_ERRORS = ("unable to open database file", "readonly database", "malformed")
+
+
+def _warn_if_wal_ignored(path_str):
+    """
+    Warn when falling back to immutable=1 would hide committed data.
+
+    immutable=1 reads the main database file only. If an uncheckpointed -wal
+    sidecar still holds committed transactions, those rows silently disappear
+    from the loaded data -- the worst possible failure for an analysis library,
+    so make it loud.
+
+    Args:
+        path_str (str): Path to the SQLite database file
+    """
+    try:
+        wal_size = os.path.getsize(f"{path_str}-wal")
+    except OSError:
+        return
+
+    if wal_size > 0:
+        warnings.warn(
+            f"{path_str} could only be opened in SQLite's immutable mode, which "
+            f"ignores its {wal_size} byte -wal sidecar: data committed to the WAL "
+            "but not yet checkpointed will be missing. Checkpoint the database "
+            "(scripts/convert_wal_to_delete.py) or make its directory writable.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
+
+def _rebase_time(data, date_formatted, reference_hour):
+    """
+    Convert an ethoscope 't' column from milliseconds to seconds, optionally re-zeroed.
+
+    Ethoscope tables store 't' as milliseconds since the start of that recording.
+    With a reference_hour the series is instead expressed relative to the most
+    recent occurrence of that wall-clock hour before the recording started, so
+    runs begun at different times of day can be overlaid.
+
+    Args:
+        data (pd.DataFrame): Frame with a 't' column in milliseconds; modified in place
+        date_formatted (str): Recording start as "%Y-%m-%d %H:%M:%S"
+        reference_hour (float or None): Hour of day that should map to t = 0.
+            None leaves t = 0 at the start of the recording.
+
+    Returns:
+        pd.DataFrame: The same frame, with 't' in seconds
+    """
+    if reference_hour is not None:
+        hh, mm, ss = map(int, date_formatted.split(" ")[1].split(":"))
+        hour_start = hh + mm / 60 + ss / 3600
+        t_after_ref = ((hour_start - reference_hour) % 24) * 3600 * 1e3
+        data.t = (data.t + t_after_ref) / 1e3
+    else:
+        data.t = data.t / 1e3
+
+    return data
+
+
+def _cache_path(cache, file, min_time, max_time, reference_hour):
+    """
+    Build the on-disk cache filename for one ROI.
+
+    Reason: a cached frame is specific to the time window and reference hour it
+    was read with - rows outside the window were dropped and 't' has already
+    been rebased. Keying on the ROI alone hands back silently wrong timestamps,
+    or a short frame, as soon as any of those arguments change. The default
+    arguments reproduce the historic filename, so caches written by earlier
+    versions stay valid.
+
+    Args:
+        cache (str): Directory holding the cached pickles
+        file: Metadata row for this ROI
+        min_time (float): Start of the loaded window, in seconds
+        max_time (float): End of the loaded window, in seconds
+        reference_hour (float or None): Hour of day mapped to t = 0
+
+    Returns:
+        Path: Full path of the pickle for this ROI and these arguments
+    """
+    key = "cached_{}_{}_{}".format(file["machine_id"], file["region_id"], file["date"])
+
+    if reference_hour is not None:
+        key += "_ref{:g}".format(reference_hour)
+    if min_time:
+        key += "_min{:g}".format(min_time)
+    if max_time != float("inf"):
+        key += "_max{:g}".format(max_time)
+
+    return Path(cache) / f"{key}.pkl"
+
+
+def _connect_db(path, degraded=False):
+    """
+    Open an ethoscope database read-only, tolerating WAL state and read-only mounts.
+
+    ethoscopy never writes to these files, so the connection is always read-only:
+    that also stops a load from checkpointing or truncating the raw data as a side
+    effect. Each candidate open mode is probed with a real statement before being
+    handed back, because sqlite3.connect() does not touch the file and an
+    unusable mode would otherwise only fail deep inside the first data query.
 
     Args:
         path (str): Path to the SQLite database file
+        degraded (bool, optional): Skip the faithful open modes and go straight to
+            the last-resort one. Used to escalate after a connection that opened
+            cleanly fails part-way through a read. Default is False.
 
     Returns:
-        sqlite3.Connection: Database connection object
+        sqlite3.Connection: A connection that has answered at least one statement
 
-    Note:
-        For WAL-mode databases on read-only mounts, this function uses mode=ro
-        with nolock=1 to prevent "database disk image is malformed" errors.
-        Any uncommitted WAL data will not be visible, which is acceptable for
-        read-only mounts where the data cannot change anyway.
+    Raises:
+        FileNotFoundError: If path does not exist
+        sqlite3.OperationalError: If no open mode can read the file
     """
     path_str = str(path)
-    dir_path = os.path.dirname(path_str)
 
-    # Check if we can write to the directory
-    if not os.access(dir_path, os.W_OK):
-        # Read-only filesystem - check if database is in WAL mode
+    # Reason: immutable=1 happily "opens" a path that is not there, creating an
+    # empty database file and leaving the caller with a baffling
+    # "no such table: ROI_MAP". Fail on the real problem instead.
+    if not os.path.isfile(path_str):
+        raise FileNotFoundError(
+            errno.ENOENT, "No such ethoscope database file", path_str
+        )
+
+    strategies = _READ_STRATEGIES[-1:] if degraded else _READ_STRATEGIES
+
+    last_error = None
+    for strategy in strategies:
+        conn = None
         try:
-            # Try to detect WAL mode by opening in read-only mode first
-            temp_conn = sqlite3.connect(f"file:{path_str}?mode=ro", uri=True)
-            cursor = temp_conn.cursor()
-            cursor.execute("PRAGMA journal_mode;")
-            journal_mode = cursor.fetchone()[0].lower()
-            temp_conn.close()
+            conn = sqlite3.connect(
+                f"file:{path_str}?{strategy}", uri=True, timeout=10.0
+            )
+            # Probe: forces SQLite to actually reach the file and its sidecars
+            conn.execute("PRAGMA journal_mode;").fetchone()
+        except sqlite3.Error as e:
+            last_error = e
+            if conn is not None:
+                conn.close()
+            continue
 
-            if journal_mode == "wal":
-                # WAL mode on read-only mount: use mode=ro with nolock
-                # This prevents "database disk image is malformed" errors
-                # by avoiding operations that require WAL/SHM files
-                return sqlite3.connect(
-                    f"file:{path_str}?mode=ro&nolock=1", uri=True, timeout=10.0
-                )
-            else:
-                # Non-WAL mode: use immutable mode for better performance
-                return sqlite3.connect(f"file:{path_str}?immutable=1", uri=True)
-        except Exception:
-            # If detection fails, fall back to immutable mode
-            return sqlite3.connect(f"file:{path_str}?immutable=1", uri=True)
-    else:
-        # Normal read-write access
-        return sqlite3.connect(path_str)
+        if strategy == "immutable=1":
+            _warn_if_wal_ignored(path_str)
+        return conn
+
+    raise sqlite3.OperationalError(
+        f"Could not open {path_str} for reading with any of {list(strategies)}. "
+        f"Last error: {last_error}"
+    )
 
 
 def download_from_remote_dir(meta, remote_dir, local_dir, progress=True):
@@ -512,6 +638,7 @@ def load_ethoscope(
     try:
         for db_path, group in grouped_metadata:
             conn = None
+            pbar_at_db_start = pbar.n
 
             try:
                 # Open connection once per database file
@@ -603,6 +730,19 @@ def load_ethoscope(
                     finally:
                         pbar.update(1)
 
+            except Exception as e:
+                # Reason: opening the database or reading its shared tables sits
+                # outside the per-ROI handler below, so without this one
+                # unreadable file aborts the whole load and discards every ROI
+                # already read from the other databases. Report it and move on.
+                if verbose is True:
+                    tqdm.write(
+                        "Skipping {} - none of its {} ROIs could be loaded: {}".format(
+                            db_path, len(group), e
+                        )
+                    )
+                pbar.update(len(group) - (pbar.n - pbar_at_db_start))
+
             finally:
                 # Close connection when done with this database
                 if conn:
@@ -617,6 +757,553 @@ def load_ethoscope(
         data = pd.DataFrame()
 
     return data
+
+
+def _one_row_per_database(metadata):
+    """
+    Reduce a per-ROI metadata table to one row per database file.
+
+    link_meta_index() returns a row per ROI, but device-level tables (METADATA,
+    DIAGNOSTICS) are written once per recording. Collapse to the first ROI of
+    each machine/date (plus time, when the metadata distinguishes several runs
+    on one day) so those tables are read once each.
+
+    Args:
+        metadata (pd.DataFrame): Metadata dataframe as returned from link_meta_index
+
+    Returns:
+        pd.DataFrame: Copy of the metadata with one row per recording
+    """
+    meta_df = metadata.copy(deep=True)
+
+    keys = ["machine_name", "date"]
+    if "time" in meta_df.columns.tolist():
+        keys.append("time")
+
+    meta_df["check"] = meta_df[keys].astype(str).agg("".join, axis=1)
+    meta_df.drop_duplicates(
+        subset=["check"], keep="first", inplace=True, ignore_index=False
+    )
+
+    return meta_df
+
+
+def load_ethoscope_diagnostics(
+    metadata,
+    min_time=0,
+    max_time=float("inf"),
+    reference_hour=None,
+    progress=True,
+):
+    """
+    Load the recording-quality DIAGNOSTICS table from each ethoscope database.
+
+    DIAGNOSTICS is sampled periodically by the tracking daemon and describes the
+    *recording* rather than any one animal - achieved frame rate, image and frame
+    noise, focus, camera jitter and CPU temperature. It is therefore keyed by
+    machine rather than by ROI, and is returned as a tidy DataFrame rather than a
+    behavpy object. Merge it onto experimental variables with the 'machine_name'
+    and 'date' columns.
+
+    Only ethoscope firmwares that record diagnostics write this table. Databases
+    without one are skipped and reported, so a mixed-firmware experiment loads
+    whatever data exists instead of failing.
+
+    Args:
+        metadata (pd.DataFrame): Metadata dataframe as returned from link_meta_index function
+        min_time (int, optional): Minimum time to load data from, with 0 being experiment
+            start (in hours). Default is 0.
+        max_time (int, optional): Maximum time to load data to (in hours). Default is infinity.
+        reference_hour (int, optional): Hour at which lights on occurs or when timestamps
+            should equal 0. None equals the start of the experiment. Default is None.
+        progress (bool, optional): If True, show a tqdm progress bar (ipywidgets-based in
+            Jupyter, text in CLI). Default is True.
+
+    Returns:
+        pd.DataFrame: One row per diagnostics sample with columns 'machine_id',
+            'machine_name', 'date', 't' (seconds) and every variable recorded by the
+            firmware. Empty if no database carried a DIAGNOSTICS table.
+
+    Raises:
+        ValueError: If min_time is larger than max_time
+    """
+    if min_time > max_time:
+        raise ValueError("Error: min_time is larger than max_time")
+
+    if metadata.empty or "path" not in metadata.columns:
+        return pd.DataFrame()
+
+    meta_df = _one_row_per_database(metadata)
+
+    time_condition = "WHERE t >= {}".format(min_time * 60 * 60 * 1000)
+    if max_time != float("inf"):
+        time_condition += " AND t < {}".format(max_time * 60 * 60 * 1000)
+
+    frames = []
+    without_table = []
+
+    for i in tqdm(
+        meta_df.index,
+        desc="Reading diagnostics",
+        unit="db",
+        disable=not progress,
+    ):
+        row = meta_df.loc[i]
+        conn = None
+
+        try:
+            conn = _connect_db(row["path"])
+
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='DIAGNOSTICS'"
+            )
+            if not cursor.fetchone():
+                without_table.append(row["machine_name"])
+                continue
+
+            diagnostics = pd.read_sql_query(
+                f"SELECT * FROM DIAGNOSTICS {time_condition}", conn
+            )
+
+            date = pd.read_sql_query(
+                'SELECT value FROM METADATA WHERE field = "date_time"', conn
+            )
+            if date.empty:
+                raise ValueError("No date_time found in METADATA table")
+            date_formatted = time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.gmtime(float(date.iloc[0].iloc[0]))
+            )
+
+        except Exception as e:
+            tqdm.write(
+                "Diagnostics from {} could not be read: {}".format(
+                    row["machine_name"], e
+                )
+            )
+            continue
+
+        finally:
+            if conn is not None:
+                conn.close()
+
+        if diagnostics.empty:
+            continue
+
+        diagnostics = _rebase_time(diagnostics, date_formatted, reference_hour)
+        diagnostics.insert(0, "date", row["date"])
+        diagnostics.insert(0, "machine_name", row["machine_name"])
+        diagnostics.insert(0, "machine_id", row["machine_id"])
+        frames.append(diagnostics)
+
+    if without_table:
+        warnings.warn(
+            "No DIAGNOSTICS table in the databases for {}: these ethoscopes ran a "
+            "firmware that does not record diagnostics, and are absent from the "
+            "returned data.".format(", ".join(sorted(set(without_table)))),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    if not frames:
+        return pd.DataFrame()
+
+    return pd.concat(frames, ignore_index=True)
+
+
+def _hours_from_clock(value):
+    """
+    Parse an "HH:MM" light-schedule time into an hour of day.
+
+    Args:
+        value: The recorded string, which is routinely "" or NaN because the
+            fields only carry a value when the ethoscope drives its own light
+
+    Returns:
+        float: Hour of day in [0, 24), or nan if the field is unset or malformed
+    """
+    if value is None or not isinstance(value, str) or not value.strip():
+        return np.nan
+
+    try:
+        parts = [int(p) for p in value.strip().split(":")]
+    except ValueError:
+        return np.nan
+
+    if not parts or not 0 <= parts[0] < 24:
+        return np.nan
+
+    hour = float(parts[0])
+    if len(parts) > 1:
+        hour += parts[1] / 60
+    if len(parts) > 2:
+        hour += parts[2] / 3600
+
+    return hour
+
+
+def _circular_mean_hour(hours):
+    """
+    Average hours of day on the 24 h circle.
+
+    A plain mean of 23:50 and 00:10 is midday. These are wall-clock times and
+    have to be averaged as angles.
+
+    Args:
+        hours (Iterable[float]): Hours of day
+
+    Returns:
+        float: Mean hour of day in [0, 24), or nan if nothing was given
+    """
+    values = [h for h in hours if np.isfinite(h)]
+    if not values:
+        return np.nan
+
+    angles = np.asarray(values) * 2 * np.pi / 24
+    mean = np.arctan2(np.sin(angles).mean(), np.cos(angles).mean())
+    hours = (mean * 24 / (2 * np.pi)) % 24
+
+    # Reason: a mean angle landing a hair below zero - exactly what times
+    # straddling midnight produce - comes back from the modulo as 24.0 rather
+    # than 0.0, putting midnight lights-on outside the [0, 24) contract and,
+    # downstream, giving reference_hour=24 where 0 was meant.
+    if hours >= 24:
+        hours -= 24
+
+    return float(hours)
+
+
+def load_ethoscope_light_schedule(metadata, progress=True):
+    """
+    Read each ethoscope's recorded light schedule and reduce it to usable terms.
+
+    Ethoscopes that drive their own LED panel record the schedule they were
+    given: lights on and off times, the cycle length (which need not be 24 h),
+    an optional ZT0 anchor, and the fade parameters. This reads those fields and
+    derives the three numbers the rest of ethoscopy actually consumes -
+    ``reference_hour`` for load_ethoscope, and ``day_length_h`` / ``lights_off_h``
+    for add_day_phase and the plotting functions - so they need not be typed in
+    by hand and cannot silently disagree with what the device did.
+
+    The fields are frequently unset. They only carry a value when the ethoscope
+    itself controls the light; when an incubator does, they are empty strings and
+    the schedule has to be measured instead - see estimate_light_cycle().
+
+    Args:
+        metadata (pd.DataFrame): Metadata dataframe as returned from link_meta_index
+        progress (bool, optional): If True, show a tqdm progress bar. Default is True.
+
+    Returns:
+        pd.DataFrame: One row per recording with 'machine_id', 'machine_name',
+            'date', the raw schedule fields, and the derived 'reference_hour',
+            'day_length_h', 'lights_off_h' and 'photoperiod_h'. A 'source' column
+            reads 'anchor' when ZT0 came from light_cycle_anchor, 'recorded' when
+            it came from lights_on, and 'absent' when the device recorded no
+            schedule. Empty if nothing could be read.
+    """
+    if metadata.empty or "path" not in metadata.columns:
+        return pd.DataFrame()
+
+    meta_df = _one_row_per_database(metadata)
+
+    rows = []
+    for i in tqdm(
+        meta_df.index,
+        desc="Reading light schedule",
+        unit="db",
+        disable=not progress,
+    ):
+        row = meta_df.loc[i]
+        conn = None
+
+        try:
+            conn = _connect_db(row["path"])
+            recorded = pd.read_sql_query(
+                "SELECT value FROM METADATA WHERE field = 'experimental_info'", conn
+            )
+        except Exception as e:
+            tqdm.write(
+                "Light schedule from {} could not be read: {}".format(
+                    row["machine_name"], e
+                )
+            )
+            continue
+        finally:
+            if conn is not None:
+                conn.close()
+
+        info = {}
+        if not recorded.empty:
+            try:
+                info = eval(recorded.iloc[0].iloc[0])
+            except Exception:
+                # Reason: experimental_info is a repr'd dict written by whatever
+                # firmware was running. A malformed one should cost this machine
+                # its schedule, not the whole read.
+                info = {}
+
+        lights_on_h = _hours_from_clock(info.get("lights_on"))
+        lights_off_h = _hours_from_clock(info.get("lights_off"))
+
+        period_minutes = info.get("light_period_minutes")
+        try:
+            day_length_h = float(period_minutes) / 60
+        except (TypeError, ValueError):
+            day_length_h = np.nan
+
+        # light_cycle_anchor, when set, is an explicit unix timestamp for ZT0 and
+        # outranks lights_on: it is what the daemon actually counted from.
+        anchor = info.get("light_cycle_anchor")
+        reference_hour, source = np.nan, "absent"
+        try:
+            anchor_ts = float(anchor)
+        except (TypeError, ValueError):
+            anchor_ts = None
+
+        if anchor_ts is not None:
+            anchor_utc = time.gmtime(anchor_ts)
+            reference_hour = (
+                anchor_utc.tm_hour + anchor_utc.tm_min / 60 + anchor_utc.tm_sec / 3600
+            )
+            source = "anchor"
+        elif np.isfinite(lights_on_h):
+            reference_hour = lights_on_h
+            source = "recorded"
+
+        rows.append(
+            {
+                "machine_id": row["machine_id"],
+                "machine_name": row["machine_name"],
+                "date": row["date"],
+                "lights_on": info.get("lights_on"),
+                "lights_off": info.get("lights_off"),
+                "reference_hour": reference_hour,
+                "day_length_h": day_length_h,
+                # Hours after lights-on that lights-off falls, which is what
+                # add_day_phase and the plotting functions mean by lights_off.
+                "lights_off_h": (lights_off_h - lights_on_h) % (day_length_h or 24)
+                if np.isfinite(lights_on_h) and np.isfinite(lights_off_h)
+                else np.nan,
+                "photoperiod_h": (lights_off_h - lights_on_h) % 24
+                if np.isfinite(lights_on_h) and np.isfinite(lights_off_h)
+                else np.nan,
+                "light_cycle_anchor": anchor,
+                "fade_in_seconds": info.get("fade_in_seconds"),
+                "fade_out_seconds": info.get("fade_out_seconds"),
+                "max_light": info.get("max_light"),
+                "crepuscular": info.get("crepuscular"),
+                "source": source,
+            }
+        )
+
+    if not rows:
+        return pd.DataFrame()
+
+    schedule = pd.DataFrame(rows)
+
+    absent = schedule.loc[schedule["source"] == "absent", "machine_name"]
+    if len(absent):
+        warnings.warn(
+            "No light schedule recorded for {}: these ethoscopes were not driving "
+            "their own light, so the fields are empty. Measure the cycle with "
+            "estimate_light_cycle() instead.".format(", ".join(sorted(set(absent)))),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    # Reason: pooling machines that ran different light regimes into one
+    # experiment is an analysis error, and a silent one - every downstream ZT
+    # figure would still plot.
+    known = schedule[schedule["source"] != "absent"]
+    distinct = known[["reference_hour", "day_length_h", "lights_off_h"]].drop_duplicates()
+    if len(distinct) > 1:
+        warnings.warn(
+            "Ethoscopes in this metadata recorded {} different light schedules. "
+            "Anchoring them all to one ZT0 would be wrong; split the analysis by "
+            "schedule.".format(len(distinct)),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    return schedule
+
+
+def estimate_light_cycle(
+    metadata, stride=2, min_contrast=5.0, thumbnail=(64, 48), progress=True
+):
+    """
+    Measure the light cycle from the periodic snapshots each ethoscope stores.
+
+    Every ethoscope writes a JPEG to IMG_SNAPSHOTS every few minutes, and mean
+    frame luminance tracks the incubator or panel lights directly. That makes the
+    cycle recoverable from any recording, including ones whose firmware records
+    no schedule at all and ones where an incubator - not the ethoscope - drove
+    the light, which is the common case.
+
+    Phase is deliberately not inferred from the animals' own rhythm: using
+    behaviour to set ZT and then measuring behaviour against ZT would be circular.
+
+    Args:
+        metadata (pd.DataFrame): Metadata dataframe as returned from link_meta_index
+        stride (int, optional): Sample every nth snapshot. Snapshots land every
+            few minutes, so the default of 2 still places a transition to within
+            minutes at half the decode cost. Default is 2.
+        min_contrast (float, optional): Minimum light-to-dark difference in grey
+            levels for the result to be trusted. Below this the recording is
+            treated as constant-light or constant-dark. Default is 5.0.
+        thumbnail (tuple, optional): Size images are reduced to before averaging.
+            Only the mean matters, so full-resolution decode is waste. Default is (64, 48).
+        progress (bool, optional): If True, show a tqdm progress bar. Default is True.
+
+    Returns:
+        pd.DataFrame: One row per recording with 'machine_id', 'machine_name',
+            'date', 'lights_on_utc' and 'lights_off_utc' as hours of day,
+            'photoperiod_h', 'reference_hour' (an alias of lights_on_utc, for
+            passing to load_ethoscope), 'n_transitions' and 'contrast'. Empty if
+            no recording carried usable snapshots.
+
+    Raises:
+        ImportError: If Pillow is unavailable
+    """
+    try:
+        from PIL import Image
+    except ImportError as e:  # pragma: no cover - depends on the install
+        raise ImportError(
+            "estimate_light_cycle() needs Pillow to decode the stored snapshots. "
+            "Install it with `pip install pillow`."
+        ) from e
+
+    if metadata.empty or "path" not in metadata.columns:
+        return pd.DataFrame()
+
+    meta_df = _one_row_per_database(metadata)
+
+    rows = []
+    unusable = []
+
+    for i in tqdm(
+        meta_df.index,
+        desc="Measuring light cycle",
+        unit="db",
+        disable=not progress,
+    ):
+        row = meta_df.loc[i]
+        conn = None
+
+        try:
+            conn = _connect_db(row["path"])
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='IMG_SNAPSHOTS'"
+            )
+            if not cursor.fetchone():
+                unusable.append(row["machine_name"])
+                continue
+
+            snapshots = cursor.execute(
+                "SELECT t, img FROM IMG_SNAPSHOTS ORDER BY t"
+            ).fetchall()
+
+            start = pd.read_sql_query(
+                "SELECT value FROM METADATA WHERE field = 'date_time'", conn
+            )
+            if start.empty:
+                raise ValueError("No date_time found in METADATA table")
+            start_epoch = float(start.iloc[0].iloc[0])
+
+        except Exception as e:
+            tqdm.write(
+                "Snapshots from {} could not be read: {}".format(
+                    row["machine_name"], e
+                )
+            )
+            continue
+        finally:
+            if conn is not None:
+                conn.close()
+
+        times, brightness = [], []
+        for t_ms, blob in snapshots[::stride]:
+            if not blob:
+                continue
+            try:
+                image = Image.open(io.BytesIO(blob)).convert("L")
+                image.thumbnail(thumbnail)
+            except Exception:
+                # Reason: a truncated snapshot is common enough at the tail of an
+                # interrupted run and is not worth losing the recording over.
+                continue
+            times.append(t_ms / 1000)
+            brightness.append(float(np.asarray(image, dtype=np.float32).mean()))
+
+        if len(brightness) < 4:
+            unusable.append(row["machine_name"])
+            continue
+
+        brightness = np.asarray(brightness)
+        contrast = float(brightness.max() - brightness.min())
+
+        if contrast < min_contrast:
+            # Constant light or constant dark: there is no cycle to find, and a
+            # midpoint threshold on noise would invent one.
+            rows.append(
+                {
+                    "machine_id": row["machine_id"],
+                    "machine_name": row["machine_name"],
+                    "date": row["date"],
+                    "lights_on_utc": np.nan,
+                    "lights_off_utc": np.nan,
+                    "photoperiod_h": np.nan,
+                    "reference_hour": np.nan,
+                    "n_transitions": 0,
+                    "contrast": contrast,
+                }
+            )
+            continue
+
+        lit = brightness > (brightness.max() + brightness.min()) / 2
+        crossings = np.flatnonzero(lit[1:] != lit[:-1]) + 1
+
+        on_hours, off_hours = [], []
+        for index in crossings:
+            moment = time.gmtime(start_epoch + times[index])
+            hour = moment.tm_hour + moment.tm_min / 60 + moment.tm_sec / 3600
+            (on_hours if lit[index] else off_hours).append(hour)
+
+        lights_on_utc = _circular_mean_hour(on_hours)
+        lights_off_utc = _circular_mean_hour(off_hours)
+
+        rows.append(
+            {
+                "machine_id": row["machine_id"],
+                "machine_name": row["machine_name"],
+                "date": row["date"],
+                "lights_on_utc": lights_on_utc,
+                "lights_off_utc": lights_off_utc,
+                "photoperiod_h": (lights_off_utc - lights_on_utc) % 24
+                if np.isfinite(lights_on_utc) and np.isfinite(lights_off_utc)
+                else np.nan,
+                "reference_hour": lights_on_utc,
+                "n_transitions": len(crossings),
+                "contrast": contrast,
+            }
+        )
+
+    if unusable:
+        warnings.warn(
+            "No usable snapshots in the databases for {}: the light cycle could "
+            "not be measured for these ethoscopes.".format(
+                ", ".join(sorted(set(unusable)))
+            ),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    if not rows:
+        return pd.DataFrame()
+
+    return pd.DataFrame(rows)
 
 
 def load_ethoscope_metadata(metadata, progress=True):
@@ -717,18 +1404,7 @@ def load_ethoscope_metadata(metadata, progress=True):
             if conn is not None:
                 conn.close()
 
-    meta_df = metadata.copy(deep=True)
-
-    if "time" in meta_df.columns.tolist():
-        meta_df["check"] = meta_df["machine_name"] + meta_df["date"] + meta_df["time"]
-        meta_df.drop_duplicates(
-            subset=["check"], keep="first", inplace=True, ignore_index=False
-        )
-    else:
-        meta_df["check"] = meta_df["machine_name"] + meta_df["date"]
-        meta_df.drop_duplicates(
-            subset=["check"], keep="first", inplace=True, ignore_index=False
-        )
+    meta_df = _one_row_per_database(metadata)
 
     rows = []
 
@@ -774,10 +1450,7 @@ def read_single_roi(
         raise ValueError("Error: min_time is larger than max_time")
 
     if cache is not None:
-        cache_name = "cached_{}_{}_{}.pkl".format(
-            file["machine_id"], file["region_id"], file["date"]
-        )
-        path = Path(cache) / Path(cache_name)
+        path = _cache_path(cache, file, min_time, max_time, reference_hour)
         if path.exists():
             data = pd.read_pickle(path)
             return data
@@ -849,16 +1522,7 @@ def read_single_roi(
                 data = data.drop(columns=["id"])
             # New format - keep the id column as it's a meaningful primary key
 
-        if reference_hour is not None:
-            t = date
-            t = t.split(" ")
-            hh, mm, ss = map(int, t[1].split(":"))
-            hour_start = hh + mm / 60 + ss / 3600
-            t_after_ref = ((hour_start - reference_hour) % 24) * 3600 * 1e3
-            data.t = (data.t + t_after_ref) / 1e3
-
-        else:
-            data.t = data.t / 1e3
+        data = _rebase_time(data, date, reference_hour)
 
         roi_width = max(roi_row["w"].iloc[0], roi_row["h"].iloc[0])
         for var_n in var_df["var_name"]:
@@ -930,10 +1594,7 @@ def read_single_roi_optimized(
         raise ValueError("Error: min_time is larger than max_time")
 
     if cache is not None:
-        cache_name = "cached_{}_{}_{}.pkl".format(
-            file["machine_id"], file["region_id"], file["date"]
-        )
-        path = Path(cache) / Path(cache_name)
+        path = _cache_path(cache, file, min_time, max_time, reference_hour)
         if path.exists():
             data = pd.read_pickle(path)
             return data
@@ -973,46 +1634,48 @@ def read_single_roi_optimized(
             file["region_id"], min_time, max_time_condtion
         )
 
-        # Execute query with retry logic for WAL-related errors
+        # Execute query, escalating to a degraded open mode if the shared
+        # connection turns out to be unable to read this database after all.
+        # Reason: the connection was probed at open time, but the -wal/-shm
+        # sidecars can change underneath a long read on a live mount, so the
+        # failure can still land here. Retrying with _connect_db() alone would
+        # just pick the same open mode again -- degraded=True is what makes the
+        # retry a different attempt rather than a repeat of the failed one.
         try:
             data = pd.read_sql_query(sql_query, conn)
         except sqlite3.DatabaseError as e:
-            # Handle "database disk image is malformed" errors
-            # This can occur with WAL-mode databases on read-only mounts
-            if "malformed" in str(e).lower() or "disk image" in str(e).lower():
-                tqdm.write(
-                    f"Warning: Database error for ROI {file['region_id']}, attempting retry with fresh connection..."
-                )
-
-                # Get database path from file metadata
-                db_path = file.get("path")
-                if not db_path:
-                    tqdm.write(
-                        "Error: Cannot retry - database path not found in file metadata"
-                    )
-                    raise
-
-                # Create a fresh connection just for the retry
-                retry_conn = None
-                try:
-                    retry_conn = _connect_db(db_path)
-                    data = pd.read_sql_query(sql_query, retry_conn)
-                    tqdm.write(f"Success: ROI {file['region_id']} loaded on retry")
-                except Exception as retry_error:
-                    tqdm.write(
-                        f"Error: Retry failed for ROI {file['region_id']}: {retry_error}"
-                    )
-                    raise
-                finally:
-                    # Clean up retry connection
-                    if retry_conn:
-                        try:
-                            retry_conn.close()
-                        except Exception:
-                            pass
-            else:
-                # Re-raise other database errors
+            if not any(marker in str(e).lower() for marker in _UNREADABLE_ERRORS):
+                # A genuine query error - retrying will not help
                 raise
+
+            tqdm.write(
+                f"Warning: Database error for ROI {file['region_id']} ({e}), "
+                "retrying with a fresh read-only connection..."
+            )
+
+            db_path = file.get("path")
+            if not db_path:
+                tqdm.write(
+                    "Error: Cannot retry - database path not found in file metadata"
+                )
+                raise
+
+            retry_conn = None
+            try:
+                retry_conn = _connect_db(db_path, degraded=True)
+                data = pd.read_sql_query(sql_query, retry_conn)
+                tqdm.write(f"Success: ROI {file['region_id']} loaded on retry")
+            except Exception as retry_error:
+                tqdm.write(
+                    f"Error: Retry failed for ROI {file['region_id']}: {retry_error}"
+                )
+                raise
+            finally:
+                if retry_conn:
+                    try:
+                        retry_conn.close()
+                    except Exception:
+                        pass
 
         if "id" in data.columns:
             # Check if 'id' is a primary key (reuse cursor)
@@ -1030,15 +1693,7 @@ def read_single_roi_optimized(
                 data = data.drop(columns=["id"])
             # New format - keep the id column as it's a meaningful primary key
 
-        if reference_hour is not None:
-            t = date
-            t = t.split(" ")
-            hh, mm, ss = map(int, t[1].split(":"))
-            hour_start = hh + mm / 60 + ss / 3600
-            t_after_ref = ((hour_start - reference_hour) % 24) * 3600 * 1e3
-            data.t = (data.t + t_after_ref) / 1e3
-        else:
-            data.t = data.t / 1e3
+        data = _rebase_time(data, date, reference_hour)
 
         if cache is not None:
             data.to_pickle(path)
