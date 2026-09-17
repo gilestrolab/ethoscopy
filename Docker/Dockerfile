@@ -131,7 +131,7 @@ RUN useradd -m ethoscopelab && \
 # steps (seconds) instead of invalidating the whole pip block. Keep this the
 # last software install; put nothing slow after it. Bumping the pin below is the
 # only change needed to ship a new ethoscopy into the image.
-RUN pip3 install ethoscopy==2.3.0
+RUN pip3 install ethoscopy==2.4.0
 
 # Pre-populate tutorial datasets inside the installed package so non-root
 # JupyterHub users don't have to download them on first notebook run. The
