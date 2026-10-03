@@ -367,3 +367,127 @@ style), since the new code follows the conventions of the files it sits in.
   `@pytest.mark.unit` are unregistered and every test file emits
   `PytestUnknownMarkWarning`. Renaming the section switches on
   `--cov-fail-under=70` at the same time, so it needs checking separately.
+
+## 2026-09-28 — Noise-calibrated movement threshold (auto threshold)
+
+**Problem.** Movement is scored as `max_velocity > 1.0`, a constant tuned for one
+imaging setup. Alice's DBS experiment (`~/Downloads/Alice_DBS_092026`) exposed it:
+the same species gave 55% night sleep under the old IR light and 14% under a new
+double-band IR. Analysis showed neither number is right:
+- Per observed still bin (position unchanged ±0.5 px over ~1 min), 15–36% of bins
+  cross 1.0 in *both* setups — tracker jitter / one-frame snap-back glitches.
+- Sleep needs 30 consecutive clean bins, so a p=15% false-positive rate leaves
+  (0.85)^30 ≈ 0.8% of true rests intact. Sleep is dominated by the FP rate.
+- The old IR only looked better because it *lost* still flies (21% of quiet night
+  time untracked) and `sleep_annotation` scores untracked bins as immobile.
+- Prototype: per-fly, per-light-phase threshold = 99th percentile of max_velocity in
+  still bins (floored at 1.0) → night sleep 83% vs 84%, day 70% vs 66%; FP fixed at
+  1% by construction. Prototype scripts: session scratchpad (`adapt.py`, `evalm.py`).
+
+**Design.** Threshold becomes a property estimated from each fly's own noise, per
+light phase, instead of a constant. "Still" bins are identified *independently of
+velocity* by positional stability, so the estimate is not circular.
+
+### Plan
+- [x] New module `src/ethoscopy/motion_calibration.py`: `find_still_bins`,
+      `estimate_velocity_threshold` (per light phase, fallback recording → floor with
+      warning), `find_spikes`, `motion_qc`, `light_phase`, `default_still_shift`.
+- [x] `max_velocity_detector(velocity_threshold="auto", threshold_quantile, threshold_floor,
+      day_length, lights_off, remove_spikes)`; `velocity_threshold` column with "auto";
+      micro/walk stay a partition of moving when the threshold exceeds walk_threshold.
+- [x] `sleep_annotation(velocity_threshold=, untracked="immobile"|"break")`.
+- [x] behavpy `motion_detector` / `sleep_contiguous`: same parameters.
+- [x] `motion_qc(...)`: thresholds, untracked and spike fraction, FP rate at 1.0, rest survival.
+- [x] Tests `tests/test_motion_calibration.py` (24).
+- [x] `scripts/validate_motion_threshold.py` for the ground-truth nights (dead flies).
+- [x] Port to rethomics `sleepr` (`~/Code/ethoscope_project/rethomics/sleepr`, cloned
+      from rethomics/sleepr): `R/motion-calibration.R`, detector + `sleep_annotation`
+      options, roxygen docs, `tests/testthat/test-motion_calibration.R` incl. parity
+      fixtures exported from ethoscopy (binned + frame level).
+- [x] README section.
+- [ ] Ground-truth recordings (lab): dead/anaesthetised flies under each IR → run
+      `scripts/validate_motion_threshold.py`.
+- [ ] Decide default switch after ground truth (currently opt-in).
+- [x] Still-bin tolerance default 0.5 px -> 1 px (Giorgio, 2026-09-30), both packages:
+      `STILL_SHIFT_PIXELS`/`pixel_size()` (Python), `pixel_size()` (R, exported);
+      spike rule restated in whole pixels (3 px jump, 1 px return; unchanged).
+      Parity fixture now has sub-pixel jitter so it distinguishes 0.5 vs 1 px.
+      Alice re-validation: night sleep old/new IR 88.0% / 87.2%; one old-IR fly
+      night threshold 7.4 (outlier, not inspected).
+- [x] Tracker issues (never-detected still flies, fragment tracking) and the
+      SQLite end-of-run data loss sent to the ethoscope session (ethoscope-63).
+- [x] Real-time sleep deprivation: replayed InactivityTrigger on ETHOSCOPE_044 (47 h)
+      against pixel truth. Per-frame v>1.0 (device today): 79% of true >=2.5-min still
+      periods stimulated, 16% of stimuli after real movement. Per-10-s-window v>1.0: 89%,
+      4.6%. Giorgio approved per-window (2026-09-30); spec sent to ethoscope-63.
+      Online calibration deferred (mixed benefit in real time).
+      CORRECTION (ethoscope-63, confirmed): at the same threshold per-window sees the
+      same crossings as per-frame; per-frame with 130 s scores identically (89.0%,
+      5.4%). The "gain" is only ~10 s later firing. Remaining case for per-window:
+      one definition shared with post-hoc scoring. Excluding is_inferred rows (2%)
+      changed nothing. ethoscope-63 has it implemented, uncommitted, awaiting Giorgio.
+- [ ] Replay the per-window rule on Giorgio's overnight recording (started 2026-09-30,
+      lab-standard milder IR) once it is available.
+- [ ] Human annotation of micro-movements on current hardware (thesis protocol;
+      flyscorer on turing) to decide which movements should break sleep.
+
+### Design decisions taken
+- Opt-in `velocity_threshold="auto"` (Giorgio, 2026-09-28); 1.0 stays default.
+- Still bin = before/after 30-s median positions agree AND trimmed range (2nd-lowest
+  to 2nd-highest of the 7-bin window) ≤ ½ px. Medians alone were fooled by pacing
+  (alternating bin means) — a walking fly scored as still.
+- Spike removal is required for "auto": 1-frame jumps of 12–69 px that land back on the
+  same pixel hit up to 4% of a still fly's bins and pushed q99 to 55. Enabled with
+  "auto" by default, opt-in (`remove_spikes=True`) for the fixed threshold.
+- Quantile/median arithmetic is linear (numpy default = R type 7) in both packages,
+  vectorised (`_row_quantile` / `row_quantile`) — nanquantile/apply were ~100x slower.
+
+### Results
+- Alice DBS, days 2–3, final code: night sleep fixed 1.0 → old IR 56% / new IR 14%;
+  auto → 86.3% / 86.2%. Day: 5%/2% → 68%/61%. Auto thresholds night median 1.41/1.53,
+  day 1.88/1.91; one old-IR fly reaches 5.6 at night (worth inspecting).
+  motion_qc: FP at 1.0 on still bins 14–33%, 5-min rest survival < 1%.
+- R vs Python on 4 real flies: thresholds identical or within 0.2–4% (pre-existing
+  detector difference, see below).
+
+### Validation against tracker-independent pixel motion (2026-09-30)
+Ground truth: pixel changes > 20 grey levels (~14x empty-tube noise) in a crop around
+the fly; validated on 5 dead flies (0.0% of frames), offline tracking with the
+device's AdaptiveBGModel. Scripts + data on turing: /mnt/cache/claude_motion_calibration.
+- Alice ETHOSCOPE_012 (1 h, 15->3.75 fps, new IR), dark phase: fixed 1.0 FP 11.3%;
+  auto 0.5 px FP 4.3% (threshold 0.83x oracle); auto 1 px FP 0.9% (1.02x oracle).
+- ETHOSCOPE_044 (2024, 47 h, 6.2 fps, dim IR, 2 nights, 20 flies, 103 fly-blocks):
+  fixed 1.0 FP 7.7% dark / 12.8% light; auto 1 px FP 1.0% / 1.4%, threshold 1.00x
+  oracle (spearman 0.60); auto 0.5 px 0.97x. => default max_shift 1 px is supported.
+- Sleep amount depends on what movement breaks sleep: pixel-truth night sleep is 29%
+  if any single-frame twitch counts, 62% if >= 8 active frames per 10 s; auto 1 px
+  gives 63%. This is a definition, to be set with human-annotated micro-movements.
+- Light phase in Alice's video: partial-fly (fragment) tracking by AdaptiveBGModel
+  gives phantom 5-30 px jumps; not fixable by thresholds.
+- Dead/still-from-start flies are never detected by AdaptiveBGModel.
+
+### Related work handed to other sessions (2026-09-30)
+- ethoscope-63 (jenner, ethoscope repo): SQLite end-of-run data loss FIXED (dev e7e0f8ca);
+  windowed sleep-dep trigger implemented, uncommitted, awaiting Giorgio (gain is only
+  ~10 s later firing, see correction above); still-fly seeding (#2) and second-blob
+  hopping (#3) diagnosed; GPIO listener busy loop (100% of a core on every device).
+- ethoscope_DL_tracking (turing): learned per-tube fly tracker, plan sent; Pi 3
+  feasibility measured on ETHOSCOPE000 (tiny CNN 44.5 ms/20 tubes; live 9.1 fps).
+
+### Discovered During Work
+- `beam_cross` compares `x` to 0.5, but `x` arrives in pixels from load_ethoscope
+  — likely never fires correctly; check.
+- `masking_duration` masks only beam_cross, not `moving`: a stimulator pulse can
+  still register as movement.
+- Per-frame distance is fps-dependent (velocity = dist/coef, no dt): runs at 2.8
+  vs 4 fps are scored on different scales. Auto threshold absorbs the noise part.
+- `load_ethoscope` (read_single_roi_optimized) returns x/y in **pixels**; the legacy
+  `read_single_roi` divides distance variables by ROI width. beam_cross (x vs 0.5) and
+  `feeding(dist_from_food=0.05)` assume normalised x → both likely broken on data
+  loaded with load_ethoscope.
+- sleepr's detector drops the first frame of each window from max_velocity
+  (`velocity_corrected[2:.N]`) and zeroes velocity during masking; ethoscopy keeps it
+  and masks only beam_cross. Explains the 0–4% R/Python threshold gap; pre-existing.
+- analyse.py is 800+ lines (limit 500); split motion detection into its own module.
+- ~/R system library has stale compiled packages (stringi vs ICU 78, vctrs vs R);
+  rebuilt stringi, vctrs, purrr in ~/R/library.
