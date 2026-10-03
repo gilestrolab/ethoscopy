@@ -66,6 +66,35 @@ df = pd.read_pickle('path/to/your/file.pkl')
 df = etho.behavpy(df, df.meta, check = True, canvas = 'plotly', palette = 'Set2')
 ```
 
+## Movement threshold and tracking noise
+
+Movement is scored when a 10-s window's peak velocity exceeds a threshold, 1.0 by
+default. How much a *motionless* fly appears to move depends on the illumination,
+camera, frame rate and fly size, and sleep is very sensitive to it: a 5-minute bout
+needs 30 immobile windows in a row, so if a still fly crosses the threshold in 5% of
+windows only about a fifth of real rests survive. Check a recording before scoring it:
+
+```python
+qc = etho.motion_qc(raw_data)   # one row per fly and light phase
+```
+
+`fp_rate_fixed` is how often a still fly crosses the fixed threshold and
+`rest_survival_fixed` the fraction of 5-minute rests that would survive it. Values of
+`fp_rate_fixed` above about 0.01 mean the fixed threshold is too low for that recording.
+Then let ethoscopy calibrate the threshold per fly and per light phase from the fly's own
+noise, so that a still fly is scored as moving in only 1% of windows:
+
+```python
+data = etho.load_ethoscope(meta, reference_hour=9.0,
+                           FUN=partial(etho.sleep_annotation, velocity_threshold="auto"))
+```
+
+Still windows are recognised from position alone, so the calibration does not depend on
+the velocity it calibrates. The threshold never drops below 1.0, so clean recordings score
+as before. `untracked="break"` (in `sleep_annotation` and `sleep_contiguous`) stops windows
+without tracked data from counting as sleep. The same method is being added to rethomics'
+`sleepr`, so both toolboxes score a recording alike.
+
 ## Tutorial data
 
 The six pickle files used by the tutorial notebooks (~36 MB total, dominated by `overview_data.pkl` at ~31 MB) are **intentionally not shipped with the PyPI wheel** to keep `pip install ethoscopy` lean. Fetch them once with:

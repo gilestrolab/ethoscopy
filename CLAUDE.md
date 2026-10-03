@@ -94,6 +94,23 @@ being guarded against come from SQLite itself and only appear when a statement r
 
 **See Also**: `Docker/README.md` for detailed database preparation instructions
 
+### Movement threshold: tracking noise, and parity with rethomics
+
+A fixed `velocity_threshold=1.0` breaks when imaging noise changes (new IR light,
+camera, fps, fly size): a still fly crosses it in 15–35% of bins and sleep collapses,
+because a 5-min bout needs 30 clean bins in a row. `motion_calibration.py` provides
+`velocity_threshold="auto"` (per fly, per light phase, q99 of still-bin velocity,
+floor 1.0), tracking-spike removal and `motion_qc()`. It is **opt-in**; 1.0 stays the
+default until ground-truth (dead-fly) recordings are scored with
+`scripts/validate_motion_threshold.py`.
+
+- **Every analysis method added here must also be added to rethomics** (R,
+  `rethomics/sleepr`), with the same algorithm and defaults. The R port lives in
+  `sleepr/R/motion-calibration.R`, and `tests/testthat/parity_*.csv` are fixtures
+  exported from ethoscopy: regenerate them when the Python algorithm changes.
+- Positions from `load_ethoscope` are in **pixels**, from the legacy reader in
+  fractions of ROI width; `default_still_shift()` infers which.
+
 ## Architecture and Code Structure
 
 ### Core Architecture

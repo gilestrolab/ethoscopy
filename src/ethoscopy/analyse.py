@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from ethoscopy.misc.general_functions import rle
+from ethoscopy.motion_calibration import estimate_velocity_threshold, find_spikes
 
 
 def max_velocity_detector(
@@ -13,8 +14,13 @@ def max_velocity_detector(
     time_window_length: int = 10,
     velocity_correction_coef: float = 3e-3,
     masking_duration: int = 6,
-    velocity_threshold: float = 1.0,
+    velocity_threshold: Union[float, str] = 1.0,
     walk_threshold: float = 2.5,
+    threshold_quantile: float = 0.99,
+    threshold_floor: float = 1.0,
+    day_length: int = 24,
+    lights_off: int = 12,
+    remove_spikes: Optional[bool] = None,
 ) -> Optional[pd.DataFrame]:
     """
     Default movement classification for real-time ethoscope experiments.
@@ -27,16 +33,35 @@ def max_velocity_detector(
         velocity_correction_coef (float, optional): Coefficient to correct velocity data. Use 3e-3 for 'small' tubes
             (20 per ethoscope), 15e-4 for 'long' tubes (10 per ethoscope). Default is 3e-3.
         masking_duration (int, optional): Seconds during which movement is ignored after stimulus. Default is 6.
-        velocity_threshold (float, optional): Threshold above which movement is detected. Default is 1.0.
-        walk_threshold (float, optional): Threshold above which movement is classified as walking. Default is 2.5.
+        velocity_threshold (float or str, optional): Threshold above which movement is detected.
+            "auto" estimates it from the animal's own tracking noise, separately for the light and
+            dark phase (see ethoscopy.motion_calibration). Default is 1.0.
+        walk_threshold (float, optional): Threshold above which movement is classified as walking.
+            With "auto", walking also requires exceeding the estimated threshold. Default is 2.5.
+        threshold_quantile (float, optional): With "auto", quantile of peak velocity in still bins
+            used as the threshold, i.e. a still animal is scored as moving in 1 - quantile of bins.
+            Default is 0.99.
+        threshold_floor (float, optional): With "auto", lowest threshold allowed. Default is 1.0.
+        day_length (int, optional): With "auto", day length in hours for the phase split. Default is 24.
+        lights_off (int, optional): With "auto", hour of lights off; t must be 0 at lights on
+            (load_ethoscope with reference_hour). Default is 12.
+        remove_spikes (bool, optional): Drop tracking spikes - frames where the centroid jumps
+            more than 3 px and lands back on the same pixel within two frames (see
+            motion_calibration.find_spikes) - before computing velocity and position. None enables
+            it together with "auto", whose calibration they would otherwise inflate. Default is None.
 
     Returns:
         Optional[pd.DataFrame]: DataFrame with movement classifications or None if insufficient data.
             Includes columns: t, x, y, w, h, phi, max_velocity, mean_velocity, distance,
-            interactions, beam_crosses, moving, micro, walk
+            interactions, beam_crosses, moving, micro, walk. With "auto", also
+            velocity_threshold, the threshold applied to each bin.
     """
 
-    if velocity_threshold <= 0 or walk_threshold <= velocity_threshold:
+    auto_threshold = isinstance(velocity_threshold, str)
+    if auto_threshold:
+        if velocity_threshold != "auto":
+            raise ValueError('velocity_threshold must be a number or "auto"')
+    elif velocity_threshold <= 0 or walk_threshold <= velocity_threshold:
         raise ValueError(
             "Invalid thresholds: velocity_threshold must be > 0 and < walk_threshold"
         )
@@ -63,6 +88,16 @@ def max_velocity_detector(
     # in this case we are using the log10x1000 distance and then correcting for the velocity correction coefficient
     dt["dist"] = 10 ** (dt.xy_dist_log10x1000 / 1000)
     dt["velocity"] = dt.dist / velocity_correction_coef
+
+    if remove_spikes is None:
+        remove_spikes = auto_threshold
+    if remove_spikes and len(dt) > 2:
+        velocity_mask, position_mask = find_spikes(
+            dt["t"].to_numpy(), dt["x"].to_numpy(), dt["y"].to_numpy()
+        )
+        # Reason: NaN is skipped by the bin max/mean/sum, so spike frames simply drop out.
+        dt.loc[velocity_mask, ["dist", "velocity"]] = np.nan
+        dt.loc[position_mask, ["x", "y"]] = np.nan
 
     # Detect beam crossings (crossing center of arena)
     dt["beam_cross"] = abs(np.sign(0.5 - dt["x"]).diff())
@@ -99,15 +134,28 @@ def max_velocity_detector(
 
     d_small = dt.groupby("t_round").agg(**agg_dict)
 
-    # Classify movement types using configurable thresholds
-    d_small["moving"] = d_small["max_velocity"] > velocity_threshold
-    d_small["micro"] = (d_small["max_velocity"] > velocity_threshold) & (
-        d_small["max_velocity"] < walk_threshold
-    )
-    d_small["walk"] = d_small["max_velocity"] > walk_threshold
-
     d_small.rename_axis("t", inplace=True)
     d_small.reset_index(level=0, inplace=True)
+
+    if auto_threshold:
+        threshold, _ = estimate_velocity_threshold(
+            d_small,
+            time_window_length=time_window_length,
+            quantile=threshold_quantile,
+            floor=threshold_floor,
+            day_length=day_length,
+            lights_off=lights_off,
+        )
+        d_small["velocity_threshold"] = threshold
+        # Reason: a noisy phase can be calibrated above walk_threshold; walking must still be movement.
+        walk_limit = np.maximum(walk_threshold, threshold)
+    else:
+        threshold, walk_limit = velocity_threshold, walk_threshold
+
+    # Classify movement types using configurable thresholds
+    d_small["moving"] = d_small["max_velocity"] > threshold
+    d_small["micro"] = d_small["moving"] & (d_small["max_velocity"] < walk_limit)
+    d_small["walk"] = d_small["max_velocity"] > walk_limit
 
     return d_small
 
@@ -186,6 +234,8 @@ def sleep_annotation(
     motion_detector_function: callable = max_velocity_detector,
     masking_duration: int = 6,
     velocity_correction_coef: float = 3e-3,
+    velocity_threshold: Union[float, str, None] = None,
+    untracked: str = "immobile",
 ) -> Optional[pd.DataFrame]:
     """
     Analyze movement data to identify sleep periods based on sustained immobility.
@@ -199,13 +249,31 @@ def sleep_annotation(
         motion_detector_function (callable, optional): Function to classify movement. Default is max_velocity_detector.
         masking_duration (int, optional): Duration to ignore movement after stimulus. Default is 6.
         velocity_correction_coef (float, optional): Coefficient for velocity calculations. Default is 3e-3.
+        velocity_threshold (float or str, optional): Passed to the motion detector when given; "auto"
+            calibrates it per animal and light phase (see max_velocity_detector). Default is None,
+            which keeps the detector's own default.
+        untracked (str, optional): How bins with no tracked frames enter sleep scoring. "immobile"
+            counts them as immobility, so they can extend or create sleep bouts; "break" ends a
+            bout at them, so sleep is only scored where the animal was seen still. Movement
+            columns are unaffected either way. Default is "immobile".
 
     Returns:
         Optional[pd.DataFrame]: DataFrame with movement and sleep classifications or None if insufficient data
+
+    Raises:
+        ValueError: If untracked is not "immobile" or "break".
     """
+    if untracked not in ("immobile", "break"):
+        raise ValueError('untracked must be "immobile" or "break"')
+
     # Check minimum data requirements
     if len(data.index) < 100:
         return None
+
+    # Only forward the threshold when set, so custom detectors without the argument keep working
+    detector_kwargs = {}
+    if velocity_threshold is not None:
+        detector_kwargs["velocity_threshold"] = velocity_threshold
 
     # Get movement classifications
     binned_data = motion_detector_function(
@@ -213,6 +281,7 @@ def sleep_annotation(
         time_window_length,
         masking_duration=masking_duration,
         velocity_correction_coef=velocity_correction_coef,
+        **detector_kwargs,
     )
 
     if len(binned_data.index) < 100:
@@ -266,8 +335,11 @@ def sleep_annotation(
 
         return sleep_series
 
+    sleep_breaking = binned_data["moving"]
+    if untracked == "break":
+        sleep_breaking = sleep_breaking | binned_data["is_interpolated"]
     binned_data["asleep"] = classify_sleep(
-        binned_data["moving"], 1 / time_window_length, min_duration=min_sleep_duration
+        sleep_breaking, 1 / time_window_length, min_duration=min_sleep_duration
     )
 
     return binned_data

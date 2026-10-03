@@ -1702,8 +1702,9 @@ class behavpy_core(pd.DataFrame):
         time_window_length: int,
         velocity_correction_coef: float,
         masking_duration: int,
-        velocity_threshold: float,
+        velocity_threshold: Union[float, str],
         walk_threshold: float,
+        **auto_kwargs,
     ) -> pd.DataFrame:
         """
         Internal wrapper for motion detection processing on individual specimens.
@@ -1721,6 +1722,7 @@ class behavpy_core(pd.DataFrame):
             masking_duration=masking_duration,
             velocity_threshold=velocity_threshold,
             walk_threshold=walk_threshold,
+            **auto_kwargs,
         )
 
         old_index = pd.Index([index_name] * len(df.index), name="id")
@@ -1733,8 +1735,13 @@ class behavpy_core(pd.DataFrame):
         time_window_length: int = 10,
         velocity_correction_coef: float = 3e-3,
         masking_duration: int = 6,
-        velocity_threshold: float = 1.0,
+        velocity_threshold: Union[float, str] = 1.0,
         walk_threshold: float = 2.5,
+        threshold_quantile: float = 0.99,
+        threshold_floor: float = 1.0,
+        day_length: int = 24,
+        lights_off: int = 12,
+        remove_spikes: Optional[bool] = None,
     ) -> "behavpy_core":
         """
         Method version of the motion detector for classifying different types of movement in ethoscope experiments.
@@ -1745,8 +1752,17 @@ class behavpy_core(pd.DataFrame):
             velocity_correction_coef (float, optional): Coefficient to correct velocity data. Use 3e-3 for 'small' tubes
                 (20 per ethoscope), 15e-4 for 'long' tubes (10 per ethoscope). Default is 3e-3.
             masking_duration (int, optional): Seconds during which movement is ignored after stimulus. Default is 6.
-            velocity_threshold (float, optional): Threshold above which movement is detected. Default is 1.0.
+            velocity_threshold (float or str, optional): Threshold above which movement is detected.
+                "auto" estimates it per specimen and light phase from the specimen's own tracking
+                noise (see ethoscopy.motion_calibration). Default is 1.0.
             walk_threshold (float, optional): Threshold above which movement is classified as walking. Default is 2.5.
+            threshold_quantile (float, optional): With "auto", quantile of still-bin velocity used as the
+                threshold. Default is 0.99.
+            threshold_floor (float, optional): With "auto", lowest threshold allowed. Default is 1.0.
+            day_length (int, optional): With "auto", day length in hours. Default is 24.
+            lights_off (int, optional): With "auto", hour of lights off. Default is 12.
+            remove_spikes (bool, optional): Drop tracking spikes (centroid jumps and lands back on
+                the same pixel) before computing velocity. None enables it with "auto". Default is None.
 
         Returns:
             behavpy_core: A behavpy object with added columns for movement classifications including:
@@ -1779,6 +1795,11 @@ class behavpy_core(pd.DataFrame):
                     masking_duration=masking_duration,
                     velocity_threshold=velocity_threshold,
                     walk_threshold=walk_threshold,
+                    threshold_quantile=threshold_quantile,
+                    threshold_floor=threshold_floor,
+                    day_length=day_length,
+                    lights_off=lights_off,
+                    remove_spikes=remove_spikes,
                 )
             ),
             tdf.meta,
@@ -1794,6 +1815,7 @@ class behavpy_core(pd.DataFrame):
         t_column: str,
         time_window_length: int,
         min_time_immobile: int,
+        untracked: str = "immobile",
     ) -> pd.DataFrame:
         """
         Internal wrapper for sleep analysis processing on individual specimens.
@@ -1847,8 +1869,11 @@ class behavpy_core(pd.DataFrame):
             d_small["is_interpolated"], False, d_small[mov_column]
         )
 
+        sleep_breaking = d_small[mov_column]
+        if untracked == "break":
+            sleep_breaking = sleep_breaking | d_small["is_interpolated"]
         d_small["asleep"] = _sleep_contiguous(
-            d_small[mov_column],
+            sleep_breaking,
             1 / time_window_length,
             min_valid_time=min_time_immobile,
         )
@@ -1863,6 +1888,7 @@ class behavpy_core(pd.DataFrame):
         t_column: str = "t",
         time_window_length: int = 10,
         min_time_immobile: int = 300,
+        untracked: str = "immobile",
     ) -> "behavpy_core":
         """
         Analyse movement data to identify sleep periods based on sustained immobility.
@@ -1882,6 +1908,9 @@ class behavpy_core(pd.DataFrame):
                 Defaults to 10.
             min_time_immobile (int, optional): Minimum duration in seconds of immobility
                 required to classify a period as sleep. Defaults to 300 (5 minutes).
+            untracked (str, optional): "immobile" counts bins with no tracked data as immobility;
+                "break" ends a sleep bout at them, so sleep is only scored where the specimen was
+                seen still. Defaults to "immobile".
 
         Returns:
             behavpy_core: New behavpy object with additional columns:
@@ -1903,6 +1932,8 @@ class behavpy_core(pd.DataFrame):
         # Validate min_time_immobile
         if not isinstance(min_time_immobile, int) or min_time_immobile <= 0:
             raise ValueError("min_time_immobile must be a positive number")
+        if untracked not in ("immobile", "break"):
+            raise ValueError('untracked must be "immobile" or "break"')
 
         tdf = self.reset_index().copy(deep=True)
         return self.__class__(
@@ -1913,6 +1944,7 @@ class behavpy_core(pd.DataFrame):
                     t_column=t_column,
                     time_window_length=time_window_length,
                     min_time_immobile=min_time_immobile,
+                    untracked=untracked,
                 )
             ),
             tdf.meta,
