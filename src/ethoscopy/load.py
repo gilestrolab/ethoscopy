@@ -246,6 +246,11 @@ def download_from_remote_dir(meta, remote_dir, local_dir, progress=True):
 
     meta_df.dropna(how="all", inplace=True)
 
+    # convert dates to YYYY-MM-DD (dd/mm/yyyy input is read day first), as the
+    # server's directory names use; done before de-duplicating so that the same
+    # date written two ways counts once
+    meta_df = validate_datetime(meta_df)
+
     if "time" in meta_df.columns.tolist():
         meta_df["check"] = meta_df["machine_name"] + meta_df["date"] + meta_df["time"]
         meta_df.drop_duplicates(
@@ -256,10 +261,6 @@ def download_from_remote_dir(meta, remote_dir, local_dir, progress=True):
         meta_df.drop_duplicates(
             subset=["check"], keep="first", inplace=True, ignore_index=False
         )
-
-    # check the date format is YYYY-MM-DD, without this format the df merge will return empty
-    # will correct to YYYY-MM-DD in a select few cases
-    validate_datetime(meta_df)
 
     # extract columns as list to identify .db files from ftp server
     ethoscope_list = meta_df["machine_name"].tolist()

@@ -1,5 +1,5 @@
 """
-Regression tests for ``validate_datetime``.
+Regression tests for ``validate_datetime`` and its callers.
 
 The lab convention is dd/mm/yyyy. ``validate_datetime`` used to parse the
 whole date column with ``pd.to_datetime`` first, which reads '05/01/2024' as
@@ -9,6 +9,7 @@ read month-first, and ``link_meta_index`` then looked for the wrong runs.
 """
 
 import datetime as dt
+import ftplib
 import sys
 from pathlib import Path
 
@@ -16,7 +17,7 @@ import pandas as pd
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from ethoscopy.load import link_meta_index
+from ethoscopy.load import download_from_remote_dir, link_meta_index
 from ethoscopy.misc.validate_datetime import validate_datetime
 
 
@@ -87,3 +88,62 @@ def test_link_meta_index_reads_dd_mm(tmp_path):
 
     assert result["date"].tolist() == ["2025-01-05"]
     assert "2025-01-05_10-00-00" in result["path"].iloc[0]
+
+
+class _FakeFTP:
+    """Anonymous FTP server over an in-memory tree of dicts (files are bytes)."""
+
+    def __init__(self, tree):
+        self.tree = tree
+        self.node = tree
+
+    def __call__(self, netloc):  # stands in for the ftplib.FTP class
+        return _FakeFTP(self.tree)
+
+    def login(self):
+        pass
+
+    def quit(self):
+        pass
+
+    def cwd(self, path):
+        node = self.tree
+        for part in [p for p in str(path).split("/") if p]:
+            if not isinstance(node, dict) or part not in node:
+                raise ftplib.error_perm(f"550 {path}")
+            node = node[part]
+        self.node = node
+
+    def nlst(self):
+        return list(self.node)
+
+    def size(self, name):
+        return len(self.node[name])
+
+    def retrbinary(self, command, callback):
+        callback(self.node[command.split(" ", 1)[1]])
+
+
+def test_download_from_remote_dir_reads_dd_mm(tmp_path, monkeypatch):
+    """The FTP download used to discard validate_datetime's result and search
+    the server with the raw '05/01/2025' string, finding nothing."""
+    runs = {
+        stamp: {f"{stamp}_abc.db": b"data"}
+        for stamp in ("2025-01-05_10-00-00", "2025-05-01_10-00-00")
+    }
+    tree = {"results": {"abc": {"ETHOSCOPE_001": runs}}}
+    monkeypatch.setattr("ethoscopy.load.ftplib.FTP", _FakeFTP(tree))
+    monkeypatch.chdir(tmp_path)  # download_database changes directory
+    csv_path = tmp_path / "metadata.csv"
+    pd.DataFrame({"machine_name": ["ETHOSCOPE_001"], "date": ["05/01/2025"]}).to_csv(
+        csv_path, index=False
+    )
+    local = tmp_path / "local"
+    local.mkdir()
+
+    download_from_remote_dir(
+        str(csv_path), "ftp://server/results", str(local), progress=False
+    )
+
+    downloaded = sorted(p.name for p in local.rglob("*.db"))
+    assert downloaded == ["2025-01-05_10-00-00_abc.db"]
