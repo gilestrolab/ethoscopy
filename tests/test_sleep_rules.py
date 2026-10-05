@@ -130,13 +130,31 @@ class TestKRuleBins:
         assert not _bins([100.0] * 30).asleep.any()  # 29 still bins after the first
         assert _bins([100.0] * 31).asleep.sum() == 30
 
-    def test_bin_without_frames_and_the_bin_after_it(self):
+    def test_bin_without_frames_break(self):
         x = [100.0] * 35 + [np.nan] + [100.0] * 35
-        out = _bins(x)
+        out = _bins(x, untracked="break")
         assert not out.has_data[35] and not out.asleep[35]
         assert out.walking[36]  # no previous median to compare with
         assert out.asleep[1:35].all() and out.asleep[37:].all()
         assert not out.asleep[36]
+
+    def test_bin_without_frames_immobile(self):
+        x = [100.0] * 35 + [np.nan] * 5 + [100.0] * 35
+        out = _bins(x)  # the default
+        # The gap counts as still and the fly is found where it was lost.
+        assert not out.has_data[35:40].any() and not out.walking[35:41].any()
+        assert out.asleep[1:].all()
+
+    def test_fly_found_elsewhere_after_a_gap_walked(self):
+        x = [100.0] * 35 + [np.nan] * 5 + [130.0] * 35
+        out = _bins(x)
+        # The step after the gap is measured from the last position seen (30 px).
+        assert out.walking[40] and not out.walking[35:40].any()
+        assert out.asleep[1:40].all() and not out.asleep[40] and out.asleep[41:].all()
+
+    def test_invalid_untracked(self):
+        with pytest.raises(ValueError):
+            _bins([100.0] * 5, untracked="nope")
 
     def test_sustained_event_window_and_k(self):
         x = np.full(60, 100.0)
@@ -224,9 +242,13 @@ class TestSleepAnnotationKRule:
     def test_inferred_frames_are_dropped(self):
         n = 1600
         inferred = np.where((np.arange(n) >= 800) & (np.arange(n) < 820), "1", "0")
-        out = sleep_annotation(_raw(n_bins=160, inferred=inferred), rule="k")
-        # Bins 80 and 81 lose all their frames: never sleep, and bin 82 has no step.
+        raw = _raw(n_bins=160, inferred=inferred)
+        # Bins 80 and 81 lose all their frames.
+        out = sleep_annotation(raw.copy(), rule="k")
         assert out.is_interpolated[80:82].all() and not out.is_interpolated[82:].any()
+        assert out.asleep[1:].all()  # untracked="immobile", the default
+        out = sleep_annotation(raw.copy(), rule="k", untracked="break")
+        # Never sleep, and bin 82 has no step to compare with.
         assert out.walking[82] and not out.asleep[80:83].any()
         assert out.asleep[1:80].all() and out.asleep[83:].all()
 
@@ -253,6 +275,7 @@ class TestSleepAnnotationKRule:
             {"rule": "k", "k": True},
             {"rule": "k", "k": 2.5},
             {"rule": "k", "pixel": 0},
+            {"rule": "k", "untracked": "nope"},
         ],
     )
     def test_invalid_arguments(self, kwargs):
@@ -280,18 +303,24 @@ class TestParity:
         assert (frames.is_inferred != 0).any()
         assert (~expected.has_data).any()  # a bin without frames
         assert expected.asleep_k3.any() and not expected.asleep_k3.all()
+        # Flies lost while asleep, where the two untracked policies differ
+        assert (expected.asleep_k3 != expected.asleep_k3_immobile).sum() > 100
 
     @pytest.mark.parametrize("k", [3, 2])
-    def test_bins_match_reference(self, parity, k):
+    @pytest.mark.parametrize("untracked", ["break", "immobile"])
+    def test_bins_match_reference(self, parity, k, untracked):
+        # The reference is sleep_rule.py for "break", ethoscopy itself for "immobile".
         frames, expected = parity
+        column = f"asleep_k{k}" + ("_immobile" if untracked == "immobile" else "")
         for fly, raw in frames.groupby("fly"):
             # Reason: the classic detector needs these columns; they do not enter the k-rule.
             raw = raw.drop(columns="fly").assign(
                 t=raw.t / 1000.0, w=25.0, h=10.0, phi=0.0, has_interacted=0
             )
-            out = sleep_annotation(raw, rule="k", k=k)
+            out = sleep_annotation(raw, rule="k", k=k, untracked=untracked)
             ref = expected[expected.fly == fly].reset_index(drop=True)
             assert out.t.tolist() == ref.t.tolist(), fly
             assert (~out.is_interpolated).tolist() == ref.has_data.tolist(), fly
-            assert out.walking.tolist() == ref.walking.tolist(), fly
-            assert out.asleep.tolist() == ref[f"asleep_k{k}"].tolist(), fly
+            if untracked == "break":
+                assert out.walking.tolist() == ref.walking.tolist(), fly
+            assert out.asleep.tolist() == ref[column].tolist(), fly

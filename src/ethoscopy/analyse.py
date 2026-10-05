@@ -259,13 +259,14 @@ def sleep_annotation(
         untracked (str, optional): How bins with no tracked frames enter sleep scoring. "immobile"
             counts them as immobility, so they can extend or create sleep bouts; "break" ends a
             bout at them, so sleep is only scored where the animal was seen still. Movement
-            columns are unaffected either way. Default is "immobile". Ignored with rule="k".
+            columns are unaffected either way. With rule="k", "immobile" also measures the step
+            after such bins from the last position seen. Default is "immobile".
         rule (str, optional): "classic" scores a bin as sleep when no frame passed the movement
             threshold for min_sleep_duration. "k" (tentative) scores it from walking (the median
             position moving more than 10 px between bins) and from sustained movement events,
             ignoring tracking noise; see ethoscopy.sleep_rules. It adds the columns 'walking',
-            'sustained' and 'micro_awake', leaves the classic columns as they are, and never
-            scores a bin without frames as sleep. Default is "classic".
+            'sustained' and 'micro_awake' and leaves the classic columns as they are. With
+            untracked="break" it reproduces the reference rule exactly. Default is "classic".
         k (int, optional): With rule="k", sustained events within a centred 60-s window that
             make a bin awake. Default is 3.
         pixel (float, optional): With rule="k", one pixel in the units of x/y. None infers it:
@@ -301,6 +302,7 @@ def sleep_annotation(
             min_sleep_duration=min_sleep_duration,
             masking_duration=masking_duration,
             velocity_correction_coef=velocity_correction_coef,
+            untracked=untracked,
         )
 
     # Check minimum data requirements

@@ -16,7 +16,10 @@ unmodified; nothing here edits them.
         --out tests/data [--r-out ../rethomics/sleepr/tests/testthat]
 
 ethoscopy reads the databases through load_ethoscope with reference_hour=None,
-so its 10-s bins start at the recording start, as the reference's do.
+so its 10-s bins start at the recording start, as the reference's do, and scores
+them with untracked="break", the reference's treatment of bins without frames.
+The exported fixtures also carry ethoscopy's own untracked="immobile" results,
+for the R port to match.
 """
 
 import argparse
@@ -32,6 +35,7 @@ import pandas as pd
 
 from ethoscopy.analyse import sleep_annotation
 from ethoscopy.load import load_ethoscope
+from ethoscopy.sleep_rules import k_rule_bins
 
 K_VALUES = (3, 2)
 
@@ -78,7 +82,7 @@ def ethoscopy_fractions(db, rois):
         fly = data[data.id == f"roi_{roi}"].drop(columns="id")
         row = {"roi": roi}
         for k in K_VALUES:
-            scored = sleep_annotation(fly, rule="k", k=k)
+            scored = sleep_annotation(fly, rule="k", k=k, untracked="break")
             row[f"k{k}"] = (
                 None
                 if scored is None
@@ -224,16 +228,29 @@ def export(reference, segments, out, r_out=None):
     for label, db, roi, start_s, duration_s in segments:
         rows = read_segment(db, int(roi), float(start_s), float(duration_s))
         frames.append(rows.assign(fly=label))
-        bins.append(reference_bins(reference, rows).assign(fly=label))
+        expected = reference_bins(reference, rows)
+        observed = rows[rows.is_inferred == 0]
+        for k in K_VALUES:
+            mine = k_rule_bins(
+                observed.t.to_numpy() / 1000.0,
+                observed.x.to_numpy(float),
+                observed.y.to_numpy(float),
+                observed.xy_dist_log10x1000.to_numpy(float),
+                k=k,
+                untracked="immobile",
+            )
+            assert mine.t.tolist() == expected.t.tolist(), label
+            expected[f"asleep_k{k}_immobile"] = mine.asleep.to_numpy()
+        bins.append(expected.assign(fly=label))
         print(
             f"{label}: {len(rows)} rows ({int((rows.is_inferred != 0).sum())} inferred)"
         )
     frames = pd.concat(frames)[
         ["fly", "t", "x", "y", "xy_dist_log10x1000", "is_inferred"]
     ]
-    bins = pd.concat(bins)[
-        ["fly", "t", "has_data", "walking", "asleep_k3", "asleep_k2"]
-    ]
+    columns = ["fly", "t", "has_data", "walking", "asleep_k3", "asleep_k2"]
+    columns += [f"asleep_k{k}_immobile" for k in K_VALUES]
+    bins = pd.concat(bins)[columns]
     out = Path(out)
     frames.to_csv(out / "k_rule_frames.csv", index=False)
     bins.to_csv(out / "k_rule_bins.csv", index=False)
