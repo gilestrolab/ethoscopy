@@ -407,6 +407,9 @@ velocity* by positional stability, so the estimate is not circular.
 - [x] README section.
 - [ ] Ground-truth recordings (lab): dead/anaesthetised flies under each IR → run
       `scripts/validate_motion_threshold.py`.
+      Candidate: ETHOSCOPE_354 tube 19 (2026-10-02, DeepTubeTracker) never moved in
+      17 h (fewer than 10 steps of 2 px or more; snapshots unchanged 1–16.6 h). Both
+      sessions treat it as dead; no human has looked.
 - [ ] Decide default switch after ground truth (currently opt-in).
 - [x] Still-bin tolerance default 0.5 px -> 1 px (Giorgio, 2026-09-30), both packages:
       `STILL_SHIFT_PIXELS`/`pixel_size()` (Python), `pixel_size()` (R, exported);
@@ -466,6 +469,23 @@ device's AdaptiveBGModel. Scripts + data on turing: /mnt/cache/claude_motion_cal
   gives phantom 5-30 px jumps; not fixable by thresholds.
 - Dead/still-from-start flies are never detected by AdaptiveBGModel.
 
+### DeepTubeTracker overnight runs (2026-10-03)
+ETHOSCOPE_354 and 356, 2026-10-02 16:30 UTC, 17.1 h at 5 fps, learned tracker in
+production. Scored fixed 1.0 vs "auto" (this branch, d27b1d3); script and CSVs on turing:
+/mnt/cache/claude_motion_calibration/dl_nights_2026-10-02. Lights on 08:00 UTC
+(reference_hour=8; lights_on '09:00' in METADATA is BST).
+- Tracker noise is low: still bins crossing 1.0 median 0.47% dark (IQR 0.32–0.80%),
+  1.0% light. 31/40 flies stay at the 1.0 floor under auto; median night sleep 74.3%
+  fixed vs 74.8% auto.
+- Exception: tube ends at the frame edges in the dark (vignetting). 354 tube 19 (x 501–506
+  px for 17 h, light phase included; likely dead, detected unlike with AdaptiveBGModel):
+  89% crossing at 1.0 dark / 1.2% light; auto night 1.42; night sleep 2.5% → 95.4%.
+  354 tube 2 (live, rests at x≈62): 38% crossing; auto 1.46; 29% → 68%.
+- 354/08 and 356/06 (mid-tube, 10–12% crossing) gain 15 points under auto; noise vs
+  micro-movement undecided without video.
+- Sent to ethoscope_DL_tracking. Real-time sleep deprivation still uses a fixed
+  threshold, so corner jitter matters there even though auto handles post-hoc scoring.
+
 ### Related work handed to other sessions (2026-09-30)
 - ethoscope-63 (jenner, ethoscope repo): SQLite end-of-run data loss FIXED (dev e7e0f8ca);
   windowed sleep-dep trigger implemented, uncommitted, awaiting Giorgio (gain is only
@@ -473,6 +493,14 @@ device's AdaptiveBGModel. Scripts + data on turing: /mnt/cache/claude_motion_cal
   hopping (#3) diagnosed; GPIO listener busy loop (100% of a core on every device).
 - ethoscope_DL_tracking (turing): learned per-tube fly tracker, plan sent; Pi 3
   feasibility measured on ETHOSCOPE000 (tiny CNN 44.5 ms/20 tubes; live 9.1 fps).
+  ETHOSCOPE000 soak re-run (CSVs lost) dropped 2026-10-03: production runs answered it.
+  DeepTubeTracker runs on 2 threads at 5 fps; 354/356 ran 17.1 h without camera dropouts.
+  4 threads at full speed reached 83.8 °C, and the under-volted 301 rebooted.
+  2026-10-03: they are testing exposure-first AGC on the camera (exposure up to the
+  frame period at gain 1 before adding gain): dead fly 354/19, windows with a step of
+  0.65 px or more fell from 12% to 1% in a 15-min A/B; AdaptiveBGModel detected less.
+  Sent them the scoring-side proposal (auto) and asked them to log ExposureTime and
+  AnalogueGain in DIAGNOSTICS.
 
 ### Discovered During Work
 - `beam_cross` compares `x` to 0.5, but `x` arrives in pixels from load_ethoscope
@@ -489,5 +517,10 @@ device's AdaptiveBGModel. Scripts + data on turing: /mnt/cache/claude_motion_cal
   (`velocity_corrected[2:.N]`) and zeroes velocity during masking; ethoscopy keeps it
   and masks only beam_cross. Explains the 0–4% R/Python threshold gap; pre-existing.
 - analyse.py is 800+ lines (limit 500); split motion detection into its own module.
+- `load_ethoscope` (read_single_roi_optimized) keeps `is_inferred` rows, which the legacy
+  `read_single_roi` drops. AdaptiveBGModel's inferred rows repeat the last xy_dist for
+  up to 30 s, so a lost fly reads as moving; DeepTubeTracker writes them with zero
+  movement. `is_inferred` is TEXT '0'/'1' in the 2026-10-02 DeepTubeTracker DBs, so
+  `== 0` matches nothing; check.
 - ~/R system library has stale compiled packages (stringi vs ICU 78, vctrs vs R);
   rebuilt stringi, vctrs, purrr in ~/R/library.
