@@ -524,3 +524,53 @@ production. Scored fixed 1.0 vs "auto" (this branch, d27b1d3); script and CSVs o
   `== 0` matches nothing; check.
 - ~/R system library has stale compiled packages (stringi vs ICU 78, vctrs vs R);
   rebuilt stringi, vctrs, purrr in ~/R/library.
+
+## 2026-10-05 — Opt-in k-rule sleep scoring (branch `motion-calibration`)
+
+**Request** (Giorgio, relayed by ethoscope-turing): a tentative opt-in rule so Esteban
+and Alice can test it; classic stays the default and `velocity_threshold="auto"` stays.
+The rule is `rule_sustained_k3` of turing:/mnt/cache/bona_fide/sleep_rule.py (md5
+9070ee2b, helpers in bona_fide_sleep.py md5 0d32d6c0). Evidence: ownCloud
+`sleep_detection/04_sleep_scoring/ANALYSIS_LOG.md` (across-recording IQR 30 → 21 pp;
+rebound, fumin and Clk^Jrk light preserved; D. erecta daytime 40 → 72%, unresolved).
+
+**Decisions (Giorgio):** `sleep_annotation(..., rule="classic"|"k", k=3, pixel=None)`;
+under k the classic columns stay as they are, `asleep` follows the rule, and
+`walking`, `sustained`, `micro_awake` are added; `velocity_threshold` with k raises;
+`untracked` is ignored (no-data bins are never sleep); bins other than 10 s raise.
+Commit per step, no push; sleepr work on a new branch `motion-calibration`.
+
+### Plan
+- [x] Commit the 3 Oct notes (776967d).
+- [x] `src/ethoscopy/sleep_rules.py`: vectorised event classes and per-bin rule.
+- [x] `sleep_annotation(rule=, k=, pixel=)`; classic path untouched.
+- [x] `tests/test_sleep_rules.py` (31): classes, ties, edges, gaps, bouts, k, inferred
+      rows (TEXT, NULL), errors, and bin-by-bin parity on the fixtures.
+- [x] `scripts/validate_k_rule.py`: whole-database parity against the unmodified
+      reference; export of fixture segments with per-bin expected values (captured
+      by wrapping the reference's `sleep_fraction`, cross-checked on all 16 scorings).
+- [x] Parity on 354 + 356 (2026-10-02, DTT), 172 (2023, legacy ABG), 350 (2026-09-30, ABG).
+- [x] README section.
+- [x] sleepr: branch `motion-calibration`, calibration port committed (f5519a3), then
+      the k-rule (`R/sleep-rules.R`, `sleep_annotation(rule, k, pixel)`, needed_columns
+      asks scopr for y) with tests incl. the same fixtures in pixels.
+
+### Results
+- Whole-database parity exact (`==`) on every ROI the reference scores, k3 and k2:
+  354 20/20, 356 20/20, 350 20/20, 172 10/10 (70 ROIs). Fixture segments
+  (`tests/data/k_rule_*.csv`, 31.7k rows: 354 tube 19 dead, 354 tube 2 live, 172 tube 3
+  legacy with no-frame bins, 350 tube 1 with 289 inferred rows) match bin by bin in
+  Python and in R (pixel = 1).
+- Classic output byte-identical to 776967d (12 real flies x fixed / untracked="break" /
+  auto, same hash).
+- 354 night (ZT12-24): dead fly classic 2%, k3 87%, k2 43% (the dark tube end still
+  yields sustained events); tube 2 classic 29%, k3 61%, k2 57%.
+- Suites: ethoscopy 371 passed, 11 skipped; sleepr 159 passed, 2 skipped (empty tests).
+
+### Discovered During Work
+- R classic `sleep_annotation` drops the first window whenever the recording does not
+  start on a 10-s boundary (the raw-frame rolled join is NA there, then `na.omit`), and
+  its x/y come from the last raw frame before the window, not window means. Pre-existing;
+  the k path keeps every window.
+- `reference_hour` shifts the 10-s bins unless the offset is a multiple of 10 s, so
+  k-rule parity with the reference needs `reference_hour=None`.
