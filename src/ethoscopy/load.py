@@ -703,6 +703,18 @@ def load_ethoscope(
                                 )
                             continue
 
+                        # Reason: SQLite returns an empty table with object columns, and
+                        # concatenating it turns the other ROIs' integer columns to object.
+                        if roi_1.empty:
+                            if verbose is True:
+                                tqdm.write(
+                                    "ROI_{} from {} has no rows in the requested time range".format(
+                                        file_info["region_id"],
+                                        file_info["machine_name"],
+                                    )
+                                )
+                            continue
+
                         # Check if 'id' column already exists, if not insert it
                         if "id" not in roi_1.columns:
                             roi_1.insert(0, "id", file_info["id"])
