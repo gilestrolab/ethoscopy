@@ -367,3 +367,27 @@ style), since the new code follows the conventions of the files it sits in.
   `@pytest.mark.unit` are unregistered and every test file emits
   `PytestUnknownMarkWarning`. Renaming the section switches on
   `--cov-fail-under=70` at the same time, so it needs checking separately.
+
+## 2026-10-05 — Fix `plot_hmm_response` (branch `fix/hmm-response-args`)
+
+**Problem** (reported by Giorgio via ethoscope_metadata_db). `plot_hmm_response`
+failed on every call in both canvases since v2.0.1. aa54037 (2025-01-13) removed
+`colours` from `_hmm_response` but not from its callers; 49c13b2 (2025-01-20) then
+rewrote both calls as positional arguments: 12 for 11 parameters, with `t_bin` and
+`facet_labels` swapped. Behind it, the faceted path called `facet_merge` without
+the `meta` argument every other caller passes, so faceting failed as well. The
+arousal analysis (esteban-db-8a) had to re-implement the function on turing.
+
+- [x] Both callers pass keyword arguments; `colours` dropped (the body never used
+      it; plotly colours its "True Stimulus" points from `colours` after the call).
+- [x] `_hmm_response` passes `self.meta` to `facet_merge`.
+- [x] `tests/test_hmm_response.py` (10): both canvases, no facet, facets with
+      labels distinct from args, one HMM per facet, missing column, several HMMs
+      without a facet. Rates checked against a per-fly calculation. With the
+      `facet_merge` fix reverted, the facet tests fail.
+- [x] Real data: on the 66 Joyce et al. 2024 Fig. 1H flies (turing,
+      /mnt/cache/claude_motion_calibration/hmm_fix), all 492 per-fly rates equal
+      the arousal re-implementation exactly (seaborn, seaborn faceted, plotly);
+      group means reproduce the published native numbers.
+- Full suite 325 passed, 11 skipped. Seaborn figures inspected; plotly checked
+  by trace names and colours only (no kaleido for image export).
