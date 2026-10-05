@@ -588,3 +588,12 @@ Commit per step, no push; sleepr work on a new branch `motion-calibration`.
   the k path keeps every window.
 - `reference_hour` shifts the 10-s bins unless the offset is a multiple of 10 s, so
   k-rule parity with the reference needs `reference_hour=None`.
+- `behavpy.motion_detector()` crashes (`'NoneType' object has no attribute 'index'` in
+  `_wrapped_motion_detector`) when any fly has < 100 rows, because the detector returns
+  None for it. Present in 2.4.0 and on this branch. `load_ethoscope(FUN=sleep_annotation)`
+  skips such flies instead.
+- Classic default path verified byte-identical between 2.4.0 (b28711f) and 3b0498c:
+  load_ethoscope, sleep_annotation, max_velocity_detector and
+  behavpy.motion_detector().sleep_contiguous(), on 12 flies from 350, 354 and 172 (for the
+  su(var)3-9 paper re-run). Timing on jenner, one core, per fly-day: load 0.6-1.1 s,
+  motion_qc 0.5-0.9 s, classic + k + auto together 0.6-1.3 s.
