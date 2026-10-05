@@ -95,6 +95,34 @@ as before. `untracked="break"` (in `sleep_annotation` and `sleep_contiguous`) st
 without tracked data from counting as sleep. The same method is being added to rethomics'
 `sleepr`, so both toolboxes score a recording alike.
 
+### Sleep from walking and sustained movement (tentative)
+
+`rule="k"` scores sleep from what the fly does over several frames instead of from its
+noisiest frame:
+
+```python
+data = etho.load_ethoscope(meta, reference_hour=9.0,
+                           FUN=partial(etho.sleep_annotation, rule="k"))
+```
+
+A 10-s window is awake if the fly walked (its median position moved more than 10 px from
+the previous window) or if at least `k` sustained movement events started in the 60 s
+around it. An event is a run of consecutive frames above the classic velocity test. Two
+kinds are tracking noise and are ignored: runs in which the position never leaves its
+pixel, and jumps of one or two frames that land back within a pixel. Sleep is 5 minutes
+or more of tracked windows that are not awake; windows without frames are never sleep,
+and frames the tracker inferred are dropped. `k` is 3 by default, and 2 is the stricter
+alternative. The output adds `walking`, `sustained` and `micro_awake` and keeps the
+classic columns, `moving` included, so the two rules can be compared on the same table.
+Positions from `load_ethoscope` are in pixels; for positions given as a fraction of the
+ROI width, pass `pixel=1/roi_width`.
+
+On 219 recordings from the lab archive, the rule narrows the spread of sleep between
+recordings (interquartile range of per-recording median sleep 30 → 21 percentage points)
+and preserves the rebound after sleep deprivation and the *fumin* and *Clk^Jrk* (light
+phase) phenotypes. It raises daytime sleep in *D. erecta* from 40% to 72%, which is not
+yet understood, so treat the rule as experimental.
+
 ## Tutorial data
 
 The six pickle files used by the tutorial notebooks (~36 MB total, dominated by `overview_data.pkl` at ~31 MB) are **intentionally not shipped with the PyPI wheel** to keep `pip install ethoscopy` lean. Fetch them once with:

@@ -110,6 +110,13 @@ default until ground-truth (dead-fly) recordings are scored with
   exported from ethoscopy: regenerate them when the Python algorithm changes.
 - Positions from `load_ethoscope` are in **pixels**, from the legacy reader in
   fractions of ROI width; `default_still_shift()` infers which.
+- **k-rule** (`sleep_rules.py`, `sleep_annotation(rule="k", k=3)`, tentative and
+  opt-in): sleep from walking (median step > 10 px between 10-s bins) and sustained
+  movement events. It must match `rule_sustained_k3`/`_k2` of
+  turing:/mnt/cache/bona_fide/sleep_rule.py **exactly**. `scripts/validate_k_rule.py
+  parity` checks whole databases (load with `reference_hour=None`, or the bins shift),
+  and `export` regenerates `tests/data/k_rule_*.csv`; copy them to sleepr's
+  `tests/testthat/`, where `R/sleep-rules.R` is the R twin.
 
 ## Architecture and Code Structure
 
