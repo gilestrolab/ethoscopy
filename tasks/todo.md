@@ -576,8 +576,27 @@ Commit per step, no push; sleepr work on a new branch `motion-calibration`.
 - Fixed after review: under rule="k" the classic detector first got only the
   observed frames, so classic columns differed from rule="classic" (51 of 4320 bins of
   `moving`, 12 h of 350 tube 1). It now gets every frame (both packages); identical.
-- Not pushed: both `motion-calibration` branches are local to jenner; turing's
-  ethoscopy checkout is on main. R through scopr sees normalised positions, so the
+- untracked under rule="k" (Giorgio, 2026-10-05, after ethoscope-turing's video check):
+  AdaptiveBGModel loses still flies, and the reference rule never counts a window without
+  frames as sleep, so k3 underestimated ABG sleep badly. Now `untracked` works as in
+  classic, default "immobile": no-data windows count as still, and the step after a gap
+  is measured from the last position seen; "break" is the reference rule (parity).
+  Evidence (night, per-tube error vs pixel truth, scripts in
+  turing:/mnt/cache/claude_motion_calibration/k_untracked):
+  - ETHOSCOPE_361 (ABG found the fly in 59% of frames), strict truth 71.6%:
+    ABG classic 49.6% (0.22), ABG k3 break 30.1% (0.43), ABG k3 immobile 67.7% (0.053);
+    DTT k3 67.1% (0.066).
+  - ETHOSCOPE_044, sustained truth 66.3%: ABG classic 55.6% (0.11), k3 break 45.3% (0.21),
+    k3 immobile 67.7% (0.025); DTT k3 break 62.4% (0.072), immobile 66.6% (0.033).
+  - Bridging a gap only if the fly is found within 10 px of where it was lost
+    (0.31 on 361), or filling gaps of at most 5 min (0.43), did not help: ABG loses
+    sleeping flies for long stretches and finds them again once they move.
+  Shipped code equals the evaluated variant bin for bin on both recordings. Fixtures gained
+  two lost-fly segments (350 tube 12, 172 tube 3) and ethoscopy's immobile results for R.
+  The archive phenotype checks (ANALYSIS_LOG §4-5) were run as "break"; rerun them as
+  "immobile".
+- Both `motion-calibration` branches pushed 2026-10-05 (ethoscopy 3b0498c, sleepr 9320476,
+  sleepr over SSH). R through scopr sees normalised positions, so the
   inferred pixel (1/500) puts the walking cut at ~11 px on 545-551 px ROIs unless
   `pixel = 1/roi_width` is given; scopr also keeps inferred rows with has_interacted.
 
