@@ -41,3 +41,7 @@
   (capped at 1 h) ended silently, and the Pi was unreachable two days later, so the
   data were lost. Copy partial results off the device periodically (or write them
   to persistent storage), and re-arm or check long waits explicitly.
+- **A file you changed is not necessarily black-clean.** `black load.py` after a 12-line
+  fix reflowed three untouched functions (black 26 against code formatted by an older
+  black). Run `black --check --diff FILE` first; if it would touch more than your hunk,
+  leave the file alone and keep your hunk in its style by hand.
