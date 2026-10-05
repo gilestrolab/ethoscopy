@@ -565,7 +565,14 @@ Commit per step, no push; sleepr work on a new branch `motion-calibration`.
   auto, same hash).
 - 354 night (ZT12-24): dead fly classic 2%, k3 87%, k2 43% (the dark tube end still
   yields sustained events); tube 2 classic 29%, k3 61%, k2 57%.
-- Suites: ethoscopy 371 passed, 11 skipped; sleepr 159 passed, 2 skipped (empty tests).
+- Suites: ethoscopy 371 passed, 11 skipped; sleepr 162 passed, 2 skipped (empty tests).
+- Fixed after review: under rule="k" the classic detector first got only the
+  observed frames, so classic columns differed from rule="classic" (51 of 4320 bins of
+  `moving`, 12 h of 350 tube 1). It now gets every frame (both packages); identical.
+- Not pushed: both `motion-calibration` branches are local to jenner; turing's
+  ethoscopy checkout is on main. R through scopr sees normalised positions, so the
+  inferred pixel (1/500) puts the walking cut at ~11 px on 545-551 px ROIs unless
+  `pixel = 1/roi_width` is given; scopr also keeps inferred rows with has_interacted.
 
 ### Discovered During Work
 - R classic `sleep_annotation` drops the first window whenever the recording does not
