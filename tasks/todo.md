@@ -594,7 +594,14 @@ Commit per step, no push; sleepr work on a new branch `motion-calibration`.
   Shipped code equals the evaluated variant bin for bin on both recordings. Fixtures gained
   two lost-fly segments (350 tube 12, 172 tube 3) and ethoscopy's immobile results for R.
   The archive phenotype checks (ANALYSIS_LOG §4-5) were run as "break"; rerun them as
-  "immobile".
+  "immobile" (ethoscope-turing is doing it, break parity asserted per fly).
+- Daytime is not validated (ethoscope-turing, 2026-10-05): in the light phase the rule
+  scores 11-16 pp above sustained pixel truth on both videos, both trackers and both
+  policies (precision ~0.55; classic near or below truth). 30 of the extra windows on
+  video: no locomotion; ~40% small body, leg or wing movements, ~60% only pixel speckle;
+  28 of 30 in the evening before lights-off. Whether that is sleep is an arousal-threshold
+  question. README, module docstring and CLAUDE.md now say so. Data:
+  turing:/mnt/cache/dl_tracking/eval/k_untracked_light/*_light.json.
 - Both `motion-calibration` branches pushed 2026-10-05 (ethoscopy 3b0498c, sleepr 9320476,
   sleepr over SSH). R through scopr sees normalised positions, so the
   inferred pixel (1/500) puts the walking cut at ~11 px on 545-551 px ROIs unless
