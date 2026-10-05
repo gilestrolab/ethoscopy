@@ -7,6 +7,7 @@ import pandas as pd
 
 from ethoscopy.misc.general_functions import rle
 from ethoscopy.motion_calibration import estimate_velocity_threshold, find_spikes
+from ethoscopy.sleep_rules import K_RULE_BIN_SECONDS, k_rule_annotation
 
 
 def max_velocity_detector(
@@ -236,6 +237,9 @@ def sleep_annotation(
     velocity_correction_coef: float = 3e-3,
     velocity_threshold: Union[float, str, None] = None,
     untracked: str = "immobile",
+    rule: str = "classic",
+    k: int = 3,
+    pixel: Optional[float] = None,
 ) -> Optional[pd.DataFrame]:
     """
     Analyze movement data to identify sleep periods based on sustained immobility.
@@ -255,16 +259,49 @@ def sleep_annotation(
         untracked (str, optional): How bins with no tracked frames enter sleep scoring. "immobile"
             counts them as immobility, so they can extend or create sleep bouts; "break" ends a
             bout at them, so sleep is only scored where the animal was seen still. Movement
-            columns are unaffected either way. Default is "immobile".
+            columns are unaffected either way. Default is "immobile". Ignored with rule="k".
+        rule (str, optional): "classic" scores a bin as sleep when no frame passed the movement
+            threshold for min_sleep_duration. "k" (tentative) scores it from walking (the median
+            position moving more than 10 px between bins) and from sustained movement events,
+            ignoring tracking noise; see ethoscopy.sleep_rules. It adds the columns 'walking',
+            'sustained' and 'micro_awake', leaves the classic columns as they are, and never
+            scores a bin without frames as sleep. Default is "classic".
+        k (int, optional): With rule="k", sustained events within a centred 60-s window that
+            make a bin awake. Default is 3.
+        pixel (float, optional): With rule="k", one pixel in the units of x/y. None infers it:
+            1 for positions in pixels (load_ethoscope), 1/500 for positions as a fraction of
+            the ROI width. Default is None.
 
     Returns:
         Optional[pd.DataFrame]: DataFrame with movement and sleep classifications or None if insufficient data
 
     Raises:
-        ValueError: If untracked is not "immobile" or "break".
+        ValueError: If untracked is not "immobile" or "break", rule is not "classic" or "k",
+            or rule="k" is combined with velocity_threshold, a bin other than 10 s,
+            k < 1 or a non-positive pixel.
     """
     if untracked not in ("immobile", "break"):
         raise ValueError('untracked must be "immobile" or "break"')
+    if rule not in ("classic", "k"):
+        raise ValueError('rule must be "classic" or "k"')
+    if rule == "k":
+        if velocity_threshold is not None:
+            raise ValueError('velocity_threshold applies only to rule="classic"')
+        if time_window_length != K_RULE_BIN_SECONDS:
+            raise ValueError(f'rule="k" is defined for {K_RULE_BIN_SECONDS}-s bins')
+        if isinstance(k, bool) or not isinstance(k, (int, np.integer)) or k < 1:
+            raise ValueError("k must be a positive integer")
+        if pixel is not None and not pixel > 0:
+            raise ValueError("pixel must be positive")
+        return k_rule_annotation(
+            data,
+            motion_detector_function,
+            k=k,
+            pixel=pixel,
+            min_sleep_duration=min_sleep_duration,
+            masking_duration=masking_duration,
+            velocity_correction_coef=velocity_correction_coef,
+        )
 
     # Check minimum data requirements
     if len(data.index) < 100:
