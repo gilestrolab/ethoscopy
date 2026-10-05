@@ -110,9 +110,13 @@ the previous window) or if at least `k` sustained movement events started in the
 around it. An event is a run of consecutive frames above the classic velocity test. Two
 kinds are tracking noise and are ignored: runs in which the position never leaves its
 pixel, and jumps of one or two frames that land back within a pixel. Sleep is 5 minutes
-or more of tracked windows that are not awake; windows without frames are never sleep,
-and frames the tracker inferred are dropped. `k` is 3 by default, and 2 is the stricter
-alternative. The output adds `walking`, `sustained` and `micro_awake` and keeps the
+or more of windows that are not awake, and frames the tracker inferred are dropped. `k`
+is 3 by default, and 2 is the stricter alternative. Windows without frames follow
+`untracked`, as in the classic rule. With the default `"immobile"` they count as still,
+and the fly walked only if it is found more than 10 px from where it was last seen.
+Background-subtraction tracking loses still flies, so this keeps their sleep: against
+pixel-motion truth at night, the error per fly was 0.03–0.05, as low as with the
+learned tracker. `untracked="break"` never scores such windows as sleep. The output adds `walking`, `sustained` and `micro_awake` and keeps the
 classic columns, `moving` included, so the two rules can be compared on the same table.
 Positions from `load_ethoscope` are in pixels; for positions given as a fraction of the
 ROI width, pass `pixel=1/roi_width`.
