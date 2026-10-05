@@ -116,8 +116,9 @@ is 3 by default, and 2 is the stricter alternative. Windows without frames follo
 and the fly walked only if it is found more than 10 px from where it was last seen.
 Background-subtraction tracking loses still flies, so this keeps their sleep: against
 pixel-motion truth at night, the error per fly was 0.03–0.05, as low as with the
-learned tracker. `untracked="break"` never scores such windows as sleep. The output adds `walking`, `sustained` and `micro_awake` and keeps the
-classic columns, `moving` included, so the two rules can be compared on the same table.
+learned tracker. `untracked="break"` never scores such windows as sleep. The output adds
+`walking`, `sustained` and `micro_awake` and keeps the classic columns, `moving`
+included, so the two rules can be compared on the same table.
 Positions from `load_ethoscope` are in pixels; for positions given as a fraction of the
 ROI width, pass `pixel=1/roi_width`.
 
@@ -126,6 +127,12 @@ recordings (interquartile range of per-recording median sleep 30 → 21 percenta
 and preserves the rebound after sleep deprivation and the *fumin* and *Clk^Jrk* (light
 phase) phenotypes. It raises daytime sleep in *D. erecta* from 40% to 72%, which is not
 yet understood, so treat the rule as experimental.
+
+Daytime sleep under the rule is not validated. Against the same pixel-motion truth, in
+the light phase it scored 11–16 percentage points more sleep, with either tracker. On
+video, those windows show a fly that does not walk: in some it moves its body, legs or
+wings a little, in the rest only image noise changes. Whether that is sleep is a question
+of arousal threshold rather than of tracking.
 
 ## Tutorial data
 

@@ -116,7 +116,9 @@ default until ground-truth (dead-fly) recordings are scored with
   turing:/mnt/cache/bona_fide/sleep_rule.py **exactly** with `untracked="break"`.
   The default `untracked="immobile"` counts windows without frames as still, because
   AdaptiveBGModel loses still flies (pixel-truth check: k3 night error 0.43 → 0.05 on
-  ETHOSCOPE_361). `scripts/validate_k_rule.py parity` checks whole databases (load
+  ETHOSCOPE_361). Daytime sleep under the rule is **not validated** (11-16 pp above
+  pixel truth in the light; small in-place movements). `scripts/validate_k_rule.py
+  parity` checks whole databases (load
   with `reference_hour=None`, or the bins shift), and `export` regenerates
   `tests/data/k_rule_*.csv` with both policies; `--r-out` copies them to sleepr's
   `tests/testthat/`, where `R/sleep-rules.R` is the R twin.

@@ -22,7 +22,10 @@ Bins without frames are handled as in the classic rule. By default
 after them is walking only if the animal is found more than 10 px from where it
 was last seen. Background-subtraction tracking (AdaptiveBGModel) loses still
 flies, so this is what keeps their sleep: against pixel-motion truth on two
-recordings, night-time error per tube fell from 0.21-0.43 to 0.03-0.05.
+recordings, night-time error per tube fell from 0.21-0.43 to 0.03-0.05. In the light
+phase the rule scored 11-16 percentage points more sleep than that truth, in windows
+where the fly does not walk and at most moves its body, legs or wings a little, so
+daytime sleep under the rule is not validated.
 ``untracked="break"`` never scores such bins as sleep.
 
 With ``untracked="break"`` the rule reproduces ``rule_sustained_k3`` of the
