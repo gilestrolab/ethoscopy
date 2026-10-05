@@ -223,8 +223,9 @@ def k_rule_annotation(
     """
     Sleep annotation with the k-rule; the body of sleep_annotation(rule="k").
 
-    The classic detector still runs, on the same frames, so its columns
-    ('moving', 'max_velocity', ...) are reported unchanged next to the k-rule's.
+    The classic detector still runs, on every frame as rule="classic" does, so
+    its columns ('moving', 'max_velocity', ...) are reported unchanged next to
+    the k-rule's; only the k-rule ignores inferred frames.
 
     Args:
         data (pd.DataFrame): Raw tracking data from a single animal.
@@ -246,7 +247,7 @@ def k_rule_annotation(
     if len(frames.index) < 100:
         return None
     binned = motion_detector_function(
-        frames,
+        data,
         K_RULE_BIN_SECONDS,
         masking_duration=masking_duration,
         velocity_correction_coef=velocity_correction_coef,

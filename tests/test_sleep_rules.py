@@ -207,7 +207,9 @@ class TestSleepAnnotationKRule:
     """sleep_annotation(rule="k")."""
 
     def test_adds_columns_and_keeps_classic_ones(self):
-        raw = _raw()
+        raw = _raw(inferred=np.zeros(1200, dtype=int))
+        # Inferred frames repeating a movement: classic counts them, the k-rule drops them.
+        raw.loc[500:504, ["xy_dist_log10x1000", "is_inferred"]] = [MOVE, 1]
         classic = sleep_annotation(raw.copy())
         k = sleep_annotation(raw.copy(), rule="k")
         assert {"walking", "sustained", "micro_awake"} <= set(k.columns)
@@ -216,6 +218,7 @@ class TestSleepAnnotationKRule:
         pd.testing.assert_frame_equal(
             k[shared].reset_index(drop=True), classic[shared].reset_index(drop=True)
         )
+        assert classic.moving[50] and k.moving[50]
         assert k.asleep.tolist() == [False] + [True] * 119
 
     def test_inferred_frames_are_dropped(self):
@@ -282,22 +285,13 @@ class TestParity:
     def test_bins_match_reference(self, parity, k):
         frames, expected = parity
         for fly, raw in frames.groupby("fly"):
-            raw = raw.drop(columns="fly").assign(t=raw.t / 1000.0)
-            out = k_rule_bins_from_raw(raw, k)
+            # Reason: the classic detector needs these columns; they do not enter the k-rule.
+            raw = raw.drop(columns="fly").assign(
+                t=raw.t / 1000.0, w=25.0, h=10.0, phi=0.0, has_interacted=0
+            )
+            out = sleep_annotation(raw, rule="k", k=k)
             ref = expected[expected.fly == fly].reset_index(drop=True)
             assert out.t.tolist() == ref.t.tolist(), fly
-            assert out.has_data.tolist() == ref.has_data.tolist(), fly
+            assert (~out.is_interpolated).tolist() == ref.has_data.tolist(), fly
             assert out.walking.tolist() == ref.walking.tolist(), fly
             assert out.asleep.tolist() == ref[f"asleep_k{k}"].tolist(), fly
-
-
-def k_rule_bins_from_raw(raw, k):
-    """The k-rule's bins for raw frames, filtered as sleep_annotation does."""
-    observed = raw[pd.to_numeric(raw.is_inferred, errors="coerce") == 0]
-    return k_rule_bins(
-        observed.t.to_numpy(),
-        observed.x.to_numpy(),
-        observed.y.to_numpy(),
-        observed.xy_dist_log10x1000.to_numpy(),
-        k=k,
-    )
