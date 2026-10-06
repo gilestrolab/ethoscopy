@@ -554,13 +554,20 @@ Commit per step, no push; sleepr work on a new branch `motion-calibration`.
 - [x] sleepr: branch `motion-calibration`, calibration port committed (f5519a3), then
       the k-rule (`R/sleep-rules.R`, `sleep_annotation(rule, k, pixel)`, needed_columns
       asks scopr for y) with tests incl. the same fixtures in pixels.
-- [ ] xover1 (ethoscope-turing): ETHOSCOPE_354 under exposure-first (200 ms, gain ~1.6),
+- [x] xover1 (ethoscope-turing): ETHOSCOPE_354 under exposure-first (200 ms, gain ~1.6),
       started 2026-10-05 14:01 UTC, autostop 23.5 h, on turing under
       /mnt/data/results/354f7cfb…/ETHOSCOPE_354/2026-10-05_14-0*. Once it has stopped,
       score tube 19 (dead fly) at night with scratchpad `night_compare.py` against the
       pinned-gain baseline of 10-02 (classic 2.5%, k3 86.6%, k2 42.9%; other tubes
       median 75.7/77.2/76.3%), run `validate_k_rule.py parity` on it, and report to
       ethoscope-turing. If k3 is not near 100%, they move to a tracker-side fix.
+      Result (2026-10-06, run 2026-10-05_14-03-13, stopped 13:33 UTC): tube 19 at night
+      pinned 10-02 -> exposure-first: classic 2.5% -> 40.9%, k3 86.6% -> 100%, k2 42.9% -> 100%.
+      Its night jitter: step p50 0.29 -> 0.14 px, p95 0.73 -> 0.39 px, 10-s windows with a
+      step >= 0.653 px (velocity 1.0) 88.9% -> 6.3%. Other tubes' median (different nights,
+      live flies): classic 75.7 -> 71.9%, k3 77.2 -> 73.8%, k2 76.3 -> 71.9%. Baseline
+      reproduced under untracked="immobile"; parity on the new DB 20/20 for k3 and k2. No
+      tracker-side fix needed for the k-rule on this fly.
 
 ### Results
 - Whole-database parity exact (`==`) on every ROI the reference scores, k3 and k2:

@@ -45,3 +45,7 @@
   fix reflowed three untouched functions (black 26 against code formatted by an older
   black). Run `black --check --diff FILE` first; if it would touch more than your hunk,
   leave the file alone and keep your hunk in its style by hand.
+- **Query live ethoscope databases with `immutable=1`.** `sqlite3 "file:DB?mode=ro"` on a
+  WAL-mode database in a writable folder creates `-wal` and `-shm` sidecars: a "read-only"
+  check left two files beside a recording in turing's shared results tree. Use
+  `?mode=ro&immutable=1` (as the census and ethoscopy's ladder do) for quick looks.
