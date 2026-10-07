@@ -630,3 +630,27 @@ Commit per step, no push; sleepr work on a new branch `motion-calibration`.
   behavpy.motion_detector().sleep_contiguous(), on 12 flies from 350, 354 and 172 (for the
   su(var)3-9 paper re-run). Timing on jenner, one core, per fly-day: load 0.6-1.1 s,
   motion_qc 0.5-0.9 s, classic + k + auto together 0.6-1.3 s.
+
+## 2026-10-05 — Fix `plot_hmm_response` (branch `fix/hmm-response-args`)
+
+**Problem** (reported by Giorgio via ethoscope_metadata_db). `plot_hmm_response`
+failed on every call in both canvases since v2.0.1. aa54037 (2025-01-13) removed
+`colours` from `_hmm_response` but not from its callers; 49c13b2 (2025-01-20) then
+rewrote both calls as positional arguments: 12 for 11 parameters, with `t_bin` and
+`facet_labels` swapped. Behind it, the faceted path called `facet_merge` without
+the `meta` argument every other caller passes, so faceting failed as well. The
+arousal analysis (esteban-db-8a) had to re-implement the function on turing.
+
+- [x] Both callers pass keyword arguments; `colours` dropped (the body never used
+      it; plotly colours its "True Stimulus" points from `colours` after the call).
+- [x] `_hmm_response` passes `self.meta` to `facet_merge`.
+- [x] `tests/test_hmm_response.py` (10): both canvases, no facet, facets with
+      labels distinct from args, one HMM per facet, missing column, several HMMs
+      without a facet. Rates checked against a per-fly calculation. With the
+      `facet_merge` fix reverted, the facet tests fail.
+- [x] Real data: on the 66 Joyce et al. 2024 Fig. 1H flies (turing,
+      /mnt/cache/claude_motion_calibration/hmm_fix), all 492 per-fly rates equal
+      the arousal re-implementation exactly (seaborn, seaborn faceted, plotly);
+      group means reproduce the published native numbers.
+- Full suite 325 passed, 11 skipped. Seaborn figures inspected; plotly checked
+  by trace names and colours only (no kaleido for image export).

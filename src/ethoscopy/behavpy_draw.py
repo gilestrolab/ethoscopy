@@ -865,8 +865,13 @@ class behavpy_draw(behavpy_core):
             grouped_data[""] = grouped_data["has_interacted"]
         else:
             grouped_data = self.facet_merge(
-                grouped_data, facet_col, facet_arg, facet_labels, hmm_labels=labels
-            )  # chnage to have meta given as arg
+                grouped_data,
+                self.meta,
+                facet_col,
+                facet_arg,
+                facet_labels,
+                hmm_labels=labels,
+            )
             grouped_data[facet_col] = grouped_data[facet_col].astype("str")
             grouped_data[facet_col] = (
                 grouped_data[facet_col] + " " + grouped_data["has_interacted"]

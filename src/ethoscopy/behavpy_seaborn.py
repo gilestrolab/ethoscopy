@@ -3288,16 +3288,15 @@ class behavpy_seaborn(behavpy_draw):
         grouped_data, palette_dict, h_order = self._hmm_response(
             mov_df,
             hmm,
-            variable,
-            response_col,
-            labels,
-            colours,
-            facet_col,
-            facet_arg,
-            facet_labels,
-            t_bin,
-            func,
-            t_column,
+            variable=variable,
+            response_col=response_col,
+            labels=labels,
+            facet_col=facet_col,
+            facet_arg=facet_arg,
+            t_bin=t_bin,
+            facet_labels=facet_labels,
+            func=func,
+            t_column=t_column,
         )
 
         # (0,0) means automatic size
