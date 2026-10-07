@@ -66,73 +66,76 @@ df = pd.read_pickle('path/to/your/file.pkl')
 df = etho.behavpy(df, df.meta, check = True, canvas = 'plotly', palette = 'Set2')
 ```
 
-## Movement threshold and tracking noise
+## Choosing a sleep rule
 
-Movement is scored when a 10-s window's peak velocity exceeds a threshold, 1.0 by
-default. How much a *motionless* fly appears to move depends on the illumination,
-camera, frame rate and fly size, and sleep is very sensitive to it: a 5-minute bout
-needs 30 immobile windows in a row, so if a still fly crosses the threshold in 5% of
-windows only about a fifth of real rests survive. Check a recording before scoring it:
+**Since ethoscopy 3.0, `sleep_annotation` needs a sleep rule.** To reproduce earlier
+results, add `rule="classic"`, or declare it once at the top of a notebook:
+
+```python
+import ethoscopy as etho
+etho.set_sleep_rule("classic")   # every later sleep_annotation call uses it
+```
+
+Old notebooks can also be re-run without editing them by setting the environment
+variable `ETHOSCOPY_SLEEP_RULE=classic`. An explicit `rule=` argument always wins over
+`set_sleep_rule()`, which wins over the environment variable, as with matplotlib's
+`rcParams`. Without any of them, `sleep_annotation` raises an error explaining the choice.
+
+```python
+from functools import partial
+data = etho.load_ethoscope(meta, reference_hour=9.0,
+                           FUN=partial(etho.sleep_annotation, rule="k"))
+```
+
+**`rule="classic"`** is the 5-minute rule as before. A 10-s window is moving when any
+frame is faster than the velocity threshold (1.0), and sleep is 5 minutes or more
+without a moving window. On current ethoscope data, tracking noise and brief twitches
+break sleep into fragments under it: a 5-minute bout needs 30 clean windows in a row,
+so if a still fly crosses the threshold in 5% of windows only about a fifth of real
+rests survive.
+
+**`rule="k"`** (k = 3 by default; `"k2"` is the stricter variant) counts movement only
+when it is sustained or walking. A window is awake if the fly walked (its median
+position moved more than 10 px from the previous window) or if at least `k` sustained
+movement events started in the 60 s around it. An event is a run of consecutive frames
+above the classic velocity test. Runs in which the position never leaves its pixel, and
+jumps of one or two frames that land back within a pixel, are tracking noise and are
+ignored. Frames the tracker inferred are dropped. Windows without frames follow
+`untracked`: with the default `"immobile"` they count as still, and the fly walked only
+if it is found more than 10 px from where it was last seen (background-subtraction
+tracking loses still flies, so this keeps their sleep); `"break"` never scores them as
+sleep. The output adds `walking`, `sustained` and `micro_awake` and keeps the classic
+columns, `moving` included. Positions from `load_ethoscope` are in pixels; for
+positions given as a fraction of the ROI width, pass `pixel=1/roi_width`.
+
+Use `rule="classic"` to reproduce earlier analyses, and `rule="k"` for new ones,
+especially on DeepTubeTracker or exposure-first recordings. The evidence for the k-rule:
+
+- **Video ground truth at night.** Against pixel-motion truth from video, the night-time
+  error per fly was 0.03–0.07 with either tracker (classic: 0.11–0.37). A dead fly
+  recorded with exposure-first acquisition scores 100% asleep.
+- **Arousal.** In 136 air-puff runs (1,319 flies), puffs were delivered at random against
+  sham firings. Flies the k-rule scores asleep respond like sleeping flies, by day as
+  well as by night: the puff-evoked response (real minus sham) was +1.2 percentage points
+  when asleep by every rule, +2.1 when only the k-rule called it sleep, +3.2 when only
+  k = 3 did, and +5.2 when awake. So the k-rule's extra daytime sleep, small movements
+  in place by a fly that does not walk, is sleep-like.
+- **Across the lab archive** (219 recordings) it narrows the spread of sleep between
+  recordings (interquartile range of per-recording median sleep 30 → 21 percentage
+  points) and preserves the rebound after sleep deprivation and the *fumin* and
+  *Clk^Jrk* (light phase) phenotypes.
+
+Before scoring, check a recording's tracking noise:
 
 ```python
 qc = etho.motion_qc(raw_data)   # one row per fly and light phase
 ```
 
-`fp_rate_fixed` is how often a still fly crosses the fixed threshold and
-`rest_survival_fixed` the fraction of 5-minute rests that would survive it. Values of
-`fp_rate_fixed` above about 0.01 mean the fixed threshold is too low for that recording.
-Then let ethoscopy calibrate the threshold per fly and per light phase from the fly's own
-noise, so that a still fly is scored as moving in only 1% of windows:
-
-```python
-data = etho.load_ethoscope(meta, reference_hour=9.0,
-                           FUN=partial(etho.sleep_annotation, velocity_threshold="auto"))
-```
-
-Still windows are recognised from position alone, so the calibration does not depend on
-the velocity it calibrates. The threshold never drops below 1.0, so clean recordings score
-as before. `untracked="break"` (in `sleep_annotation` and `sleep_contiguous`) stops windows
-without tracked data from counting as sleep. The same method is being added to rethomics'
+`fp_rate_fixed` is how often a still fly crosses the classic threshold and
+`rest_survival_fixed` the fraction of 5-minute rests that would survive it. Values above
+about 0.01 mean classic sleep is unreliable for that recording. A large
+`untracked_fraction` matters under either rule. Both rules are also in rethomics'
 `sleepr`, so both toolboxes score a recording alike.
-
-### Sleep from walking and sustained movement (tentative)
-
-`rule="k"` scores sleep from what the fly does over several frames instead of from its
-noisiest frame:
-
-```python
-data = etho.load_ethoscope(meta, reference_hour=9.0,
-                           FUN=partial(etho.sleep_annotation, rule="k"))
-```
-
-A 10-s window is awake if the fly walked (its median position moved more than 10 px from
-the previous window) or if at least `k` sustained movement events started in the 60 s
-around it. An event is a run of consecutive frames above the classic velocity test. Two
-kinds are tracking noise and are ignored: runs in which the position never leaves its
-pixel, and jumps of one or two frames that land back within a pixel. Sleep is 5 minutes
-or more of windows that are not awake, and frames the tracker inferred are dropped. `k`
-is 3 by default, and 2 is the stricter alternative. Windows without frames follow
-`untracked`, as in the classic rule. With the default `"immobile"` they count as still,
-and the fly walked only if it is found more than 10 px from where it was last seen.
-Background-subtraction tracking loses still flies, so this keeps their sleep: against
-pixel-motion truth at night, the error per fly was 0.03–0.05, as low as with the
-learned tracker. `untracked="break"` never scores such windows as sleep. The output adds
-`walking`, `sustained` and `micro_awake` and keeps the classic columns, `moving`
-included, so the two rules can be compared on the same table.
-Positions from `load_ethoscope` are in pixels; for positions given as a fraction of the
-ROI width, pass `pixel=1/roi_width`.
-
-On 219 recordings from the lab archive, the rule narrows the spread of sleep between
-recordings (interquartile range of per-recording median sleep 30 → 21 percentage points)
-and preserves the rebound after sleep deprivation and the *fumin* and *Clk^Jrk* (light
-phase) phenotypes. It raises daytime sleep in *D. erecta* from 40% to 72%, which is not
-yet understood, so treat the rule as experimental.
-
-Daytime sleep under the rule is not validated. Against the same pixel-motion truth, in
-the light phase it scored 11–16 percentage points more sleep, with either tracker. On
-video, those windows show a fly that does not walk: in some it moves its body, legs or
-wings a little, in the rest only image noise changes. Whether that is sleep is a question
-of arousal threshold rather than of tracking.
 
 ## Tutorial data
 

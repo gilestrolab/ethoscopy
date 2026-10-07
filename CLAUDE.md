@@ -96,29 +96,26 @@ being guarded against come from SQLite itself and only appear when a statement r
 
 ### Movement threshold: tracking noise, and parity with rethomics
 
-A fixed `velocity_threshold=1.0` breaks when imaging noise changes (new IR light,
-camera, fps, fly size): a still fly crosses it in 15–35% of bins and sleep collapses,
-because a 5-min bout needs 30 clean bins in a row. `motion_calibration.py` provides
-`velocity_threshold="auto"` (per fly, per light phase, q99 of still-bin velocity,
-floor 1.0), tracking-spike removal and `motion_qc()`. It is **opt-in**; 1.0 stays the
-default until ground-truth (dead-fly) recordings are scored with
-`scripts/validate_motion_threshold.py`.
+Since 3.0, `sleep_annotation` has **no default rule**: `rule="classic"` (the old 5-minute
+rule) or `rule="k"` (k=3), passed per call, declared once with `set_sleep_rule()`, or via
+the env var `ETHOSCOPY_SLEEP_RULE` (resolution in `sleep_rules.resolve_rule`). Classic
+output with `rule="classic"` is byte-identical to 2.4.0. `velocity_threshold="auto"` was
+removed in 3.0 (never released); `motion_qc()` remains as a noise report.
 
 - **Every analysis method added here must also be added to rethomics** (R,
   `rethomics/sleepr`), with the same algorithm and defaults. The R port lives in
-  `sleepr/R/motion-calibration.R`, and `tests/testthat/parity_*.csv` are fixtures
+  `sleepr/R/`, and `tests/testthat/parity_*.csv` are fixtures
   exported from ethoscopy: regenerate them when the Python algorithm changes.
 - Positions from `load_ethoscope` are in **pixels**, from the legacy reader in
   fractions of ROI width; `default_still_shift()` infers which.
-- **k-rule** (`sleep_rules.py`, `sleep_annotation(rule="k", k=3)`, tentative and
-  opt-in): sleep from walking (median step > 10 px between 10-s bins) and sustained
+- **k-rule** (`sleep_rules.py`, `sleep_annotation(rule="k", k=3)`): sleep from walking (median step > 10 px between 10-s bins) and sustained
   movement events. It must match `rule_sustained_k3`/`_k2` of
   turing:/mnt/cache/bona_fide/sleep_rule.py **exactly** with `untracked="break"`.
   The default `untracked="immobile"` counts windows without frames as still, because
   AdaptiveBGModel loses still flies (pixel-truth check: k3 night error 0.43 → 0.05 on
-  ETHOSCOPE_361). Daytime sleep under the rule is **not validated** (11-16 pp above
-  pixel truth in the light; small in-place movements). `scripts/validate_k_rule.py
-  parity` checks whole databases (load
+  ETHOSCOPE_361). Daytime excess over pixel truth is sleep-like by air-puff arousal
+  (ownCloud ANALYSIS_LOG §11). `scripts/validate_k_rule.py parity` checks whole
+  databases (load
   with `reference_hour=None`, or the bins shift), and `export` regenerates
   `tests/data/k_rule_*.csv` with both policies; `--r-out` copies them to sleepr's
   `tests/testthat/`, where `R/sleep-rules.R` is the R twin.
