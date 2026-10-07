@@ -673,5 +673,13 @@ Evidence for docs: night pixel truth (0.03-0.07 per fly) and air-puff arousal
       "k2"/"k3" names; error names both rules and the load_ethoscope partial pattern.
 - [x] Tests 386 passed; classic with rule="classic" byte-identical to 2.4.0 (hashes).
 - [x] README "Choosing a sleep rule", module docstring, CLAUDE.md, CHANGELOG.md.
-- [ ] Merge to main, tag v3.0.0, GitHub release, PyPI (twine if CI does not publish).
-- [ ] sleepr 0.4.0 (same changes; R CMD check --as-cran; NEWS; tag; CRAN tarball only).
+- [x] Merged to main (4a57389), tag v3.0.0, GitHub release; release.yml published 3.0.0
+      to PyPI by itself (run 37668613497, success). Wheel smoke-tested in a clean venv.
+- [x] sleepr 0.4.0: same changes, plus options(sleepr.sleep_rule) / SLEEPR_SLEEP_RULE;
+      tests 197 pass; R CMD check --as-cran: 0 errors, 0 warnings, 1 note (no pandoc
+      locally); master 4f96509, tag v0.4.0 (pushed over SSH). CRAN tarball
+      ~/Code/ethoscope_project/rethomics/sleepr_0.4.0.tar.gz and cran-comments.md;
+      not submitted (maintainer is Quentin Geissmann). The z_template_package submodule
+      had to be initialised for R CMD build.
+- [ ] rethomics tutorial site (06-scopr.Rmd) and docs call sleep_annotation without rule.
+- [ ] ethoscope-lab Docker image still pins 2.4.0; bump needs an announcement (Giorgio).
