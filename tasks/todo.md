@@ -654,3 +654,24 @@ arousal analysis (esteban-db-8a) had to re-implement the function on turing.
       group means reproduce the published native numbers.
 - Full suite 325 passed, 11 skipped. Seaborn figures inspected; plotly checked
   by trace names and colours only (no kaleido for image export).
+
+## 2026-10-07 — Release ethoscopy 3.0.0 (Giorgio, confirmed in session)
+
+Spec from ethoscope-turing, confirmed by Giorgio: remove `velocity_threshold="auto"`
+(never released); keep `motion_qc()` pointing at rule="k"; `sleep_annotation` gets no
+default rule (ValueError explaining classic vs k), so 3.0.0; include the
+plot_hmm_response and empty-ROI loader fixes. Giorgio added: declare the rule once
+(`set_sleep_rule()`, `ETHOSCOPY_SLEEP_RULE`), as matplotlib's rcParams.
+Evidence for docs: night pixel truth (0.03-0.07 per fly) and air-puff arousal
+(ownCloud ANALYSIS_LOG §11: real-minus-sham response +1.2 asleep by all rules,
++2.1 k2-only, +3.2 k3-only, +5.2 awake).
+
+- [x] Merge fix/hmm-response-args and fix/load-empty-roi into motion-calibration.
+- [x] Detector and behavpy.motion_detector restored to 2.4.0 (auto and remove_spikes
+      gone); estimate_velocity_threshold removed; motion_qc without auto columns.
+- [x] rule required, resolved argument > set_sleep_rule() > ETHOSCOPY_SLEEP_RULE;
+      "k2"/"k3" names; error names both rules and the load_ethoscope partial pattern.
+- [x] Tests 386 passed; classic with rule="classic" byte-identical to 2.4.0 (hashes).
+- [x] README "Choosing a sleep rule", module docstring, CLAUDE.md, CHANGELOG.md.
+- [ ] Merge to main, tag v3.0.0, GitHub release, PyPI (twine if CI does not publish).
+- [ ] sleepr 0.4.0 (same changes; R CMD check --as-cran; NEWS; tag; CRAN tarball only).
