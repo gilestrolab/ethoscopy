@@ -367,3 +367,311 @@ style), since the new code follows the conventions of the files it sits in.
   `@pytest.mark.unit` are unregistered and every test file emits
   `PytestUnknownMarkWarning`. Renaming the section switches on
   `--cov-fail-under=70` at the same time, so it needs checking separately.
+
+## 2026-09-28 — Noise-calibrated movement threshold (auto threshold)
+
+**Problem.** Movement is scored as `max_velocity > 1.0`, a constant tuned for one
+imaging setup. Alice's DBS experiment (`~/Downloads/Alice_DBS_092026`) exposed it:
+the same species gave 55% night sleep under the old IR light and 14% under a new
+double-band IR. Analysis showed neither number is right:
+- Per observed still bin (position unchanged ±0.5 px over ~1 min), 15–36% of bins
+  cross 1.0 in *both* setups — tracker jitter / one-frame snap-back glitches.
+- Sleep needs 30 consecutive clean bins, so a p=15% false-positive rate leaves
+  (0.85)^30 ≈ 0.8% of true rests intact. Sleep is dominated by the FP rate.
+- The old IR only looked better because it *lost* still flies (21% of quiet night
+  time untracked) and `sleep_annotation` scores untracked bins as immobile.
+- Prototype: per-fly, per-light-phase threshold = 99th percentile of max_velocity in
+  still bins (floored at 1.0) → night sleep 83% vs 84%, day 70% vs 66%; FP fixed at
+  1% by construction. Prototype scripts: session scratchpad (`adapt.py`, `evalm.py`).
+
+**Design.** Threshold becomes a property estimated from each fly's own noise, per
+light phase, instead of a constant. "Still" bins are identified *independently of
+velocity* by positional stability, so the estimate is not circular.
+
+### Plan
+- [x] New module `src/ethoscopy/motion_calibration.py`: `find_still_bins`,
+      `estimate_velocity_threshold` (per light phase, fallback recording → floor with
+      warning), `find_spikes`, `motion_qc`, `light_phase`, `default_still_shift`.
+- [x] `max_velocity_detector(velocity_threshold="auto", threshold_quantile, threshold_floor,
+      day_length, lights_off, remove_spikes)`; `velocity_threshold` column with "auto";
+      micro/walk stay a partition of moving when the threshold exceeds walk_threshold.
+- [x] `sleep_annotation(velocity_threshold=, untracked="immobile"|"break")`.
+- [x] behavpy `motion_detector` / `sleep_contiguous`: same parameters.
+- [x] `motion_qc(...)`: thresholds, untracked and spike fraction, FP rate at 1.0, rest survival.
+- [x] Tests `tests/test_motion_calibration.py` (24).
+- [x] `scripts/validate_motion_threshold.py` for the ground-truth nights (dead flies).
+- [x] Port to rethomics `sleepr` (`~/Code/ethoscope_project/rethomics/sleepr`, cloned
+      from rethomics/sleepr): `R/motion-calibration.R`, detector + `sleep_annotation`
+      options, roxygen docs, `tests/testthat/test-motion_calibration.R` incl. parity
+      fixtures exported from ethoscopy (binned + frame level).
+- [x] README section.
+- [ ] Ground-truth recordings (lab): dead/anaesthetised flies under each IR → run
+      `scripts/validate_motion_threshold.py`.
+      Candidate: ETHOSCOPE_354 tube 19 (2026-10-02, DeepTubeTracker) never moved in
+      17 h (fewer than 10 steps of 2 px or more; snapshots unchanged 1–16.6 h). Both
+      sessions treat it as dead; no human has looked.
+- [ ] Decide default switch after ground truth (currently opt-in).
+- [x] Still-bin tolerance default 0.5 px -> 1 px (Giorgio, 2026-09-30), both packages:
+      `STILL_SHIFT_PIXELS`/`pixel_size()` (Python), `pixel_size()` (R, exported);
+      spike rule restated in whole pixels (3 px jump, 1 px return; unchanged).
+      Parity fixture now has sub-pixel jitter so it distinguishes 0.5 vs 1 px.
+      Alice re-validation: night sleep old/new IR 88.0% / 87.2%; one old-IR fly
+      night threshold 7.4 (outlier, not inspected).
+- [x] Tracker issues (never-detected still flies, fragment tracking) and the
+      SQLite end-of-run data loss sent to the ethoscope session (ethoscope-63).
+- [x] Real-time sleep deprivation: replayed InactivityTrigger on ETHOSCOPE_044 (47 h)
+      against pixel truth. Per-frame v>1.0 (device today): 79% of true >=2.5-min still
+      periods stimulated, 16% of stimuli after real movement. Per-10-s-window v>1.0: 89%,
+      4.6%. Giorgio approved per-window (2026-09-30); spec sent to ethoscope-63.
+      Online calibration deferred (mixed benefit in real time).
+      CORRECTION (ethoscope-63, confirmed): at the same threshold per-window sees the
+      same crossings as per-frame; per-frame with 130 s scores identically (89.0%,
+      5.4%). The "gain" is only ~10 s later firing. Remaining case for per-window:
+      one definition shared with post-hoc scoring. Excluding is_inferred rows (2%)
+      changed nothing. ethoscope-63 has it implemented, uncommitted, awaiting Giorgio.
+- [ ] Replay the per-window rule on Giorgio's overnight recording (started 2026-09-30,
+      lab-standard milder IR) once it is available.
+- [ ] Human annotation of micro-movements on current hardware (thesis protocol;
+      flyscorer on turing) to decide which movements should break sleep.
+
+### Design decisions taken
+- Opt-in `velocity_threshold="auto"` (Giorgio, 2026-09-28); 1.0 stays default.
+- Still bin = before/after 30-s median positions agree AND trimmed range (2nd-lowest
+  to 2nd-highest of the 7-bin window) ≤ ½ px. Medians alone were fooled by pacing
+  (alternating bin means) — a walking fly scored as still.
+- Spike removal is required for "auto": 1-frame jumps of 12–69 px that land back on the
+  same pixel hit up to 4% of a still fly's bins and pushed q99 to 55. Enabled with
+  "auto" by default, opt-in (`remove_spikes=True`) for the fixed threshold.
+- Quantile/median arithmetic is linear (numpy default = R type 7) in both packages,
+  vectorised (`_row_quantile` / `row_quantile`) — nanquantile/apply were ~100x slower.
+
+### Results
+- Alice DBS, days 2–3, final code: night sleep fixed 1.0 → old IR 56% / new IR 14%;
+  auto → 86.3% / 86.2%. Day: 5%/2% → 68%/61%. Auto thresholds night median 1.41/1.53,
+  day 1.88/1.91; one old-IR fly reaches 5.6 at night (worth inspecting).
+  motion_qc: FP at 1.0 on still bins 14–33%, 5-min rest survival < 1%.
+- R vs Python on 4 real flies: thresholds identical or within 0.2–4% (pre-existing
+  detector difference, see below).
+
+### Validation against tracker-independent pixel motion (2026-09-30)
+Ground truth: pixel changes > 20 grey levels (~14x empty-tube noise) in a crop around
+the fly; validated on 5 dead flies (0.0% of frames), offline tracking with the
+device's AdaptiveBGModel. Scripts + data on turing: /mnt/cache/claude_motion_calibration.
+- Alice ETHOSCOPE_012 (1 h, 15->3.75 fps, new IR), dark phase: fixed 1.0 FP 11.3%;
+  auto 0.5 px FP 4.3% (threshold 0.83x oracle); auto 1 px FP 0.9% (1.02x oracle).
+- ETHOSCOPE_044 (2024, 47 h, 6.2 fps, dim IR, 2 nights, 20 flies, 103 fly-blocks):
+  fixed 1.0 FP 7.7% dark / 12.8% light; auto 1 px FP 1.0% / 1.4%, threshold 1.00x
+  oracle (spearman 0.60); auto 0.5 px 0.97x. => default max_shift 1 px is supported.
+- Sleep amount depends on what movement breaks sleep: pixel-truth night sleep is 29%
+  if any single-frame twitch counts, 62% if >= 8 active frames per 10 s; auto 1 px
+  gives 63%. This is a definition, to be set with human-annotated micro-movements.
+- Light phase in Alice's video: partial-fly (fragment) tracking by AdaptiveBGModel
+  gives phantom 5-30 px jumps; not fixable by thresholds.
+- Dead/still-from-start flies are never detected by AdaptiveBGModel.
+
+### DeepTubeTracker overnight runs (2026-10-03)
+ETHOSCOPE_354 and 356, 2026-10-02 16:30 UTC, 17.1 h at 5 fps, learned tracker in
+production. Scored fixed 1.0 vs "auto" (this branch, d27b1d3); script and CSVs on turing:
+/mnt/cache/claude_motion_calibration/dl_nights_2026-10-02. Lights on 08:00 UTC
+(reference_hour=8; lights_on '09:00' in METADATA is BST).
+- Tracker noise is low: still bins crossing 1.0 median 0.47% dark (IQR 0.32–0.80%),
+  1.0% light. 31/40 flies stay at the 1.0 floor under auto; median night sleep 74.3%
+  fixed vs 74.8% auto.
+- Exception: tube ends at the frame edges in the dark (vignetting). 354 tube 19 (x 501–506
+  px for 17 h, light phase included; likely dead, detected unlike with AdaptiveBGModel):
+  89% crossing at 1.0 dark / 1.2% light; auto night 1.42; night sleep 2.5% → 95.4%.
+  354 tube 2 (live, rests at x≈62): 38% crossing; auto 1.46; 29% → 68%.
+- 354/08 and 356/06 (mid-tube, 10–12% crossing) gain 15 points under auto; noise vs
+  micro-movement undecided without video.
+- Sent to ethoscope_DL_tracking. Real-time sleep deprivation still uses a fixed
+  threshold, so corner jitter matters there even though auto handles post-hoc scoring.
+
+### Related work handed to other sessions (2026-09-30)
+- ethoscope-63 (jenner, ethoscope repo): SQLite end-of-run data loss FIXED (dev e7e0f8ca);
+  windowed sleep-dep trigger implemented, uncommitted, awaiting Giorgio (gain is only
+  ~10 s later firing, see correction above); still-fly seeding (#2) and second-blob
+  hopping (#3) diagnosed; GPIO listener busy loop (100% of a core on every device).
+- ethoscope_DL_tracking (turing): learned per-tube fly tracker, plan sent; Pi 3
+  feasibility measured on ETHOSCOPE000 (tiny CNN 44.5 ms/20 tubes; live 9.1 fps).
+  ETHOSCOPE000 soak re-run (CSVs lost) dropped 2026-10-03: production runs answered it.
+  DeepTubeTracker runs on 2 threads at 5 fps; 354/356 ran 17.1 h without camera dropouts.
+  4 threads at full speed reached 83.8 °C, and the under-volted 301 rebooted.
+  2026-10-03: they are testing exposure-first AGC on the camera (exposure up to the
+  frame period at gain 1 before adding gain): dead fly 354/19, windows with a step of
+  0.65 px or more fell from 12% to 1% in a 15-min A/B; AdaptiveBGModel detected less.
+  Sent them the scoring-side proposal (auto) and asked them to log ExposureTime and
+  AnalogueGain in DIAGNOSTICS.
+
+### Discovered During Work
+- `beam_cross` compares `x` to 0.5, but `x` arrives in pixels from load_ethoscope
+  — likely never fires correctly; check.
+- `masking_duration` masks only beam_cross, not `moving`: a stimulator pulse can
+  still register as movement.
+- Per-frame distance is fps-dependent (velocity = dist/coef, no dt): runs at 2.8
+  vs 4 fps are scored on different scales. Auto threshold absorbs the noise part.
+- `load_ethoscope` (read_single_roi_optimized) returns x/y in **pixels**; the legacy
+  `read_single_roi` divides distance variables by ROI width. beam_cross (x vs 0.5) and
+  `feeding(dist_from_food=0.05)` assume normalised x → both likely broken on data
+  loaded with load_ethoscope.
+- sleepr's detector drops the first frame of each window from max_velocity
+  (`velocity_corrected[2:.N]`) and zeroes velocity during masking; ethoscopy keeps it
+  and masks only beam_cross. Explains the 0–4% R/Python threshold gap; pre-existing.
+- analyse.py is 800+ lines (limit 500); split motion detection into its own module.
+- `load_ethoscope` (read_single_roi_optimized) keeps `is_inferred` rows, which the legacy
+  `read_single_roi` drops. AdaptiveBGModel's inferred rows repeat the last xy_dist for
+  up to 30 s, so a lost fly reads as moving; DeepTubeTracker writes them with zero
+  movement. `is_inferred` is TEXT '0'/'1' in the 2026-10-02 DeepTubeTracker DBs, so
+  `== 0` matches nothing; check.
+- ~/R system library has stale compiled packages (stringi vs ICU 78, vctrs vs R);
+  rebuilt stringi, vctrs, purrr in ~/R/library.
+
+## 2026-10-05 — Opt-in k-rule sleep scoring (branch `motion-calibration`)
+
+**Request** (Giorgio, relayed by ethoscope-turing): a tentative opt-in rule so Esteban
+and Alice can test it; classic stays the default and `velocity_threshold="auto"` stays.
+The rule is `rule_sustained_k3` of turing:/mnt/cache/bona_fide/sleep_rule.py (md5
+9070ee2b, helpers in bona_fide_sleep.py md5 0d32d6c0). Evidence: ownCloud
+`sleep_detection/04_sleep_scoring/ANALYSIS_LOG.md` (across-recording IQR 30 → 21 pp;
+rebound, fumin and Clk^Jrk light preserved; D. erecta daytime 40 → 72%, unresolved).
+
+**Decisions (Giorgio):** `sleep_annotation(..., rule="classic"|"k", k=3, pixel=None)`;
+under k the classic columns stay as they are, `asleep` follows the rule, and
+`walking`, `sustained`, `micro_awake` are added; `velocity_threshold` with k raises;
+`untracked` is ignored (no-data bins are never sleep); bins other than 10 s raise.
+Commit per step, no push; sleepr work on a new branch `motion-calibration`.
+
+### Plan
+- [x] Commit the 3 Oct notes (776967d).
+- [x] `src/ethoscopy/sleep_rules.py`: vectorised event classes and per-bin rule.
+- [x] `sleep_annotation(rule=, k=, pixel=)`; classic path untouched.
+- [x] `tests/test_sleep_rules.py` (31): classes, ties, edges, gaps, bouts, k, inferred
+      rows (TEXT, NULL), errors, and bin-by-bin parity on the fixtures.
+- [x] `scripts/validate_k_rule.py`: whole-database parity against the unmodified
+      reference; export of fixture segments with per-bin expected values (captured
+      by wrapping the reference's `sleep_fraction`, cross-checked on all 16 scorings).
+- [x] Parity on 354 + 356 (2026-10-02, DTT), 172 (2023, legacy ABG), 350 (2026-09-30, ABG).
+- [x] README section.
+- [x] sleepr: branch `motion-calibration`, calibration port committed (f5519a3), then
+      the k-rule (`R/sleep-rules.R`, `sleep_annotation(rule, k, pixel)`, needed_columns
+      asks scopr for y) with tests incl. the same fixtures in pixels.
+- [x] xover1 (ethoscope-turing): ETHOSCOPE_354 under exposure-first (200 ms, gain ~1.6),
+      started 2026-10-05 14:01 UTC, autostop 23.5 h, on turing under
+      /mnt/data/results/354f7cfb…/ETHOSCOPE_354/2026-10-05_14-0*. Once it has stopped,
+      score tube 19 (dead fly) at night with scratchpad `night_compare.py` against the
+      pinned-gain baseline of 10-02 (classic 2.5%, k3 86.6%, k2 42.9%; other tubes
+      median 75.7/77.2/76.3%), run `validate_k_rule.py parity` on it, and report to
+      ethoscope-turing. If k3 is not near 100%, they move to a tracker-side fix.
+      Result (2026-10-06, run 2026-10-05_14-03-13, stopped 13:33 UTC): tube 19 at night
+      pinned 10-02 -> exposure-first: classic 2.5% -> 40.9%, k3 86.6% -> 100%, k2 42.9% -> 100%.
+      Its night jitter: step p50 0.29 -> 0.14 px, p95 0.73 -> 0.39 px, 10-s windows with a
+      step >= 0.653 px (velocity 1.0) 88.9% -> 6.3%. Other tubes' median (different nights,
+      live flies): classic 75.7 -> 71.9%, k3 77.2 -> 73.8%, k2 76.3 -> 71.9%. Baseline
+      reproduced under untracked="immobile"; parity on the new DB 20/20 for k3 and k2. No
+      tracker-side fix needed for the k-rule on this fly.
+
+### Results
+- Whole-database parity exact (`==`) on every ROI the reference scores, k3 and k2:
+  354 20/20, 356 20/20, 350 20/20, 172 10/10 (70 ROIs). Fixture segments
+  (`tests/data/k_rule_*.csv`, 31.7k rows: 354 tube 19 dead, 354 tube 2 live, 172 tube 3
+  legacy with no-frame bins, 350 tube 1 with 289 inferred rows) match bin by bin in
+  Python and in R (pixel = 1).
+- Classic output byte-identical to 776967d (12 real flies x fixed / untracked="break" /
+  auto, same hash).
+- 354 night (ZT12-24): dead fly classic 2%, k3 87%, k2 43% (the dark tube end still
+  yields sustained events); tube 2 classic 29%, k3 61%, k2 57%.
+- Suites: ethoscopy 371 passed, 11 skipped; sleepr 162 passed, 2 skipped (empty tests).
+- Fixed after review: under rule="k" the classic detector first got only the
+  observed frames, so classic columns differed from rule="classic" (51 of 4320 bins of
+  `moving`, 12 h of 350 tube 1). It now gets every frame (both packages); identical.
+- untracked under rule="k" (Giorgio, 2026-10-05, after ethoscope-turing's video check):
+  AdaptiveBGModel loses still flies, and the reference rule never counts a window without
+  frames as sleep, so k3 underestimated ABG sleep badly. Now `untracked` works as in
+  classic, default "immobile": no-data windows count as still, and the step after a gap
+  is measured from the last position seen; "break" is the reference rule (parity).
+  Evidence (night, per-tube error vs pixel truth, scripts in
+  turing:/mnt/cache/claude_motion_calibration/k_untracked):
+  - ETHOSCOPE_361 (ABG found the fly in 59% of frames), strict truth 71.6%:
+    ABG classic 49.6% (0.22), ABG k3 break 30.1% (0.43), ABG k3 immobile 67.7% (0.053);
+    DTT k3 67.1% (0.066).
+  - ETHOSCOPE_044, sustained truth 66.3%: ABG classic 55.6% (0.11), k3 break 45.3% (0.21),
+    k3 immobile 67.7% (0.025); DTT k3 break 62.4% (0.072), immobile 66.6% (0.033).
+  - Bridging a gap only if the fly is found within 10 px of where it was lost
+    (0.31 on 361), or filling gaps of at most 5 min (0.43), did not help: ABG loses
+    sleeping flies for long stretches and finds them again once they move.
+  Shipped code equals the evaluated variant bin for bin on both recordings. Fixtures gained
+  two lost-fly segments (350 tube 12, 172 tube 3) and ethoscopy's immobile results for R.
+  The archive phenotype checks (ANALYSIS_LOG §4-5) were run as "break"; rerun them as
+  "immobile" (ethoscope-turing is doing it, break parity asserted per fly).
+- Daytime is not validated (ethoscope-turing, 2026-10-05): in the light phase the rule
+  scores 11-16 pp above sustained pixel truth on both videos, both trackers and both
+  policies (precision ~0.55; classic near or below truth). 30 of the extra windows on
+  video: no locomotion; ~40% small body, leg or wing movements, ~60% only pixel speckle;
+  28 of 30 in the evening before lights-off. Whether that is sleep is an arousal-threshold
+  question. README, module docstring and CLAUDE.md now say so. Data:
+  turing:/mnt/cache/dl_tracking/eval/k_untracked_light/*_light.json.
+- Both `motion-calibration` branches pushed 2026-10-05 (ethoscopy 3b0498c, sleepr 9320476,
+  sleepr over SSH). R through scopr sees normalised positions, so the
+  inferred pixel (1/500) puts the walking cut at ~11 px on 545-551 px ROIs unless
+  `pixel = 1/roi_width` is given; scopr also keeps inferred rows with has_interacted.
+
+### Discovered During Work
+- R classic `sleep_annotation` drops the first window whenever the recording does not
+  start on a 10-s boundary (the raw-frame rolled join is NA there, then `na.omit`), and
+  its x/y come from the last raw frame before the window, not window means. Pre-existing;
+  the k path keeps every window.
+- `reference_hour` shifts the 10-s bins unless the offset is a multiple of 10 s, so
+  k-rule parity with the reference needs `reference_hour=None`.
+- `behavpy.motion_detector()` crashes (`'NoneType' object has no attribute 'index'` in
+  `_wrapped_motion_detector`) when any fly has < 100 rows, because the detector returns
+  None for it. Present in 2.4.0 and on this branch. `load_ethoscope(FUN=sleep_annotation)`
+  skips such flies instead.
+- Classic default path verified byte-identical between 2.4.0 (b28711f) and 3b0498c:
+  load_ethoscope, sleep_annotation, max_velocity_detector and
+  behavpy.motion_detector().sleep_contiguous(), on 12 flies from 350, 354 and 172 (for the
+  su(var)3-9 paper re-run). Timing on jenner, one core, per fly-day: load 0.6-1.1 s,
+  motion_qc 0.5-0.9 s, classic + k + auto together 0.6-1.3 s.
+
+## 2026-10-05 — Fix `plot_hmm_response` (branch `fix/hmm-response-args`)
+
+**Problem** (reported by Giorgio via ethoscope_metadata_db). `plot_hmm_response`
+failed on every call in both canvases since v2.0.1. aa54037 (2025-01-13) removed
+`colours` from `_hmm_response` but not from its callers; 49c13b2 (2025-01-20) then
+rewrote both calls as positional arguments: 12 for 11 parameters, with `t_bin` and
+`facet_labels` swapped. Behind it, the faceted path called `facet_merge` without
+the `meta` argument every other caller passes, so faceting failed as well. The
+arousal analysis (esteban-db-8a) had to re-implement the function on turing.
+
+- [x] Both callers pass keyword arguments; `colours` dropped (the body never used
+      it; plotly colours its "True Stimulus" points from `colours` after the call).
+- [x] `_hmm_response` passes `self.meta` to `facet_merge`.
+- [x] `tests/test_hmm_response.py` (10): both canvases, no facet, facets with
+      labels distinct from args, one HMM per facet, missing column, several HMMs
+      without a facet. Rates checked against a per-fly calculation. With the
+      `facet_merge` fix reverted, the facet tests fail.
+- [x] Real data: on the 66 Joyce et al. 2024 Fig. 1H flies (turing,
+      /mnt/cache/claude_motion_calibration/hmm_fix), all 492 per-fly rates equal
+      the arousal re-implementation exactly (seaborn, seaborn faceted, plotly);
+      group means reproduce the published native numbers.
+- Full suite 325 passed, 11 skipped. Seaborn figures inspected; plotly checked
+  by trace names and colours only (no kaleido for image export).
+
+## 2026-10-07 — Release ethoscopy 3.0.0 (Giorgio, confirmed in session)
+
+Spec from ethoscope-turing, confirmed by Giorgio: remove `velocity_threshold="auto"`
+(never released); keep `motion_qc()` pointing at rule="k"; `sleep_annotation` gets no
+default rule (ValueError explaining classic vs k), so 3.0.0; include the
+plot_hmm_response and empty-ROI loader fixes. Giorgio added: declare the rule once
+(`set_sleep_rule()`, `ETHOSCOPY_SLEEP_RULE`), as matplotlib's rcParams.
+Evidence for docs: night pixel truth (0.03-0.07 per fly) and air-puff arousal
+(ownCloud ANALYSIS_LOG §11: real-minus-sham response +1.2 asleep by all rules,
++2.1 k2-only, +3.2 k3-only, +5.2 awake).
+
+- [x] Merge fix/hmm-response-args and fix/load-empty-roi into motion-calibration.
+- [x] Detector and behavpy.motion_detector restored to 2.4.0 (auto and remove_spikes
+      gone); estimate_velocity_threshold removed; motion_qc without auto columns.
+- [x] rule required, resolved argument > set_sleep_rule() > ETHOSCOPY_SLEEP_RULE;
+      "k2"/"k3" names; error names both rules and the load_ethoscope partial pattern.
+- [x] Tests 386 passed; classic with rule="classic" byte-identical to 2.4.0 (hashes).
+- [x] README "Choosing a sleep rule", module docstring, CLAUDE.md, CHANGELOG.md.
+- [ ] Merge to main, tag v3.0.0, GitHub release, PyPI (twine if CI does not publish).
+- [ ] sleepr 0.4.0 (same changes; R CMD check --as-cran; NEWS; tag; CRAN tarball only).

@@ -6,6 +6,11 @@ import numpy as np
 import pandas as pd
 
 from ethoscopy.misc.general_functions import rle
+from ethoscopy.sleep_rules import (
+    K_RULE_BIN_SECONDS,
+    k_rule_annotation,
+    resolve_rule,
+)
 
 
 def max_velocity_detector(
@@ -186,11 +191,19 @@ def sleep_annotation(
     motion_detector_function: callable = max_velocity_detector,
     masking_duration: int = 6,
     velocity_correction_coef: float = 3e-3,
+    velocity_threshold: Optional[float] = None,
+    untracked: str = "immobile",
+    rule: Optional[str] = None,
+    k: Optional[int] = None,
+    pixel: Optional[float] = None,
 ) -> Optional[pd.DataFrame]:
     """
-    Analyze movement data to identify sleep periods based on sustained immobility.
+    Score sleep, as at least min_sleep_duration without movement, under a chosen rule.
 
-    Sleep is defined as continuous immobility exceeding a minimum duration threshold.
+    ``rule`` has no built-in default since ethoscopy 3.0: pass it, declare it once with
+    ``etho.set_sleep_rule("k")`` (like matplotlib's rcParams), or set the environment
+    variable ETHOSCOPY_SLEEP_RULE. Use "classic" to reproduce earlier analyses and "k"
+    for new ones. With load_ethoscope, ``FUN=functools.partial(sleep_annotation, rule="k")``.
 
     Args:
         data (pd.DataFrame): Raw tracking data from a single animal
@@ -199,13 +212,70 @@ def sleep_annotation(
         motion_detector_function (callable, optional): Function to classify movement. Default is max_velocity_detector.
         masking_duration (int, optional): Duration to ignore movement after stimulus. Default is 6.
         velocity_correction_coef (float, optional): Coefficient for velocity calculations. Default is 3e-3.
+        velocity_threshold (float, optional): Passed to the motion detector when given (rule="classic"
+            only). Default is None, which keeps the detector's own default of 1.0.
+        untracked (str, optional): How bins with no tracked frames enter sleep scoring. "immobile"
+            counts them as immobility, so they can extend or create sleep bouts; "break" ends a
+            bout at them, so sleep is only scored where the animal was seen still. Movement
+            columns are unaffected either way. With rule="k", "immobile" also measures the step
+            after such bins from the last position seen. Default is "immobile".
+        rule (str, optional): "classic", "k", or "k" with its k ("k3", "k2"). Without it,
+            the rule declared by set_sleep_rule() or ETHOSCOPY_SLEEP_RULE is used; with none
+            of these, ValueError explains the choice. "classic" scores a bin as sleep when no frame passed the movement
+            threshold for min_sleep_duration (the 5-minute rule as before). "k" scores it from
+            walking (the median position moving more than 10 px between bins) and from sustained
+            movement events, ignoring flickers and isolated micro-movements; see
+            ethoscopy.sleep_rules. It adds the columns 'walking', 'sustained' and 'micro_awake'
+            and leaves the classic columns as they are. With untracked="break" it reproduces the
+            reference rule exactly.
+        k (int, optional): With rule="k", sustained events within a centred 60-s window that
+            make a bin awake. None takes it from the rule name ("k2") or uses 3.
+        pixel (float, optional): With rule="k", one pixel in the units of x/y. None infers it:
+            1 for positions in pixels (load_ethoscope), 1/500 for positions as a fraction of
+            the ROI width. Default is None.
 
     Returns:
         Optional[pd.DataFrame]: DataFrame with movement and sleep classifications or None if insufficient data
+
+    Raises:
+        ValueError: If rule is missing (the message explains the choice), untracked is not
+            "immobile" or "break", rule is not "classic" or "k",
+            or rule="k" is combined with velocity_threshold, a bin other than 10 s,
+            k < 1 or a non-positive pixel.
     """
+    rule, k = resolve_rule(rule, k)
+    if untracked not in ("immobile", "break"):
+        raise ValueError('untracked must be "immobile" or "break"')
+    if rule not in ("classic", "k"):
+        raise ValueError('rule must be "classic" or "k"')
+    if rule == "k":
+        if velocity_threshold is not None:
+            raise ValueError('velocity_threshold applies only to rule="classic"')
+        if time_window_length != K_RULE_BIN_SECONDS:
+            raise ValueError(f'rule="k" is defined for {K_RULE_BIN_SECONDS}-s bins')
+        if isinstance(k, bool) or not isinstance(k, (int, np.integer)) or k < 1:
+            raise ValueError("k must be a positive integer")
+        if pixel is not None and not pixel > 0:
+            raise ValueError("pixel must be positive")
+        return k_rule_annotation(
+            data,
+            motion_detector_function,
+            k=k,
+            pixel=pixel,
+            min_sleep_duration=min_sleep_duration,
+            masking_duration=masking_duration,
+            velocity_correction_coef=velocity_correction_coef,
+            untracked=untracked,
+        )
+
     # Check minimum data requirements
     if len(data.index) < 100:
         return None
+
+    # Only forward the threshold when set, so custom detectors without the argument keep working
+    detector_kwargs = {}
+    if velocity_threshold is not None:
+        detector_kwargs["velocity_threshold"] = velocity_threshold
 
     # Get movement classifications
     binned_data = motion_detector_function(
@@ -213,6 +283,7 @@ def sleep_annotation(
         time_window_length,
         masking_duration=masking_duration,
         velocity_correction_coef=velocity_correction_coef,
+        **detector_kwargs,
     )
 
     if len(binned_data.index) < 100:
@@ -266,8 +337,11 @@ def sleep_annotation(
 
         return sleep_series
 
+    sleep_breaking = binned_data["moving"]
+    if untracked == "break":
+        sleep_breaking = sleep_breaking | binned_data["is_interpolated"]
     binned_data["asleep"] = classify_sleep(
-        binned_data["moving"], 1 / time_window_length, min_duration=min_sleep_duration
+        sleep_breaking, 1 / time_window_length, min_duration=min_sleep_duration
     )
 
     return binned_data

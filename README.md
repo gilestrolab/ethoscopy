@@ -66,6 +66,77 @@ df = pd.read_pickle('path/to/your/file.pkl')
 df = etho.behavpy(df, df.meta, check = True, canvas = 'plotly', palette = 'Set2')
 ```
 
+## Choosing a sleep rule
+
+**Since ethoscopy 3.0, `sleep_annotation` needs a sleep rule.** To reproduce earlier
+results, add `rule="classic"`, or declare it once at the top of a notebook:
+
+```python
+import ethoscopy as etho
+etho.set_sleep_rule("classic")   # every later sleep_annotation call uses it
+```
+
+Old notebooks can also be re-run without editing them by setting the environment
+variable `ETHOSCOPY_SLEEP_RULE=classic`. An explicit `rule=` argument always wins over
+`set_sleep_rule()`, which wins over the environment variable, as with matplotlib's
+`rcParams`. Without any of them, `sleep_annotation` raises an error explaining the choice.
+
+```python
+from functools import partial
+data = etho.load_ethoscope(meta, reference_hour=9.0,
+                           FUN=partial(etho.sleep_annotation, rule="k"))
+```
+
+**`rule="classic"`** is the 5-minute rule as before. A 10-s window is moving when any
+frame is faster than the velocity threshold (1.0), and sleep is 5 minutes or more
+without a moving window. On current ethoscope data, tracking noise and brief twitches
+break sleep into fragments under it: a 5-minute bout needs 30 clean windows in a row,
+so if a still fly crosses the threshold in 5% of windows only about a fifth of real
+rests survive.
+
+**`rule="k"`** (k = 3 by default; `"k2"` is the stricter variant) counts movement only
+when it is sustained or walking. A window is awake if the fly walked (its median
+position moved more than 10 px from the previous window) or if at least `k` sustained
+movement events started in the 60 s around it. An event is a run of consecutive frames
+above the classic velocity test. Runs in which the position never leaves its pixel, and
+jumps of one or two frames that land back within a pixel, are tracking noise and are
+ignored. Frames the tracker inferred are dropped. Windows without frames follow
+`untracked`: with the default `"immobile"` they count as still, and the fly walked only
+if it is found more than 10 px from where it was last seen (background-subtraction
+tracking loses still flies, so this keeps their sleep); `"break"` never scores them as
+sleep. The output adds `walking`, `sustained` and `micro_awake` and keeps the classic
+columns, `moving` included. Positions from `load_ethoscope` are in pixels; for
+positions given as a fraction of the ROI width, pass `pixel=1/roi_width`.
+
+Use `rule="classic"` to reproduce earlier analyses, and `rule="k"` for new ones,
+especially on DeepTubeTracker or exposure-first recordings. The evidence for the k-rule:
+
+- **Video ground truth at night.** Against pixel-motion truth from video, the night-time
+  error per fly was 0.03–0.07 with either tracker (classic: 0.11–0.37). A dead fly
+  recorded with exposure-first acquisition scores 100% asleep.
+- **Arousal.** In 136 air-puff runs (1,319 flies), puffs were delivered at random against
+  sham firings. Flies the k-rule scores asleep respond like sleeping flies, by day as
+  well as by night: the puff-evoked response (real minus sham) was +1.2 percentage points
+  when asleep by every rule, +2.1 when only the k-rule called it sleep, +3.2 when only
+  k = 3 did, and +5.2 when awake. So the k-rule's extra daytime sleep, small movements
+  in place by a fly that does not walk, is sleep-like.
+- **Across the lab archive** (219 recordings) it narrows the spread of sleep between
+  recordings (interquartile range of per-recording median sleep 30 → 21 percentage
+  points) and preserves the rebound after sleep deprivation and the *fumin* and
+  *Clk^Jrk* (light phase) phenotypes.
+
+Before scoring, check a recording's tracking noise:
+
+```python
+qc = etho.motion_qc(raw_data)   # one row per fly and light phase
+```
+
+`fp_rate_fixed` is how often a still fly crosses the classic threshold and
+`rest_survival_fixed` the fraction of 5-minute rests that would survive it. Values above
+about 0.01 mean classic sleep is unreliable for that recording. A large
+`untracked_fraction` matters under either rule. Both rules are also in rethomics'
+`sleepr`, so both toolboxes score a recording alike.
+
 ## Tutorial data
 
 The six pickle files used by the tutorial notebooks (~36 MB total, dominated by `overview_data.pkl` at ~31 MB) are **intentionally not shipped with the PyPI wheel** to keep `pip install ethoscopy` lean. Fetch them once with:

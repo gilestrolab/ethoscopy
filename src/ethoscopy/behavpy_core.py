@@ -1794,6 +1794,7 @@ class behavpy_core(pd.DataFrame):
         t_column: str,
         time_window_length: int,
         min_time_immobile: int,
+        untracked: str = "immobile",
     ) -> pd.DataFrame:
         """
         Internal wrapper for sleep analysis processing on individual specimens.
@@ -1847,8 +1848,11 @@ class behavpy_core(pd.DataFrame):
             d_small["is_interpolated"], False, d_small[mov_column]
         )
 
+        sleep_breaking = d_small[mov_column]
+        if untracked == "break":
+            sleep_breaking = sleep_breaking | d_small["is_interpolated"]
         d_small["asleep"] = _sleep_contiguous(
-            d_small[mov_column],
+            sleep_breaking,
             1 / time_window_length,
             min_valid_time=min_time_immobile,
         )
@@ -1863,6 +1867,7 @@ class behavpy_core(pd.DataFrame):
         t_column: str = "t",
         time_window_length: int = 10,
         min_time_immobile: int = 300,
+        untracked: str = "immobile",
     ) -> "behavpy_core":
         """
         Analyse movement data to identify sleep periods based on sustained immobility.
@@ -1882,6 +1887,9 @@ class behavpy_core(pd.DataFrame):
                 Defaults to 10.
             min_time_immobile (int, optional): Minimum duration in seconds of immobility
                 required to classify a period as sleep. Defaults to 300 (5 minutes).
+            untracked (str, optional): "immobile" counts bins with no tracked data as immobility;
+                "break" ends a sleep bout at them, so sleep is only scored where the specimen was
+                seen still. Defaults to "immobile".
 
         Returns:
             behavpy_core: New behavpy object with additional columns:
@@ -1903,6 +1911,8 @@ class behavpy_core(pd.DataFrame):
         # Validate min_time_immobile
         if not isinstance(min_time_immobile, int) or min_time_immobile <= 0:
             raise ValueError("min_time_immobile must be a positive number")
+        if untracked not in ("immobile", "break"):
+            raise ValueError('untracked must be "immobile" or "break"')
 
         tdf = self.reset_index().copy(deep=True)
         return self.__class__(
@@ -1913,6 +1923,7 @@ class behavpy_core(pd.DataFrame):
                     t_column=t_column,
                     time_window_length=time_window_length,
                     min_time_immobile=min_time_immobile,
+                    untracked=untracked,
                 )
             ),
             tdf.meta,
