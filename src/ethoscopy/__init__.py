@@ -23,8 +23,8 @@ from ethoscopy.load import (
     load_ethoscope_metadata,
 )
 from ethoscopy.misc.general_functions import concat
+from ethoscopy.sleep_rules import get_sleep_rule, set_sleep_rule
 from ethoscopy.motion_calibration import (
-    estimate_velocity_threshold,
     find_still_bins,
     motion_qc,
 )
@@ -37,7 +37,6 @@ __all__ = [
     "download_from_remote_dir",
     "download_tutorial_data",
     "estimate_light_cycle",
-    "estimate_velocity_threshold",
     "find_still_bins",
     "get_tutorial",
     "link_meta_index",
@@ -47,6 +46,8 @@ __all__ = [
     "load_ethoscope_metadata",
     "max_velocity_detector",
     "motion_qc",
+    "set_sleep_rule",
+    "get_sleep_rule",
     "sleep_annotation",
     "stimulus_response",
     "stimulus_prior",

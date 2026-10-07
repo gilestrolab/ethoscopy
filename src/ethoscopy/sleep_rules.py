@@ -22,18 +22,22 @@ Bins without frames are handled as in the classic rule. By default
 after them is walking only if the animal is found more than 10 px from where it
 was last seen. Background-subtraction tracking (AdaptiveBGModel) loses still
 flies, so this is what keeps their sleep: against pixel-motion truth on two
-recordings, night-time error per tube fell from 0.21-0.43 to 0.03-0.05. In the light
-phase the rule scored 11-16 percentage points more sleep than that truth, in windows
-where the fly does not walk and at most moves its body, legs or wings a little, so
-daytime sleep under the rule is not validated.
+recordings, night-time error per tube fell from 0.21-0.43 to 0.03-0.05.
 ``untracked="break"`` never scores such bins as sleep.
+
+In the light the rule scores more sleep than pixel truth, in bins where the fly
+does not walk and at most moves a little in place. Air-puff arousal shows these
+bins are sleep-like: flies the rule scores asleep, by day too, respond to puffs
+like sleeping flies (real minus sham response +3.2 percentage points in bins only
+k = 3 calls asleep, against +5.2 awake and +1.2 asleep by every rule).
 
 With ``untracked="break"`` the rule reproduces ``rule_sustained_k3`` of the
 sleep-scoring analysis of the lab archive (sleep_rule.py, October 2026), with
-``k = 2`` as the alternative. The rule is tentative and opt-in:
-``sleep_annotation(rule="k")``.
+``k = 2`` as the alternative. Choose it with ``sleep_annotation(rule="k")`` or
+declare it once with ``set_sleep_rule("k")``; sleep_annotation has no default rule.
 """
 
+import os
 from typing import Optional, Tuple
 
 import numpy as np
@@ -52,6 +56,108 @@ MAX_FLICKER_FRAMES = 2
 # Events are counted in bins [i - 3, i + 3).
 EVENT_WINDOW_BINS = 6
 SUBPIXEL, FLICKER, SUSTAINED = 0, 1, 2
+
+DOCS_URL = "https://github.com/gilestrolab/ethoscopy#choosing-a-sleep-rule"
+SLEEP_RULE_ENV = "ETHOSCOPY_SLEEP_RULE"
+RULE_REQUIRED_MESSAGE = f"""sleep_annotation now needs a sleep rule: 'classic' or 'k'.
+
+rule='classic' is the 5-minute rule as before: any frame faster than the velocity
+threshold counts as movement. On current ethoscope data, tracking noise and brief
+twitches break sleep into fragments under it.
+
+rule='k' (k=3 by default) ignores flickers and isolated micro-movements, and counts
+movement only when it is sustained or walking. It matches video ground truth at night,
+and flies it scores asleep respond to air puffs like sleeping flies.
+
+Use 'classic' to reproduce earlier analyses, and 'k' for new ones. Declare it once:
+
+    etho.set_sleep_rule("classic")     # or "k", "k3", "k2": once, at the top
+    # or, without touching the code:  export {SLEEP_RULE_ENV}=classic
+
+or per call, e.g. when loading:
+
+    from functools import partial
+    data = etho.load_ethoscope(meta, FUN=partial(etho.sleep_annotation, rule="k"))
+
+See {DOCS_URL}"""
+
+_declared = {"rule": None, "k": None}
+
+
+def _parse_rule(value: str) -> Tuple[str, Optional[int]]:
+    """
+    Split a rule name such as "classic", "k" or "k3" into the rule and its k.
+
+    Args:
+        value (str): The rule name.
+
+    Returns:
+        Tuple[str, Optional[int]]: ("classic" or "k", k or None).
+
+    Raises:
+        ValueError: If the name is not "classic", "k" or "k" followed by a positive integer.
+    """
+    name = str(value).strip().lower()
+    if name in ("classic", "k"):
+        return name, None
+    if name[:1] == "k" and name[1:].isdigit() and int(name[1:]) >= 1:
+        return "k", int(name[1:])
+    raise ValueError(f'unknown sleep rule {value!r}: use "classic", "k" or e.g. "k3"')
+
+
+def set_sleep_rule(rule: Optional[str]) -> None:
+    """
+    Declare the sleep rule once, for every later sleep_annotation call.
+
+    Works like matplotlib's rcParams: a value passed to sleep_annotation still wins.
+    Without a declaration, the environment variable ETHOSCOPY_SLEEP_RULE is used,
+    so existing notebooks can be re-run unchanged.
+
+    Args:
+        rule (str or None): "classic", "k", or "k" with its k (e.g. "k3", "k2").
+            None clears the declaration.
+
+    Raises:
+        ValueError: If the rule name is not recognised.
+    """
+    if rule is None:
+        _declared.update(rule=None, k=None)
+        return
+    name, k = _parse_rule(rule)
+    _declared.update(rule=name, k=k)
+
+
+def get_sleep_rule() -> Optional[str]:
+    """
+    The sleep rule in force without an explicit argument.
+
+    Returns:
+        Optional[str]: "classic", "k" or e.g. "k3"; None when nothing is declared.
+    """
+    if _declared["rule"] is not None:
+        return _declared["rule"] + (str(_declared["k"]) if _declared["k"] else "")
+    return os.environ.get(SLEEP_RULE_ENV) or None
+
+
+def resolve_rule(rule: Optional[str], k: Optional[int]) -> Tuple[str, int]:
+    """
+    Decide the rule and k for one call: argument, then declaration, then environment.
+
+    Args:
+        rule (str or None): The rule passed to sleep_annotation ("k3" style allowed).
+        k (int or None): The k passed to sleep_annotation.
+
+    Returns:
+        Tuple[str, int]: The rule and k to use (k is 3 unless set).
+
+    Raises:
+        ValueError: If no rule is given anywhere (with an explanation), or it is unknown.
+    """
+    source = rule if rule is not None else get_sleep_rule()
+    if source is None:
+        raise ValueError(RULE_REQUIRED_MESSAGE)
+    name, k_from_name = _parse_rule(source)
+    return name, k if k is not None else (k_from_name or 3)
 
 
 def _runs(mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:

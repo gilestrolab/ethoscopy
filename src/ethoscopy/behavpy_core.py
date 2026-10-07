@@ -1702,9 +1702,8 @@ class behavpy_core(pd.DataFrame):
         time_window_length: int,
         velocity_correction_coef: float,
         masking_duration: int,
-        velocity_threshold: Union[float, str],
+        velocity_threshold: float,
         walk_threshold: float,
-        **auto_kwargs,
     ) -> pd.DataFrame:
         """
         Internal wrapper for motion detection processing on individual specimens.
@@ -1722,7 +1721,6 @@ class behavpy_core(pd.DataFrame):
             masking_duration=masking_duration,
             velocity_threshold=velocity_threshold,
             walk_threshold=walk_threshold,
-            **auto_kwargs,
         )
 
         old_index = pd.Index([index_name] * len(df.index), name="id")
@@ -1735,13 +1733,8 @@ class behavpy_core(pd.DataFrame):
         time_window_length: int = 10,
         velocity_correction_coef: float = 3e-3,
         masking_duration: int = 6,
-        velocity_threshold: Union[float, str] = 1.0,
+        velocity_threshold: float = 1.0,
         walk_threshold: float = 2.5,
-        threshold_quantile: float = 0.99,
-        threshold_floor: float = 1.0,
-        day_length: int = 24,
-        lights_off: int = 12,
-        remove_spikes: Optional[bool] = None,
     ) -> "behavpy_core":
         """
         Method version of the motion detector for classifying different types of movement in ethoscope experiments.
@@ -1752,17 +1745,8 @@ class behavpy_core(pd.DataFrame):
             velocity_correction_coef (float, optional): Coefficient to correct velocity data. Use 3e-3 for 'small' tubes
                 (20 per ethoscope), 15e-4 for 'long' tubes (10 per ethoscope). Default is 3e-3.
             masking_duration (int, optional): Seconds during which movement is ignored after stimulus. Default is 6.
-            velocity_threshold (float or str, optional): Threshold above which movement is detected.
-                "auto" estimates it per specimen and light phase from the specimen's own tracking
-                noise (see ethoscopy.motion_calibration). Default is 1.0.
+            velocity_threshold (float, optional): Threshold above which movement is detected. Default is 1.0.
             walk_threshold (float, optional): Threshold above which movement is classified as walking. Default is 2.5.
-            threshold_quantile (float, optional): With "auto", quantile of still-bin velocity used as the
-                threshold. Default is 0.99.
-            threshold_floor (float, optional): With "auto", lowest threshold allowed. Default is 1.0.
-            day_length (int, optional): With "auto", day length in hours. Default is 24.
-            lights_off (int, optional): With "auto", hour of lights off. Default is 12.
-            remove_spikes (bool, optional): Drop tracking spikes (centroid jumps and lands back on
-                the same pixel) before computing velocity. None enables it with "auto". Default is None.
 
         Returns:
             behavpy_core: A behavpy object with added columns for movement classifications including:
@@ -1795,11 +1779,6 @@ class behavpy_core(pd.DataFrame):
                     masking_duration=masking_duration,
                     velocity_threshold=velocity_threshold,
                     walk_threshold=walk_threshold,
-                    threshold_quantile=threshold_quantile,
-                    threshold_floor=threshold_floor,
-                    day_length=day_length,
-                    lights_off=lights_off,
-                    remove_spikes=remove_spikes,
                 )
             ),
             tdf.meta,

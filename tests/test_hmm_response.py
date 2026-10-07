@@ -87,7 +87,7 @@ def _behavpy_pair(raw_flies, canvas):
         [stimulus_response(d.copy()).assign(id=fid) for fid, d in raw_flies.items()]
     ).set_index("id")
     mov = pd.concat(
-        [sleep_annotation(d.copy()).assign(id=fid) for fid, d in raw_flies.items()]
+        [sleep_annotation(d.copy(), rule="classic").assign(id=fid) for fid, d in raw_flies.items()]
     ).set_index("id")
     return (
         etho.behavpy(resp, meta, check=True, canvas=canvas),
@@ -105,7 +105,7 @@ def _expected(raw_flies, hmm):
     """
     rows = []
     for fid, d in raw_flies.items():
-        mov = sleep_annotation(d.copy())
+        mov = sleep_annotation(d.copy(), rule="classic")
         moving = mov.groupby(mov.t // T_BIN * T_BIN)["moving"].max().astype(int)
         _, states = hmm.decode(moving.to_numpy().reshape(-1, 1))
         decoded = pd.DataFrame(

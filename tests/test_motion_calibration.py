@@ -1,5 +1,5 @@
 """
-Tests for noise-calibrated movement thresholds (ethoscopy.motion_calibration).
+Tests for tracking-noise diagnostics (ethoscopy.motion_calibration).
 
 Tracks are synthetic with known truth: a fly that rests at a fixed position and
 walks during scheduled windows, with per-frame tracking noise of a chosen size.
@@ -18,7 +18,6 @@ from ethoscopy.analyse import max_velocity_detector, sleep_annotation
 from ethoscopy.behavpy_core import behavpy_core
 from ethoscopy.motion_calibration import (
     default_still_shift,
-    estimate_velocity_threshold,
     find_spikes,
     find_still_bins,
     light_phase,
@@ -97,81 +96,6 @@ def rest_sleep(result, active_minutes=10, settle_minutes=6):
     return result.loc[rest, "asleep"].mean()
 
 
-class TestAutoThreshold:
-    """max_velocity_detector / sleep_annotation with velocity_threshold='auto'."""
-
-    @pytest.mark.unit
-    def test_auto_recovers_sleep_that_noise_erases(self):
-        raw, _ = make_track(noise_light=0.9, noise_dark=0.9)
-        detector = partial(max_velocity_detector, **DAY)
-        fixed = sleep_annotation(raw, motion_detector_function=detector)
-        auto = sleep_annotation(
-            raw, motion_detector_function=detector, velocity_threshold="auto"
-        )
-        rest = (auto["t"] % 3600) >= 16 * 60
-        # Reason: the method targets 1% false positives; where those land decides how
-        # many rest fragments fall under 5 min, so sleep varies ~0.90-0.98 by seed.
-        assert auto.loc[rest, "moving"].mean() < 0.02
-        assert rest_sleep(fixed) < 0.2
-        assert rest_sleep(auto) > 0.85
-
-    @pytest.mark.unit
-    def test_auto_keeps_walking_as_movement(self):
-        raw, _ = make_track(noise_light=0.9, noise_dark=0.9)
-        result = max_velocity_detector(raw, velocity_threshold="auto", **DAY)
-        walking = (result["t"] % 3600) < 9 * 60
-        assert result.loc[walking, "moving"].mean() > 0.95
-        assert result.loc[walking, "walk"].mean() > 0.95
-
-    @pytest.mark.unit
-    def test_clean_recording_is_unchanged(self):
-        raw, _ = make_track(noise_light=0.3, noise_dark=0.3)
-        fixed = max_velocity_detector(raw, **DAY)
-        auto = max_velocity_detector(raw, velocity_threshold="auto", **DAY)
-        assert (auto["velocity_threshold"] == 1.0).all()
-        for column in ("moving", "micro", "walk"):
-            pd.testing.assert_series_equal(fixed[column], auto[column])
-
-    @pytest.mark.unit
-    def test_light_and_dark_get_their_own_threshold(self):
-        raw, _ = make_track(noise_light=1.3, noise_dark=0.5)
-        result = max_velocity_detector(raw, velocity_threshold="auto", **DAY)
-        phase = light_phase(result["t"].to_numpy(dtype=float), **DAY)
-        light = result.loc[phase == "light", "velocity_threshold"].unique()
-        dark = result.loc[phase == "dark", "velocity_threshold"].unique()
-        assert len(light) == 1 and len(dark) == 1
-        assert dark[0] == 1.0
-        assert light[0] > 1.3
-
-    @pytest.mark.unit
-    def test_threshold_above_walk_threshold_keeps_micro_consistent(self):
-        raw, _ = make_track(noise_light=3.0, noise_dark=3.0)
-        result = max_velocity_detector(raw, velocity_threshold="auto", **DAY)
-        assert (result["velocity_threshold"] > 2.5).all()
-        # micro and walk must partition moving
-        assert ((result["micro"] | result["walk"]) == result["moving"]).all()
-        assert not (result["micro"] & result["walk"]).any()
-
-    @pytest.mark.unit
-    def test_no_still_bins_falls_back_to_floor_with_warning(self):
-        raw, _ = make_track(always_active=True)
-        with pytest.warns(UserWarning, match="still bins"):
-            result = max_velocity_detector(raw, velocity_threshold="auto", **DAY)
-        assert (result["velocity_threshold"] == 1.0).all()
-
-    @pytest.mark.unit
-    def test_unknown_threshold_string_raises(self):
-        raw, _ = make_track(hours=1)
-        with pytest.raises(ValueError, match="auto"):
-            max_velocity_detector(raw, velocity_threshold="automatic")
-
-    @pytest.mark.unit
-    def test_numeric_threshold_validation_unchanged(self):
-        raw, _ = make_track(hours=1)
-        with pytest.raises(ValueError):
-            max_velocity_detector(raw, velocity_threshold=3.0, walk_threshold=2.5)
-
-
 class TestUntracked:
     """sleep_annotation(untracked=...) treatment of bins without frames."""
 
@@ -179,8 +103,8 @@ class TestUntracked:
     def test_break_ends_sleep_at_untracked_bins(self):
         gap = (3600 + 30 * 60, 3600 + 40 * 60)
         raw, _ = make_track(noise_light=0.3, noise_dark=0.3, gap=gap)
-        immobile = sleep_annotation(raw, untracked="immobile")
-        broken = sleep_annotation(raw, untracked="break")
+        immobile = sleep_annotation(raw, rule="classic", untracked="immobile")
+        broken = sleep_annotation(raw, rule="classic", untracked="break")
         in_gap = (immobile["t"] >= gap[0]) & (immobile["t"] < gap[1])
         assert immobile.loc[in_gap, "is_interpolated"].all()
         assert immobile.loc[in_gap, "asleep"].all()
@@ -192,7 +116,7 @@ class TestUntracked:
     def test_invalid_untracked_raises(self):
         raw, _ = make_track(hours=1)
         with pytest.raises(ValueError, match="untracked"):
-            sleep_annotation(raw, untracked="skip")
+            sleep_annotation(raw, rule="classic", untracked="skip")
 
 
 class TestStillBins:
@@ -243,13 +167,6 @@ class TestStillBins:
         assert default_still_shift(np.array([12.0, 480.0])) == 1.0
         assert default_still_shift(np.array([0.02, 0.95])) == 2e-3
 
-    @pytest.mark.unit
-    def test_invalid_quantile_raises(self):
-        raw, _ = make_track(hours=1)
-        binned = max_velocity_detector(raw)
-        with pytest.raises(ValueError, match="quantile"):
-            estimate_velocity_threshold(binned, quantile=1.5)
-
 
 class TestSpikes:
     """find_spikes and spike removal in the detector."""
@@ -285,39 +202,10 @@ class TestSpikes:
         assert not velocity.any()
 
     @pytest.mark.unit
-    def test_spikes_do_not_inflate_the_auto_threshold(self):
-        raw, _ = make_track(noise_light=0.9, noise_dark=0.9, spike_rate=0.004)
-        detector = partial(max_velocity_detector, **DAY)
-        with_removal = sleep_annotation(
-            raw, motion_detector_function=detector, velocity_threshold="auto"
-        )
-        without = max_velocity_detector(
-            raw, velocity_threshold="auto", remove_spikes=False, **DAY
-        )
-        # Reason: ~8% of rest bins hold a 40 px spike, so its q99 would be the spike itself.
-        assert without["velocity_threshold"].max() > 5
-        assert with_removal["velocity_threshold"].max() < 1.5
-        assert rest_sleep(with_removal) > 0.85
-
-    @pytest.mark.unit
-    def test_fixed_threshold_keeps_spikes_unless_asked(self):
-        raw, _ = make_track(noise_light=0.3, noise_dark=0.3, spike_rate=0.004)
-        default = max_velocity_detector(raw, **DAY)
-        cleaned = max_velocity_detector(raw, remove_spikes=True, **DAY)
-        rest = (default["t"] % 3600) >= 16 * 60
-        assert default.loc[rest, "moving"].mean() > 0.05
-        assert cleaned.loc[rest, "moving"].mean() == 0
-
-    @pytest.mark.unit
     def test_motion_qc_reports_spikes(self):
         raw, _ = make_track(spike_rate=0.004)
         qc = motion_qc(raw.assign(id="fly"), **DAY)
         assert (qc["spike_fraction"] > 0.002).all()
-        # the reported auto threshold is the one "auto" applies, i.e. after spike removal
-        applied = max_velocity_detector(raw, velocity_threshold="auto", **DAY)
-        assert qc["auto_threshold"].max() == pytest.approx(
-            applied["velocity_threshold"].max()
-        )
 
 
 class TestMotionQC:
@@ -332,28 +220,25 @@ class TestMotionQC:
         assert len(qc) == 4
         assert (qc.loc["noisy", "fp_rate_fixed"] > 0.5).all()
         assert (qc.loc["noisy", "rest_survival_fixed"] < 0.01).all()
-        assert (qc.loc["noisy", "auto_threshold"] > 1.0).all()
         assert (qc.loc["clean", "fp_rate_fixed"] == 0).all()
-        assert (qc.loc["clean", "auto_threshold"] == 1.0).all()
+        assert "auto_threshold" not in qc.columns
 
 
 class TestBehavpyMethods:
     """behavpy motion_detector / sleep_contiguous pass the new options through."""
 
     @pytest.mark.unit
-    def test_motion_detector_auto_and_sleep_contiguous_break(self):
-        raw, _ = make_track(noise_light=0.9, noise_dark=0.9)
+    def test_sleep_contiguous_break(self):
+        raw, _ = make_track(noise_light=0.3, noise_dark=0.3, gap=(5400, 5700))
         data = raw.assign(id="fly_1").set_index("id")
         meta = pd.DataFrame({"id": ["fly_1"], "group": ["a"]}).set_index("id")
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             warnings.simplefilter("ignore", FutureWarning)
             df = behavpy_core(data, meta, check=True)
-            moved = df.motion_detector(velocity_threshold="auto", **DAY)
-            despiked = df.motion_detector(remove_spikes=True, **DAY)
-            slept = moved.sleep_contiguous(untracked="break")
-        assert (moved["velocity_threshold"] > 1.0).all()
-        assert "velocity_threshold" not in despiked.columns
-        assert rest_sleep(slept.reset_index()) > 0.85
+            moved = df.motion_detector()
+            kept = moved.sleep_contiguous()
+            broken = moved.sleep_contiguous(untracked="break")
+        assert broken["asleep"].sum() < kept["asleep"].sum()
         with pytest.raises(ValueError, match="untracked"):
             moved.sleep_contiguous(untracked="skip")

@@ -6,8 +6,11 @@ import numpy as np
 import pandas as pd
 
 from ethoscopy.misc.general_functions import rle
-from ethoscopy.motion_calibration import estimate_velocity_threshold, find_spikes
-from ethoscopy.sleep_rules import K_RULE_BIN_SECONDS, k_rule_annotation
+from ethoscopy.sleep_rules import (
+    K_RULE_BIN_SECONDS,
+    k_rule_annotation,
+    resolve_rule,
+)
 
 
 def max_velocity_detector(
@@ -15,13 +18,8 @@ def max_velocity_detector(
     time_window_length: int = 10,
     velocity_correction_coef: float = 3e-3,
     masking_duration: int = 6,
-    velocity_threshold: Union[float, str] = 1.0,
+    velocity_threshold: float = 1.0,
     walk_threshold: float = 2.5,
-    threshold_quantile: float = 0.99,
-    threshold_floor: float = 1.0,
-    day_length: int = 24,
-    lights_off: int = 12,
-    remove_spikes: Optional[bool] = None,
 ) -> Optional[pd.DataFrame]:
     """
     Default movement classification for real-time ethoscope experiments.
@@ -34,35 +32,16 @@ def max_velocity_detector(
         velocity_correction_coef (float, optional): Coefficient to correct velocity data. Use 3e-3 for 'small' tubes
             (20 per ethoscope), 15e-4 for 'long' tubes (10 per ethoscope). Default is 3e-3.
         masking_duration (int, optional): Seconds during which movement is ignored after stimulus. Default is 6.
-        velocity_threshold (float or str, optional): Threshold above which movement is detected.
-            "auto" estimates it from the animal's own tracking noise, separately for the light and
-            dark phase (see ethoscopy.motion_calibration). Default is 1.0.
-        walk_threshold (float, optional): Threshold above which movement is classified as walking.
-            With "auto", walking also requires exceeding the estimated threshold. Default is 2.5.
-        threshold_quantile (float, optional): With "auto", quantile of peak velocity in still bins
-            used as the threshold, i.e. a still animal is scored as moving in 1 - quantile of bins.
-            Default is 0.99.
-        threshold_floor (float, optional): With "auto", lowest threshold allowed. Default is 1.0.
-        day_length (int, optional): With "auto", day length in hours for the phase split. Default is 24.
-        lights_off (int, optional): With "auto", hour of lights off; t must be 0 at lights on
-            (load_ethoscope with reference_hour). Default is 12.
-        remove_spikes (bool, optional): Drop tracking spikes - frames where the centroid jumps
-            more than 3 px and lands back on the same pixel within two frames (see
-            motion_calibration.find_spikes) - before computing velocity and position. None enables
-            it together with "auto", whose calibration they would otherwise inflate. Default is None.
+        velocity_threshold (float, optional): Threshold above which movement is detected. Default is 1.0.
+        walk_threshold (float, optional): Threshold above which movement is classified as walking. Default is 2.5.
 
     Returns:
         Optional[pd.DataFrame]: DataFrame with movement classifications or None if insufficient data.
             Includes columns: t, x, y, w, h, phi, max_velocity, mean_velocity, distance,
-            interactions, beam_crosses, moving, micro, walk. With "auto", also
-            velocity_threshold, the threshold applied to each bin.
+            interactions, beam_crosses, moving, micro, walk
     """
 
-    auto_threshold = isinstance(velocity_threshold, str)
-    if auto_threshold:
-        if velocity_threshold != "auto":
-            raise ValueError('velocity_threshold must be a number or "auto"')
-    elif velocity_threshold <= 0 or walk_threshold <= velocity_threshold:
+    if velocity_threshold <= 0 or walk_threshold <= velocity_threshold:
         raise ValueError(
             "Invalid thresholds: velocity_threshold must be > 0 and < walk_threshold"
         )
@@ -89,16 +68,6 @@ def max_velocity_detector(
     # in this case we are using the log10x1000 distance and then correcting for the velocity correction coefficient
     dt["dist"] = 10 ** (dt.xy_dist_log10x1000 / 1000)
     dt["velocity"] = dt.dist / velocity_correction_coef
-
-    if remove_spikes is None:
-        remove_spikes = auto_threshold
-    if remove_spikes and len(dt) > 2:
-        velocity_mask, position_mask = find_spikes(
-            dt["t"].to_numpy(), dt["x"].to_numpy(), dt["y"].to_numpy()
-        )
-        # Reason: NaN is skipped by the bin max/mean/sum, so spike frames simply drop out.
-        dt.loc[velocity_mask, ["dist", "velocity"]] = np.nan
-        dt.loc[position_mask, ["x", "y"]] = np.nan
 
     # Detect beam crossings (crossing center of arena)
     dt["beam_cross"] = abs(np.sign(0.5 - dt["x"]).diff())
@@ -135,28 +104,15 @@ def max_velocity_detector(
 
     d_small = dt.groupby("t_round").agg(**agg_dict)
 
+    # Classify movement types using configurable thresholds
+    d_small["moving"] = d_small["max_velocity"] > velocity_threshold
+    d_small["micro"] = (d_small["max_velocity"] > velocity_threshold) & (
+        d_small["max_velocity"] < walk_threshold
+    )
+    d_small["walk"] = d_small["max_velocity"] > walk_threshold
+
     d_small.rename_axis("t", inplace=True)
     d_small.reset_index(level=0, inplace=True)
-
-    if auto_threshold:
-        threshold, _ = estimate_velocity_threshold(
-            d_small,
-            time_window_length=time_window_length,
-            quantile=threshold_quantile,
-            floor=threshold_floor,
-            day_length=day_length,
-            lights_off=lights_off,
-        )
-        d_small["velocity_threshold"] = threshold
-        # Reason: a noisy phase can be calibrated above walk_threshold; walking must still be movement.
-        walk_limit = np.maximum(walk_threshold, threshold)
-    else:
-        threshold, walk_limit = velocity_threshold, walk_threshold
-
-    # Classify movement types using configurable thresholds
-    d_small["moving"] = d_small["max_velocity"] > threshold
-    d_small["micro"] = d_small["moving"] & (d_small["max_velocity"] < walk_limit)
-    d_small["walk"] = d_small["max_velocity"] > walk_limit
 
     return d_small
 
@@ -235,16 +191,19 @@ def sleep_annotation(
     motion_detector_function: callable = max_velocity_detector,
     masking_duration: int = 6,
     velocity_correction_coef: float = 3e-3,
-    velocity_threshold: Union[float, str, None] = None,
+    velocity_threshold: Optional[float] = None,
     untracked: str = "immobile",
-    rule: str = "classic",
-    k: int = 3,
+    rule: Optional[str] = None,
+    k: Optional[int] = None,
     pixel: Optional[float] = None,
 ) -> Optional[pd.DataFrame]:
     """
-    Analyze movement data to identify sleep periods based on sustained immobility.
+    Score sleep, as at least min_sleep_duration without movement, under a chosen rule.
 
-    Sleep is defined as continuous immobility exceeding a minimum duration threshold.
+    ``rule`` has no built-in default since ethoscopy 3.0: pass it, declare it once with
+    ``etho.set_sleep_rule("k")`` (like matplotlib's rcParams), or set the environment
+    variable ETHOSCOPY_SLEEP_RULE. Use "classic" to reproduce earlier analyses and "k"
+    for new ones. With load_ethoscope, ``FUN=functools.partial(sleep_annotation, rule="k")``.
 
     Args:
         data (pd.DataFrame): Raw tracking data from a single animal
@@ -253,22 +212,24 @@ def sleep_annotation(
         motion_detector_function (callable, optional): Function to classify movement. Default is max_velocity_detector.
         masking_duration (int, optional): Duration to ignore movement after stimulus. Default is 6.
         velocity_correction_coef (float, optional): Coefficient for velocity calculations. Default is 3e-3.
-        velocity_threshold (float or str, optional): Passed to the motion detector when given; "auto"
-            calibrates it per animal and light phase (see max_velocity_detector). Default is None,
-            which keeps the detector's own default.
+        velocity_threshold (float, optional): Passed to the motion detector when given (rule="classic"
+            only). Default is None, which keeps the detector's own default of 1.0.
         untracked (str, optional): How bins with no tracked frames enter sleep scoring. "immobile"
             counts them as immobility, so they can extend or create sleep bouts; "break" ends a
             bout at them, so sleep is only scored where the animal was seen still. Movement
             columns are unaffected either way. With rule="k", "immobile" also measures the step
             after such bins from the last position seen. Default is "immobile".
-        rule (str, optional): "classic" scores a bin as sleep when no frame passed the movement
-            threshold for min_sleep_duration. "k" (tentative) scores it from walking (the median
-            position moving more than 10 px between bins) and from sustained movement events,
-            ignoring tracking noise; see ethoscopy.sleep_rules. It adds the columns 'walking',
-            'sustained' and 'micro_awake' and leaves the classic columns as they are. With
-            untracked="break" it reproduces the reference rule exactly. Default is "classic".
+        rule (str, optional): "classic", "k", or "k" with its k ("k3", "k2"). Without it,
+            the rule declared by set_sleep_rule() or ETHOSCOPY_SLEEP_RULE is used; with none
+            of these, ValueError explains the choice. "classic" scores a bin as sleep when no frame passed the movement
+            threshold for min_sleep_duration (the 5-minute rule as before). "k" scores it from
+            walking (the median position moving more than 10 px between bins) and from sustained
+            movement events, ignoring flickers and isolated micro-movements; see
+            ethoscopy.sleep_rules. It adds the columns 'walking', 'sustained' and 'micro_awake'
+            and leaves the classic columns as they are. With untracked="break" it reproduces the
+            reference rule exactly.
         k (int, optional): With rule="k", sustained events within a centred 60-s window that
-            make a bin awake. Default is 3.
+            make a bin awake. None takes it from the rule name ("k2") or uses 3.
         pixel (float, optional): With rule="k", one pixel in the units of x/y. None infers it:
             1 for positions in pixels (load_ethoscope), 1/500 for positions as a fraction of
             the ROI width. Default is None.
@@ -277,10 +238,12 @@ def sleep_annotation(
         Optional[pd.DataFrame]: DataFrame with movement and sleep classifications or None if insufficient data
 
     Raises:
-        ValueError: If untracked is not "immobile" or "break", rule is not "classic" or "k",
+        ValueError: If rule is missing (the message explains the choice), untracked is not
+            "immobile" or "break", rule is not "classic" or "k",
             or rule="k" is combined with velocity_threshold, a bin other than 10 s,
             k < 1 or a non-positive pixel.
     """
+    rule, k = resolve_rule(rule, k)
     if untracked not in ("immobile", "break"):
         raise ValueError('untracked must be "immobile" or "break"')
     if rule not in ("classic", "k"):

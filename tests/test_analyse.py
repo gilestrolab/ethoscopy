@@ -75,7 +75,7 @@ class TestSleepAnnotation:
     @pytest.mark.unit
     def test_sleep_annotation_success(self, sample_ethoscope_data):
         """Test successful sleep annotation."""
-        result = sleep_annotation(sample_ethoscope_data)
+        result = sleep_annotation(sample_ethoscope_data, rule="classic")
 
         assert isinstance(result, pd.DataFrame)
         assert "asleep" in result.columns
@@ -92,6 +92,7 @@ class TestSleepAnnotation:
             sample_ethoscope_data,
             time_window_length=20,  # 20 seconds
             min_sleep_duration=600,  # 10 minutes
+            rule="classic",
         )
 
         assert isinstance(result, pd.DataFrame)
@@ -104,7 +105,7 @@ class TestSleepAnnotation:
         """Test sleep annotation with insufficient data."""
         # Test with very little data (should return None)
         small_data = sample_ethoscope_data.head(5)
-        result = sleep_annotation(small_data)
+        result = sleep_annotation(small_data, rule="classic")
         # Function might return None for insufficient data
         assert result is None or isinstance(result, pd.DataFrame)
 
@@ -113,7 +114,7 @@ class TestSleepAnnotation:
         """Test sleep annotation when animal is always moving."""
         sample_ethoscope_data["moving"] = True
 
-        result = sleep_annotation(sample_ethoscope_data)
+        result = sleep_annotation(sample_ethoscope_data, rule="classic")
 
         assert isinstance(result, pd.DataFrame)
         assert "asleep" in result.columns
@@ -124,7 +125,7 @@ class TestSleepAnnotation:
         """Test sleep annotation when animal never moves."""
         sample_ethoscope_data["moving"] = False
 
-        result = sleep_annotation(sample_ethoscope_data)
+        result = sleep_annotation(sample_ethoscope_data, rule="classic")
 
         assert isinstance(result, pd.DataFrame)
         assert "asleep" in result.columns
@@ -377,7 +378,7 @@ class TestIntegrationAnalysis:
         data_with_movement = max_velocity_detector(sample_ethoscope_data)
 
         # Step 2: Annotate sleep (use original data, not already-processed data)
-        data_with_sleep = sleep_annotation(sample_ethoscope_data)
+        data_with_sleep = sleep_annotation(sample_ethoscope_data, rule="classic")
 
         # Step 3: Add stimulus response (use original data with has_interacted column)
         sample_ethoscope_data["has_interacted"] = 0
@@ -421,7 +422,7 @@ class TestIntegrationAnalysis:
 
         # Test that functions complete without error on large dataset
         movement_result = max_velocity_detector(large_data)
-        sleep_result = sleep_annotation(large_data)
+        sleep_result = sleep_annotation(large_data, rule="classic")
 
         # Verify results - functions may return None for insufficient/sparse data
         if movement_result is not None:

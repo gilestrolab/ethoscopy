@@ -1,25 +1,19 @@
 """
-Noise-calibrated movement thresholds.
+Tracking-noise diagnostics for movement scoring.
 
-The motion detector calls a 10-s bin "moving" when its peak frame-to-frame
-velocity exceeds a threshold. A fixed threshold assumes every recording has the
-same tracking noise, but noise depends on the illumination, camera, frame rate
-and fly size: when it sits near the threshold, a motionless fly produces
-spurious "movements" that fragment every immobility bout and erase sleep.
+The classic motion detector calls a 10-s bin "moving" when its peak frame-to-frame
+velocity exceeds a threshold. When a motionless animal's tracking noise sits near
+that threshold, spurious "movements" fragment every immobility bout, and sleep is
+unusually sensitive to it: a 5-minute bout needs 30 consecutive immobile bins, so a
+per-bin false-positive rate p leaves only (1 - p)^30 of true rests intact.
 
-Sleep is unusually sensitive to this. A bout of 5 minutes needs 30 consecutive
-immobile 10-s bins, so a per-bin false-positive rate p leaves only (1 - p)^30
-of true rests intact: 5% already destroys four out of five.
-
-The functions here estimate the threshold from each animal's own noise. Bins in
-which the animal is still are found *from position alone* - its position over
-the half-minute either side of the bin stays within one pixel - so the
-estimate does not depend on the velocity it is calibrating. The threshold is
-a high quantile of peak velocity in those still bins, computed separately for
-the light and dark phase because illumination changes the noise.
+motion_qc() reports, per animal and light phase, how often a still animal crosses
+the fixed threshold. Still bins are found *from position alone* - the position over
+the half-minute either side of the bin stays within one pixel - so the check does
+not depend on the velocity it checks. Where the fixed threshold fails, score sleep
+with sleep_annotation(rule="k"), which ignores tracking noise (ethoscopy.sleep_rules).
 """
 
-import warnings
 from typing import Optional, Tuple
 
 import numpy as np
@@ -252,117 +246,29 @@ def light_phase(
     return np.where(in_day < lights_off * 3600, "light", "dark")
 
 
-def estimate_velocity_threshold(
-    binned: pd.DataFrame,
-    time_window_length: int = 10,
-    quantile: float = 0.99,
-    floor: float = 1.0,
-    day_length: int = 24,
-    lights_off: int = 12,
-    min_still_bins: int = 100,
-    max_shift: Optional[float] = None,
-) -> Tuple[np.ndarray, pd.DataFrame]:
-    """
-    Estimate a per-phase velocity threshold from one animal's still bins.
-
-    The threshold is the ``quantile`` of peak velocity in still bins, so that by
-    construction a still animal is scored as moving in only 1 - quantile of bins.
-    It never drops below ``floor``, which keeps clean recordings on the
-    established default. A phase with fewer than ``min_still_bins`` still bins
-    borrows the estimate from the whole recording, and if that is also too
-    sparse the floor is used, with a warning in both cases.
-
-    Args:
-        binned (pd.DataFrame): One animal's binned data with 't', 'x', 'y' and
-            'max_velocity' (the output of max_velocity_detector).
-        time_window_length (int, optional): Bin size in seconds. Default is 10.
-        quantile (float, optional): Quantile of still-bin velocity used as the
-            threshold. Default is 0.99 (1% false positives on still bins).
-        floor (float, optional): Lowest threshold allowed. Default is 1.0.
-        day_length (int, optional): Length of the day in hours. Default is 24.
-        lights_off (int, optional): Hour of lights off. Default is 12.
-        min_still_bins (int, optional): Still bins required for an estimate.
-            Default is 100 (about 17 minutes of stillness).
-        max_shift (float, optional): Positional tolerance for a still bin; see
-            find_still_bins(). Default is None (one pixel).
-
-    Returns:
-        Tuple[np.ndarray, pd.DataFrame]: The threshold for every row of
-            ``binned``, and a summary with one row per phase giving
-            'threshold', 'n_still' and 'source' ('phase', 'recording' or 'floor').
-
-    Raises:
-        ValueError: If quantile is not in (0, 1) or floor is not positive.
-    """
-    if not 0 < quantile < 1:
-        raise ValueError("quantile must be between 0 and 1")
-    if floor <= 0:
-        raise ValueError("floor must be positive")
-
-    velocity = binned["max_velocity"].to_numpy(dtype=float)
-    still = find_still_bins(binned, time_window_length, max_shift=max_shift)
-    still &= np.isfinite(velocity)
-    phase = light_phase(binned["t"].to_numpy(dtype=float), day_length, lights_off)
-
-    def _quantile(mask: np.ndarray) -> float:
-        return max(floor, float(np.quantile(velocity[mask], quantile)))
-
-    fallback, fallback_source = floor, "floor"
-    if still.sum() >= min_still_bins:
-        fallback, fallback_source = _quantile(still), "recording"
-
-    thresholds = np.full(len(binned), fallback, dtype=float)
-    rows = []
-    for name in ("light", "dark"):
-        in_phase = phase == name
-        if not in_phase.any():
-            continue
-        mask = still & in_phase
-        if mask.sum() >= min_still_bins:
-            value, source = _quantile(mask), "phase"
-        else:
-            value, source = fallback, fallback_source
-            warnings.warn(
-                f"Only {int(mask.sum())} still bins in the {name} phase "
-                f"(need {min_still_bins}); using the {source} threshold {value:.2f}.",
-                stacklevel=2,
-            )
-        thresholds[in_phase] = value
-        rows.append(
-            {
-                "phase": name,
-                "threshold": value,
-                "n_still": int(mask.sum()),
-                "source": source,
-            }
-        )
-
-    return thresholds, pd.DataFrame(rows)
-
-
 def motion_qc(
     data: pd.DataFrame,
     time_window_length: int = 10,
     velocity_correction_coef: float = 3e-3,
     velocity_threshold: float = 1.0,
     min_sleep_duration: int = 300,
-    quantile: float = 0.99,
     day_length: int = 24,
     lights_off: int = 12,
 ) -> pd.DataFrame:
     """
-    Report, per animal and light phase, how well a fixed threshold fits the noise.
+    Report, per animal and light phase, how well the fixed threshold fits the noise.
 
     Run this on raw tracking data before scoring sleep. It shows, for a still
     animal, how often the fixed threshold is crossed ('fp_rate_fixed') and what
     fraction of genuine 5-minute rests would survive that ('rest_survival_fixed',
-    (1 - fp)^bins). Values of fp_rate_fixed above about 0.01, or a large
-    'untracked_fraction', mean fixed-threshold sleep estimates are unreliable and
-    velocity_threshold="auto" should be used.
+    (1 - fp)^bins). Values of fp_rate_fixed above about 0.01 mean classic sleep
+    estimates are unreliable; score sleep with sleep_annotation(rule="k") instead.
+    A large 'untracked_fraction' matters under either rule: with the default
+    untracked="immobile", bins where the animal was lost count as still.
 
     Args:
         data (pd.DataFrame): Raw tracking data for one or more animals, with 'id'
-            as index or column.
+            as index or column; t must be 0 at lights on for the phase split.
         time_window_length (int, optional): Bin size in seconds. Default is 10.
         velocity_correction_coef (float, optional): As in max_velocity_detector.
             Default is 3e-3.
@@ -370,15 +276,14 @@ def motion_qc(
             Default is 1.0.
         min_sleep_duration (int, optional): Sleep criterion in seconds, used for
             rest_survival_fixed. Default is 300.
-        quantile (float, optional): Quantile for the auto threshold. Default is 0.99.
         day_length (int, optional): Length of the day in hours. Default is 24.
         lights_off (int, optional): Hour of lights off. Default is 12.
 
     Returns:
         pd.DataFrame: One row per animal and phase with 'n_bins',
             'untracked_fraction', 'spike_fraction' (frames that are tracking
-            spikes, see find_spikes()), 'n_still', 'fp_rate_fixed',
-            'rest_survival_fixed', 'auto_threshold' and 'auto_source'.
+            spikes, see find_spikes()), 'n_still', 'fp_rate_fixed' and
+            'rest_survival_fixed'.
     """
     # Reason: analyse imports this module, so importing it at module level would be circular.
     from ethoscopy.analyse import max_velocity_detector
@@ -394,16 +299,7 @@ def motion_qc(
             velocity_threshold=velocity_threshold,
             walk_threshold=max(2.5, velocity_threshold * 1.01),
         )
-        # Reason: "auto" calibrates on spike-free data, so report the threshold it would apply.
-        despiked = max_velocity_detector(
-            group.drop(columns="id"),
-            time_window_length=time_window_length,
-            velocity_correction_coef=velocity_correction_coef,
-            velocity_threshold=velocity_threshold,
-            walk_threshold=max(2.5, velocity_threshold * 1.01),
-            remove_spikes=True,
-        )
-        if binned is None or despiked is None:
+        if binned is None:
             continue
         frames = group.sort_values("t")
         spikes, _ = find_spikes(
@@ -412,46 +308,35 @@ def motion_qc(
         frame_phase = light_phase(
             frames["t"].to_numpy(dtype=float), day_length, lights_off
         )
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            _, summary = estimate_velocity_threshold(
-                despiked,
-                time_window_length,
-                quantile=quantile,
-                day_length=day_length,
-                lights_off=lights_off,
-            )
         velocity = binned["max_velocity"].to_numpy(dtype=float)
         still = find_still_bins(binned, time_window_length)
         t = binned["t"].to_numpy()
         phase = light_phase(t.astype(float), day_length, lights_off)
         grid = np.arange(t.min(), t.max() + time_window_length, time_window_length)
         grid_phase = light_phase(grid.astype(float), day_length, lights_off)
-        for _, auto in summary.iterrows():
-            in_phase = phase == auto["phase"]
+        for name in ("light", "dark"):
+            in_phase = phase == name
+            if not in_phase.any():
+                continue
             mask = still & in_phase
             fp = (
                 float(np.mean(velocity[mask] > velocity_threshold))
                 if mask.any()
                 else np.nan
             )
-            expected = int((grid_phase == auto["phase"]).sum())
+            expected = int((grid_phase == name).sum())
             rows.append(
                 {
                     "id": animal,
-                    "phase": auto["phase"],
+                    "phase": name,
                     "n_bins": int(in_phase.sum()),
                     "untracked_fraction": (
                         1 - in_phase.sum() / expected if expected else np.nan
                     ),
-                    "spike_fraction": float(
-                        spikes[frame_phase == auto["phase"]].mean()
-                    ),
+                    "spike_fraction": float(spikes[frame_phase == name].mean()),
                     "n_still": int(mask.sum()),
                     "fp_rate_fixed": fp,
                     "rest_survival_fixed": (1 - fp) ** bins_per_rest,
-                    "auto_threshold": auto["threshold"],
-                    "auto_source": auto["source"],
                 }
             )
     return pd.DataFrame(rows)

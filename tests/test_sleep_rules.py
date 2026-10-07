@@ -5,12 +5,14 @@ The per-bin parity tests use frames and expected values exported from the
 reference implementation (sleep_rule.py) by scripts/validate_k_rule.py.
 """
 
+import sqlite3
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
+import ethoscopy.sleep_rules as etho_rules
 from ethoscopy.analyse import sleep_annotation
 from ethoscopy.sleep_rules import (
     FLICKER,
@@ -228,7 +230,7 @@ class TestSleepAnnotationKRule:
         raw = _raw(inferred=np.zeros(1200, dtype=int))
         # Inferred frames repeating a movement: classic counts them, the k-rule drops them.
         raw.loc[500:504, ["xy_dist_log10x1000", "is_inferred"]] = [MOVE, 1]
-        classic = sleep_annotation(raw.copy())
+        classic = sleep_annotation(raw.copy(), rule="classic")
         k = sleep_annotation(raw.copy(), rule="k")
         assert {"walking", "sustained", "micro_awake"} <= set(k.columns)
         assert not {"walking", "sustained", "micro_awake"} & set(classic.columns)
@@ -257,12 +259,6 @@ class TestSleepAnnotationKRule:
         inferred[300:320] = None
         out = sleep_annotation(_raw(inferred=inferred), rule="k")
         assert out.is_interpolated[30:32].all()
-
-    def test_classic_default_unchanged(self):
-        raw = _raw()
-        pd.testing.assert_frame_equal(
-            sleep_annotation(raw.copy()), sleep_annotation(raw.copy(), rule="classic")
-        )
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -324,3 +320,91 @@ class TestParity:
             if untracked == "break":
                 assert out.walking.tolist() == ref.walking.tolist(), fly
             assert out.asleep.tolist() == ref[column].tolist(), fly
+
+
+class TestRuleRequired:
+    """rule has no built-in default since 3.0; it can be declared once."""
+
+    @pytest.fixture(autouse=True)
+    def _clean(self, monkeypatch):
+        monkeypatch.delenv("ETHOSCOPY_SLEEP_RULE", raising=False)
+        etho_rules.set_sleep_rule(None)
+        yield
+        etho_rules.set_sleep_rule(None)
+
+    def test_missing_rule_raises_and_explains(self):
+        with pytest.raises(ValueError) as err:
+            sleep_annotation(_raw())
+        message = str(err.value)
+        assert "rule='classic'" in message and "rule='k'" in message
+        assert "set_sleep_rule" in message and "ETHOSCOPY_SLEEP_RULE" in message
+        assert "partial(etho.sleep_annotation" in message
+
+    def test_declared_rule_applies(self):
+        etho_rules.set_sleep_rule("k")
+        assert "walking" in sleep_annotation(_raw()).columns
+        etho_rules.set_sleep_rule("classic")
+        assert "walking" not in sleep_annotation(_raw()).columns
+
+    def test_argument_beats_declaration(self):
+        etho_rules.set_sleep_rule("classic")
+        assert "walking" in sleep_annotation(_raw(), rule="k").columns
+
+    def test_environment_variable(self, monkeypatch):
+        monkeypatch.setenv("ETHOSCOPY_SLEEP_RULE", "k2")
+        assert etho_rules.get_sleep_rule() == "k2"
+        assert "walking" in sleep_annotation(_raw()).columns
+
+    def test_rule_names_carry_k(self):
+        raw = _raw(n_bins=200)
+        # Three sustained events in bins 100-102 wake bins under k=3 and k=2 differently
+        for b in (100, 101, 102):
+            raw.loc[b * 10 + 3, "xy_dist_log10x1000"] = MOVE
+            raw.loc[[b * 10 + 3, b * 10 + 4], "x"] = 130.0
+        k2 = sleep_annotation(raw.copy(), rule="k2")
+        assert (
+            k2.micro_awake.sum()
+            == sleep_annotation(raw.copy(), rule="k", k=2).micro_awake.sum()
+        )
+        assert (
+            k2.micro_awake.sum()
+            > sleep_annotation(raw.copy(), rule="k3").micro_awake.sum()
+        )
+        with pytest.raises(ValueError):
+            etho_rules.set_sleep_rule("k0")
+
+    def test_load_ethoscope_partial_pattern(self, tmp_path):
+        from functools import partial
+
+        from ethoscopy.load import load_ethoscope
+
+        db = tmp_path / "x.db"
+        con = sqlite3.connect(str(db))
+        con.execute(
+            "CREATE TABLE ROI_MAP (roi_idx INT, roi_value INT, x INT, y INT, w INT, h INT)"
+        )
+        con.execute("INSERT INTO ROI_MAP VALUES (1, 1, 0, 0, 550, 50)")
+        con.execute(
+            "CREATE TABLE VAR_MAP (var_name TEXT, sql_type TEXT, functional_type TEXT)"
+        )
+        con.execute("CREATE TABLE METADATA (field TEXT, value TEXT)")
+        con.execute("INSERT INTO METADATA VALUES ('date_time', '1790958651')")
+        con.execute(
+            "CREATE TABLE ROI_1 (id INTEGER PRIMARY KEY, t INTEGER, x SMALLINT, y SMALLINT, "
+            "w SMALLINT, h SMALLINT, phi SMALLINT, xy_dist_log10x1000 SMALLINT, "
+            "is_inferred BOOLEAN, has_interacted SMALLINT)"
+        )
+        con.executemany(
+            "INSERT INTO ROI_1 (t, x, y, w, h, phi, xy_dist_log10x1000, is_inferred, "
+            "has_interacted) VALUES (?, 100, 20, 25, 10, 0, -3000, 0, 0)",
+            [(i * 1000,) for i in range(1500)],
+        )
+        con.commit()
+        con.close()
+        meta = pd.DataFrame(
+            {"path": [str(db)], "machine_name": ["M"], "region_id": [1], "id": ["fly"]}
+        )
+        data = load_ethoscope(
+            meta, FUN=partial(sleep_annotation, rule="k"), progress=False, verbose=False
+        )
+        assert "micro_awake" in data.columns and data.asleep.any()
