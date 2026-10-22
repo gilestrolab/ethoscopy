@@ -11,9 +11,11 @@ import warnings
 # that blob through ``eval``, which resolves ``OrderedDict`` from this module's
 # globals — so the import must stay even though no source line references it.
 from collections import OrderedDict  # noqa: F401
+from datetime import datetime
 from functools import partial
 from pathlib import Path, PurePath, PurePosixPath
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import numpy as np
 import pandas as pd
@@ -91,8 +93,9 @@ def _rebase_time(data, date_formatted, reference_hour):
     Args:
         data (pd.DataFrame): Frame with a 't' column in milliseconds; modified in place
         date_formatted (str): Recording start as "%Y-%m-%d %H:%M:%S"
-        reference_hour (float or None): Hour of day that should map to t = 0.
-            None leaves t = 0 at the start of the recording.
+        reference_hour (float or None): Hour of day, in UTC like date_formatted,
+            that should map to t = 0. None leaves t = 0 at the start of the
+            recording.
 
     Returns:
         pd.DataFrame: The same frame, with 't' in seconds
@@ -636,8 +639,11 @@ def load_ethoscope(
         metadata (pd.DataFrame): Metadata dataframe as returned from link_meta_index function
         min_time (int, optional): Minimum time to load data from, with 0 being experiment start (in hours). Default is 0.
         max_time (int, optional): Maximum time to load data to (in hours). Default is infinity.
-        reference_hour (int, optional): Hour at which lights on occurs or when timestamps should equal 0.
-            None equals the start of the experiment. Default is None.
+        reference_hour (float, optional): Hour of day, in UTC, that becomes t = 0,
+            normally lights-on. Recording start times are read in UTC, so during
+            summer time this is not the wall-clock lights-on: 09:00 BST is 8.0.
+            load_ethoscope_light_schedule() returns it ready to use. None puts
+            t = 0 at the start of the recording. Default is None.
         cache (str, optional): Directory holding one pickle per ROI, created if it does not exist.
             If it cannot be written to, data load uncached with a warning. Default is None.
         FUN (callable, optional): Function to apply individual curation to each ROI, typically using package
@@ -862,8 +868,11 @@ def load_ethoscope_diagnostics(
         min_time (int, optional): Minimum time to load data from, with 0 being experiment
             start (in hours). Default is 0.
         max_time (int, optional): Maximum time to load data to (in hours). Default is infinity.
-        reference_hour (int, optional): Hour at which lights on occurs or when timestamps
-            should equal 0. None equals the start of the experiment. Default is None.
+        reference_hour (float, optional): Hour of day, in UTC, that becomes t = 0,
+            normally lights-on. Recording start times are read in UTC, so during
+            summer time this is not the wall-clock lights-on: 09:00 BST is 8.0.
+            load_ethoscope_light_schedule() returns it ready to use. None puts
+            t = 0 at the start of the recording. Default is None.
         progress (bool, optional): If True, show a tqdm progress bar (ipywidgets-based in
             Jupyter, text in CLI). Default is True.
 
@@ -990,6 +999,23 @@ def _hours_from_clock(value):
     return hour
 
 
+def _as_epoch(value):
+    """
+    Parse a unix timestamp stored as text in METADATA or experimental_info.
+
+    Args:
+        value: The stored value; often "" or absent
+
+    Returns:
+        float or None: The timestamp, or None if unset or not a finite number
+    """
+    try:
+        epoch = float(value)
+    except (TypeError, ValueError):
+        return None
+    return epoch if np.isfinite(epoch) else None
+
+
 def _circular_mean_hour(hours):
     """
     Average hours of day on the 24 h circle.
@@ -1021,7 +1047,101 @@ def _circular_mean_hour(hours):
     return float(hours)
 
 
-def load_ethoscope_light_schedule(metadata, progress=True):
+def _light_edges_utc(conn, start_epoch):
+    """
+    When the recorded light switched on and off, as UTC hours of day.
+
+    LIGHT_EVENTS (firmware from August 2026 on) holds a row for every change of
+    the commanded light level, timed like the ROI tables in milliseconds since
+    the recording started. Lights-on is a rise out of the darkest level and
+    lights-off a fall from the brightest, so a fade counts from where it began,
+    which is where the schedule put it. Rows written while the light was forced,
+    as it is for target detection, say nothing about the schedule and are skipped.
+
+    Args:
+        conn (sqlite3.Connection): Open connection to the database
+        start_epoch (float): Recording start as a unix timestamp
+
+    Returns:
+        list[tuple[str, float]]: ('on' or 'off', UTC hour of day) for each edge,
+            in recording order. Empty if the firmware kept no LIGHT_EVENTS table.
+    """
+    try:
+        events = pd.read_sql_query("SELECT * FROM LIGHT_EVENTS ORDER BY t", conn)
+    except (sqlite3.Error, pd.errors.DatabaseError):
+        return []
+
+    if "mode" in events.columns:
+        # Reason: exclude 'forced' rather than keep 'schedule' - the mode is
+        # whatever the daemon reported, and can be NULL.
+        events = events[events["mode"] != "forced"]
+
+    level = events["light_pct"].to_numpy(dtype=float)
+    if len(level) < 2 or np.nanmin(level) == np.nanmax(level):
+        return []
+
+    t = events["t"].to_numpy(dtype=float)[1:]
+    before, after = level[:-1], level[1:]
+    rising = (before <= np.nanmin(level)) & (after > before)
+    falling = (before >= np.nanmax(level)) & (after < before)
+
+    edges = [("on", ms) for ms in t[rising]] + [("off", ms) for ms in t[falling]]
+    edges.sort(key=lambda edge: edge[1])
+
+    return [(kind, ((start_epoch + ms / 1000) % 86400) / 3600) for kind, ms in edges]
+
+
+def _schedule_utc_offsets(
+    edges, lights_on_h, lights_off_h, tz, start_epoch, stop_epoch
+):
+    """
+    UTC offset of the clock a wall-clock light schedule ran on, over one recording.
+
+    Without an anchor, lights_on and lights_off are local times on whichever
+    controller drives the light, and the database does not say which time zone
+    that was. load_ethoscope, though, counts from the recording's start in UTC,
+    so the offset is needed to turn lights_on into a usable reference_hour.
+
+    The light events are preferred, being a record of what the device actually
+    did. Reason for snapping them: an edge is logged up to one diagnostics
+    interval (60 s) after the switch, while every real UTC offset is a whole
+    number of quarter hours, so rounding recovers the offset exactly and the
+    recorded clock time then supplies the minute. A timezone, when given, covers
+    firmware that kept no LIGHT_EVENTS table.
+
+    Args:
+        edges (list[tuple[str, float]]): As returned by _light_edges_utc()
+        lights_on_h (float): Recorded lights-on, local hour of day
+        lights_off_h (float): Recorded lights-off, local hour of day, or nan
+        tz (ZoneInfo or None): Time zone the schedule was kept in, if known
+        start_epoch (float or None): Recording start as a unix timestamp
+        stop_epoch (float or None): Recording stop as a unix timestamp, if recorded
+
+    Returns:
+        tuple[list[float], str]: Offsets in hours, in recording order (more than
+            one distinct value means the recording spans a clock change), and
+            their source, 'light_events' or 'timezone'. ([], 'recorded') when
+            neither was available.
+    """
+    offsets = []
+    for kind, utc_hour in edges:
+        clock = lights_on_h if kind == "on" else lights_off_h
+        if np.isfinite(clock):
+            offsets.append(round(((clock - utc_hour + 12) % 24 - 12) * 4) / 4)
+    if offsets:
+        return offsets, "light_events"
+
+    if tz is not None and start_epoch is not None:
+        moments = [start_epoch] if stop_epoch is None else [start_epoch, stop_epoch]
+        return [
+            datetime.fromtimestamp(m, tz).utcoffset().total_seconds() / 3600
+            for m in moments
+        ], "timezone"
+
+    return [], "recorded"
+
+
+def load_ethoscope_light_schedule(metadata, progress=True, timezone=None):
     """
     Read each ethoscope's recorded light schedule and reduce it to usable terms.
 
@@ -1037,24 +1157,49 @@ def load_ethoscope_light_schedule(metadata, progress=True):
     itself controls the light; when an incubator does, they are empty strings and
     the schedule has to be measured instead - see estimate_light_cycle().
 
+    reference_hour is returned in UTC, which is what load_ethoscope counts in.
+    Unless the schedule is anchored, lights_on is a local clock time - 09:00 in
+    British Summer Time is 08:00 UTC - so it is converted with the UTC offset
+    read off the recording's LIGHT_EVENTS, or, for firmware that kept none, the
+    ``timezone`` given.
+
     Args:
         metadata (pd.DataFrame): Metadata dataframe as returned from link_meta_index
         progress (bool, optional): If True, show a tqdm progress bar. Default is True.
+        timezone (str, optional): IANA name of the time zone the light schedules
+            were kept in, e.g. 'Europe/London'. Only used for recordings without
+            LIGHT_EVENTS. Default is None.
 
     Returns:
         pd.DataFrame: One row per recording with 'machine_id', 'machine_name',
-            'date', the raw schedule fields, and the derived 'reference_hour',
-            'day_length_h', 'lights_off_h' and 'photoperiod_h'. A 'source' column
-            reads 'anchor' when ZT0 came from light_cycle_anchor, 'recorded' when
-            it came from lights_on, and 'absent' when the device recorded no
-            schedule. Empty if nothing could be read.
+            'date', the raw schedule fields, and the derived 'reference_hour'
+            (UTC), 'utc_offset_h', 'day_length_h', 'lights_off_h' and
+            'photoperiod_h'. A 'source' column says where ZT0 came from:
+            'anchor' (light_cycle_anchor), 'light_events' or 'timezone'
+            (lights_on, converted to UTC that way), 'recorded' (lights_on as
+            written, unconverted) or 'absent' (no schedule recorded). Empty if
+            nothing could be read.
+
+    Raises:
+        ValueError: If timezone is not a time zone name this system knows
     """
     if metadata.empty or "path" not in metadata.columns:
         return pd.DataFrame()
 
+    tz = None
+    if timezone is not None:
+        try:
+            tz = ZoneInfo(timezone)
+        except (ZoneInfoNotFoundError, ValueError) as e:
+            raise ValueError(
+                f"Unknown timezone {timezone!r}: give an IANA name such as "
+                "'Europe/London'. If no name works, this system has no time zone "
+                "database; install one with `pip install tzdata`."
+            ) from e
+
     meta_df = _one_row_per_database(metadata)
 
-    rows = []
+    rows, unconverted, clock_changed = [], [], []
     for i in tqdm(
         meta_df.index,
         desc="Reading light schedule",
@@ -1066,9 +1211,15 @@ def load_ethoscope_light_schedule(metadata, progress=True):
 
         try:
             conn = _connect_db(row["path"])
-            recorded = pd.read_sql_query(
-                "SELECT value FROM METADATA WHERE field = 'experimental_info'", conn
+            fields = dict(
+                conn.execute(
+                    "SELECT field, value FROM METADATA WHERE field IN "
+                    "('experimental_info', 'date_time', 'stop_date_time')"
+                ).fetchall()
             )
+            start_epoch = _as_epoch(fields.get("date_time"))
+            stop_epoch = _as_epoch(fields.get("stop_date_time"))
+            edges = [] if start_epoch is None else _light_edges_utc(conn, start_epoch)
         except Exception as e:
             tqdm.write(
                 "Light schedule from {} could not be read: {}".format(
@@ -1081,9 +1232,9 @@ def load_ethoscope_light_schedule(metadata, progress=True):
                 conn.close()
 
         info = {}
-        if not recorded.empty:
+        if "experimental_info" in fields:
             try:
-                info = eval(recorded.iloc[0].iloc[0])
+                info = eval(fields["experimental_info"])
             except Exception:
                 # Reason: experimental_info is a repr'd dict written by whatever
                 # firmware was running. A malformed one should cost this machine
@@ -1102,11 +1253,8 @@ def load_ethoscope_light_schedule(metadata, progress=True):
         # light_cycle_anchor, when set, is an explicit unix timestamp for ZT0 and
         # outranks lights_on: it is what the daemon actually counted from.
         anchor = info.get("light_cycle_anchor")
-        reference_hour, source = np.nan, "absent"
-        try:
-            anchor_ts = float(anchor)
-        except (TypeError, ValueError):
-            anchor_ts = None
+        reference_hour, source, offsets = np.nan, "absent", []
+        anchor_ts = _as_epoch(anchor)
 
         if anchor_ts is not None:
             anchor_utc = time.gmtime(anchor_ts)
@@ -1115,8 +1263,18 @@ def load_ethoscope_light_schedule(metadata, progress=True):
             )
             source = "anchor"
         elif np.isfinite(lights_on_h):
-            reference_hour = lights_on_h
-            source = "recorded"
+            reference_hour, source = lights_on_h, "recorded"
+            # Without an anchor the firmware only runs 24 h cycles, on the clock.
+            if not np.isfinite(day_length_h) or day_length_h == 24:
+                offsets, source = _schedule_utc_offsets(
+                    edges, lights_on_h, lights_off_h, tz, start_epoch, stop_epoch
+                )
+                if offsets:
+                    reference_hour = (lights_on_h - offsets[0]) % 24
+                    if len(set(offsets)) > 1:
+                        clock_changed.append(row["machine_name"])
+                else:
+                    unconverted.append(row["machine_name"])
 
         rows.append(
             {
@@ -1126,6 +1284,7 @@ def load_ethoscope_light_schedule(metadata, progress=True):
                 "lights_on": info.get("lights_on"),
                 "lights_off": info.get("lights_off"),
                 "reference_hour": reference_hour,
+                "utc_offset_h": offsets[0] if offsets else np.nan,
                 "day_length_h": day_length_h,
                 # Hours after lights-on that lights-off falls, which is what
                 # add_day_phase and the plotting functions mean by lights_off.
@@ -1152,6 +1311,29 @@ def load_ethoscope_light_schedule(metadata, progress=True):
         return pd.DataFrame()
 
     schedule = pd.DataFrame(rows)
+
+    if unconverted:
+        warnings.warn(
+            "Lights-on for {} is a local clock time that could not be converted to "
+            "UTC, the time load_ethoscope counts in: the recordings have no "
+            "LIGHT_EVENTS table and no timezone was given. reference_hour is wrong "
+            "by the local UTC offset, e.g. 1 h in British Summer Time. Pass "
+            "timezone= (an IANA name such as 'Europe/London'), or measure the cycle "
+            "with estimate_light_cycle().".format(", ".join(sorted(set(unconverted)))),
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    if clock_changed:
+        warnings.warn(
+            "The light schedule of {} changed UTC offset during the recording, at a "
+            "clock change. No single reference_hour fits both sides; the one returned "
+            "is right for the start. Split the recording at the change.".format(
+                ", ".join(sorted(set(clock_changed)))
+            ),
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     absent = schedule.loc[schedule["source"] == "absent", "machine_name"]
     if len(absent):
@@ -1488,8 +1670,11 @@ def read_single_roi(
         file (pd.Series): Row in a metadata DataFrame containing a column 'path' with .db file location
         min_time (int, optional): Minimum time to load data from (in hours). Default is 0.
         max_time (int, optional): Maximum time to load data to (in hours). Default is infinity.
-        reference_hour (int, optional): Time in hours when light begins in the experiment, used to
-            adjust timestamps. None means timestamps start from experiment beginning. Default is None.
+        reference_hour (float, optional): Hour of day, in UTC, that becomes t = 0,
+            normally lights-on. Recording start times are read in UTC, so during
+            summer time this is not the wall-clock lights-on: 09:00 BST is 8.0.
+            load_ethoscope_light_schedule() returns it ready to use. None puts
+            t = 0 at the start of the recording. Default is None.
         cache (str, optional): Directory of cached ROI pickles, created if it does not exist.
             Default is None.
 

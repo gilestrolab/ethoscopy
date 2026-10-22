@@ -66,6 +66,23 @@ df = pd.read_pickle('path/to/your/file.pkl')
 df = etho.behavpy(df, df.meta, check = True, canvas = 'plotly', palette = 'Set2')
 ```
 
+## Setting ZT0 with `reference_hour`
+
+`load_ethoscope(reference_hour=...)` puts t = 0 at that hour of day in **UTC**, because
+ethoscopes store their start times in UTC. A light schedule kept in local time needs
+converting during summer time: lights on at 09:00 BST is `reference_hour=8.0`. For
+ethoscopes that drive their own light, `load_ethoscope_light_schedule()` does the
+conversion. It uses the light switches logged in the recording, or, for firmware older
+than August 2026, the `timezone` you give it:
+
+```python
+schedule = etho.load_ethoscope_light_schedule(meta, timezone="Europe/London")
+data = etho.load_ethoscope(meta, reference_hour=schedule["reference_hour"].iloc[0])
+```
+
+When an incubator drives the light, measure the cycle from the stored snapshots with
+`estimate_light_cycle()`. Its `reference_hour` is in UTC too.
+
 ## Choosing a sleep rule
 
 **Since ethoscopy 3.0, `sleep_annotation` needs a sleep rule.** To reproduce earlier
@@ -83,7 +100,7 @@ variable `ETHOSCOPY_SLEEP_RULE=classic`. An explicit `rule=` argument always win
 
 ```python
 from functools import partial
-data = etho.load_ethoscope(meta, reference_hour=9.0,
+data = etho.load_ethoscope(meta, reference_hour=9.0,   # lights on at 09:00 UTC
                            FUN=partial(etho.sleep_annotation, rule="k"))
 ```
 

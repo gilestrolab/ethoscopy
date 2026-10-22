@@ -9,6 +9,7 @@ be measured back out of the images when it did not.
 import calendar
 import io
 import sqlite3
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -50,6 +51,9 @@ def _make_db(
     with_snapshots=True,
     constant_light=False,
     corrupt_every=0,
+    light_events=None,
+    start_epoch=START_EPOCH,
+    stop_epoch=None,
 ):
     """
     Build a minimal ethoscope database.
@@ -61,10 +65,21 @@ def _make_db(
         with_snapshots (bool): Whether to write an IMG_SNAPSHOTS table
         constant_light (bool): Hold the lights on, so there is no cycle to find
         corrupt_every (int): Write a truncated JPEG every nth snapshot
+        light_events (list, optional): (t_ms, light_pct, mode) rows for a
+            LIGHT_EVENTS table; None omits the table, as pre-August-2026 firmwares do
+        start_epoch (int): Recording start, written as METADATA date_time
+        stop_epoch (int, optional): Recording stop, written as stop_date_time
     """
     conn = sqlite3.connect(str(path))
     conn.execute("CREATE TABLE METADATA (field TEXT, value TEXT)")
-    conn.execute("INSERT INTO METADATA VALUES ('date_time', ?)", (str(START_EPOCH),))
+    conn.execute("INSERT INTO METADATA VALUES ('date_time', ?)", (str(start_epoch),))
+    if stop_epoch is not None:
+        conn.execute(
+            "INSERT INTO METADATA VALUES ('stop_date_time', ?)", (str(stop_epoch),)
+        )
+    if light_events is not None:
+        conn.execute("CREATE TABLE LIGHT_EVENTS (t INTEGER, light_pct REAL, mode TEXT)")
+        conn.executemany("INSERT INTO LIGHT_EVENTS VALUES (?, ?, ?)", light_events)
     if experimental_info is not None:
         conn.execute(
             "INSERT INTO METADATA VALUES ('experimental_info', ?)",
@@ -170,9 +185,11 @@ class TestLoadEthoscopeLightSchedule:
             with_snapshots=False,
         )
 
-        result = load_ethoscope_light_schedule(
-            _metadata({"ETHOSCOPE_001": db}), progress=False
-        )
+        # No LIGHT_EVENTS and no timezone: lights_on stays local, and says so.
+        with pytest.warns(RuntimeWarning, match="local clock time"):
+            result = load_ethoscope_light_schedule(
+                _metadata({"ETHOSCOPE_001": db}), progress=False
+            )
 
         assert len(result) == 1
         row = result.iloc[0]
@@ -338,6 +355,163 @@ class TestLoadEthoscopeLightSchedule:
             _metadata({"ETHOSCOPE_001": db}), progress=False
         )
         assert len(result) == 1
+
+
+WALL_CLOCK = {
+    "lights_on": "09:00",
+    "lights_off": "21:00",
+    "light_period_minutes": 1440,
+    "light_cycle_anchor": "",
+}
+
+# START_EPOCH is 06:00 UTC in British Summer Time, so a 09:00 lights-on happened
+# at 08:00 UTC, 2 h into the recording, and 21:00 lights-off at 20:00 UTC. The
+# firmware logs each switch up to a minute late.
+LAG_MS = 50_000
+ON_MS = 2 * 3_600_000 + LAG_MS
+OFF_MS = 14 * 3_600_000 + LAG_MS
+
+
+def _read(tmp_path, timezone=None, **db_kwargs):
+    """Build one wall-clock recording and return its schedule row."""
+    db = _make_db(
+        tmp_path / "driven.db",
+        experimental_info=WALL_CLOCK,
+        with_snapshots=False,
+        **db_kwargs,
+    )
+    result = load_ethoscope_light_schedule(
+        _metadata({"ETHOSCOPE_001": db}), progress=False, timezone=timezone
+    )
+    return result.iloc[0]
+
+
+class TestLightScheduleInUTC:
+    """reference_hour must be in UTC, the time load_ethoscope counts in."""
+
+    @pytest.mark.parametrize("mode", ["schedule", None])
+    def test_light_events_convert_lights_on_to_utc(self, tmp_path, mode):
+        """Expected use: 09:00 BST is reference_hour 8.0, read off the events."""
+        events = [(4_000, 0.0, mode), (ON_MS, 100.0, mode), (OFF_MS, 0.0, mode)]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            row = _read(tmp_path, light_events=events)
+
+        assert row["source"] == "light_events"
+        assert row["reference_hour"] == pytest.approx(8.0)
+        assert row["utc_offset_h"] == pytest.approx(1.0)
+        assert row["lights_off_h"] == pytest.approx(12.0)
+
+    def test_forced_light_is_not_the_schedule(self, tmp_path):
+        """Edge case: lights forced on at the start, for target detection."""
+        events = [
+            (0, 0.0, "schedule"),
+            (1_000, 100.0, "forced"),
+            (61_000, 0.0, "schedule"),
+            (ON_MS, 100.0, "schedule"),
+        ]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            row = _read(tmp_path, light_events=events)
+
+        assert row["reference_hour"] == pytest.approx(8.0)
+
+    def test_a_fade_counts_from_where_it_began(self, tmp_path):
+        """Edge case: a crepuscular ramp logs several levels on the way up."""
+        events = [
+            (4_000, 0.0, "schedule"),
+            (ON_MS, 5.0, "schedule"),
+            (ON_MS + 600_000, 50.0, "schedule"),
+            (ON_MS + 1_200_000, 100.0, "schedule"),
+        ]
+
+        row = _read(tmp_path, light_events=events)
+
+        assert row["reference_hour"] == pytest.approx(8.0)
+
+    def test_a_lights_off_edge_alone_is_enough(self, tmp_path):
+        """Edge case: a run started in the light and stopped before the next dawn."""
+        events = [(4_000, 100.0, "schedule"), (OFF_MS, 0.0, "schedule")]
+
+        row = _read(tmp_path, light_events=events)
+
+        assert row["source"] == "light_events"
+        assert row["reference_hour"] == pytest.approx(8.0)
+
+    def test_events_outrank_the_timezone(self, tmp_path):
+        """The events record what the device did; a wrong timezone cannot override it."""
+        events = [(4_000, 0.0, "schedule"), (ON_MS, 100.0, "schedule")]
+
+        row = _read(tmp_path, timezone="UTC", light_events=events)
+
+        assert row["source"] == "light_events"
+        assert row["reference_hour"] == pytest.approx(8.0)
+
+    def test_clock_change_during_the_events_warns(self, tmp_path):
+        """Failure case: lights-on moves from 08:00 to 09:00 UTC when BST ends."""
+        events = [
+            (4_000, 0.0, "schedule"),
+            (ON_MS, 100.0, "schedule"),
+            (OFF_MS, 0.0, "schedule"),
+            (ON_MS + 25 * 3_600_000, 100.0, "schedule"),
+        ]
+
+        with pytest.warns(RuntimeWarning, match="clock change"):
+            row = _read(tmp_path, light_events=events)
+
+        assert row["reference_hour"] == pytest.approx(8.0)
+
+    @pytest.mark.parametrize(
+        "start,expected",
+        [
+            (START_EPOCH, 8.0),  # August: BST, UTC+1
+            (calendar.timegm((2026, 1, 13, 6, 0, 0, 0, 0, 0)), 9.0),  # January: GMT
+        ],
+    )
+    def test_timezone_converts_without_events(self, tmp_path, start, expected):
+        """Firmware before LIGHT_EVENTS: the timezone supplies the offset, by date."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            row = _read(tmp_path, timezone="Europe/London", start_epoch=start)
+
+        assert row["source"] == "timezone"
+        assert row["reference_hour"] == pytest.approx(expected)
+
+    def test_timezone_warns_when_the_run_spans_a_clock_change(self, tmp_path):
+        """Failure case: started in BST on 22 Oct, stopped in GMT on 27 Oct."""
+        start = calendar.timegm((2026, 10, 22, 12, 0, 0, 0, 0, 0))
+        stop = calendar.timegm((2026, 10, 27, 12, 0, 0, 0, 0, 0))
+
+        with pytest.warns(RuntimeWarning, match="clock change"):
+            row = _read(
+                tmp_path, timezone="Europe/London", start_epoch=start, stop_epoch=stop
+            )
+
+        assert row["reference_hour"] == pytest.approx(8.0)
+
+    def test_unknown_timezone_raises(self, tmp_path):
+        """Failure case: a misspelt zone must stop, not silently fall back."""
+        with pytest.raises(ValueError, match="Unknown timezone"):
+            _read(tmp_path, timezone="Europe/Londn")
+
+    def test_anchored_schedules_are_left_alone(self, tmp_path):
+        """An anchor is a unix timestamp, already UTC; events must not shift it."""
+        anchor = calendar.timegm((2026, 8, 13, 7, 30, 0, 0, 0, 0))
+        db = _make_db(
+            tmp_path / "anchored.db",
+            experimental_info=dict(WALL_CLOCK, light_cycle_anchor=str(anchor)),
+            with_snapshots=False,
+            light_events=[(4_000, 0.0, "schedule"), (ON_MS, 100.0, "schedule")],
+        )
+
+        row = load_ethoscope_light_schedule(
+            _metadata({"ETHOSCOPE_001": db}), progress=False
+        ).iloc[0]
+
+        assert row["source"] == "anchor"
+        assert row["reference_hour"] == pytest.approx(7.5)
 
 
 class TestEstimateLightCycle:
