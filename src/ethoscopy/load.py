@@ -1093,12 +1093,16 @@ def load_ethoscope_light_schedule(metadata, progress=True):
                 "day_length_h": day_length_h,
                 # Hours after lights-on that lights-off falls, which is what
                 # add_day_phase and the plotting functions mean by lights_off.
-                "lights_off_h": (lights_off_h - lights_on_h) % (day_length_h or 24)
-                if np.isfinite(lights_on_h) and np.isfinite(lights_off_h)
-                else np.nan,
-                "photoperiod_h": (lights_off_h - lights_on_h) % 24
-                if np.isfinite(lights_on_h) and np.isfinite(lights_off_h)
-                else np.nan,
+                "lights_off_h": (
+                    (lights_off_h - lights_on_h) % (day_length_h or 24)
+                    if np.isfinite(lights_on_h) and np.isfinite(lights_off_h)
+                    else np.nan
+                ),
+                "photoperiod_h": (
+                    (lights_off_h - lights_on_h) % 24
+                    if np.isfinite(lights_on_h) and np.isfinite(lights_off_h)
+                    else np.nan
+                ),
                 "light_cycle_anchor": anchor,
                 "fade_in_seconds": info.get("fade_in_seconds"),
                 "fade_out_seconds": info.get("fade_out_seconds"),
@@ -1127,7 +1131,9 @@ def load_ethoscope_light_schedule(metadata, progress=True):
     # experiment is an analysis error, and a silent one - every downstream ZT
     # figure would still plot.
     known = schedule[schedule["source"] != "absent"]
-    distinct = known[["reference_hour", "day_length_h", "lights_off_h"]].drop_duplicates()
+    distinct = known[
+        ["reference_hour", "day_length_h", "lights_off_h"]
+    ].drop_duplicates()
     if len(distinct) > 1:
         warnings.warn(
             "Ethoscopes in this metadata recorded {} different light schedules. "
@@ -1226,9 +1232,7 @@ def estimate_light_cycle(
 
         except Exception as e:
             tqdm.write(
-                "Snapshots from {} could not be read: {}".format(
-                    row["machine_name"], e
-                )
+                "Snapshots from {} could not be read: {}".format(row["machine_name"], e)
             )
             continue
         finally:
@@ -1293,9 +1297,11 @@ def estimate_light_cycle(
                 "date": row["date"],
                 "lights_on_utc": lights_on_utc,
                 "lights_off_utc": lights_off_utc,
-                "photoperiod_h": (lights_off_utc - lights_on_utc) % 24
-                if np.isfinite(lights_on_utc) and np.isfinite(lights_off_utc)
-                else np.nan,
+                "photoperiod_h": (
+                    (lights_off_utc - lights_on_utc) % 24
+                    if np.isfinite(lights_on_utc) and np.isfinite(lights_off_utc)
+                    else np.nan
+                ),
                 "reference_hour": lights_on_utc,
                 "n_transitions": len(crossings),
                 "contrast": contrast,

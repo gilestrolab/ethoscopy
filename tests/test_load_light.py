@@ -274,10 +274,10 @@ class TestLoadEthoscopeLightSchedule:
         bad = tmp_path / "bad.db"
         conn = sqlite3.connect(str(bad))
         conn.execute("CREATE TABLE METADATA (field TEXT, value TEXT)")
-        conn.execute("INSERT INTO METADATA VALUES ('date_time', ?)", (str(START_EPOCH),))
         conn.execute(
-            "INSERT INTO METADATA VALUES ('experimental_info', '{not a dict')"
+            "INSERT INTO METADATA VALUES ('date_time', ?)", (str(START_EPOCH),)
         )
+        conn.execute("INSERT INTO METADATA VALUES ('experimental_info', '{not a dict')")
         conn.commit()
         conn.close()
 
@@ -294,16 +294,20 @@ class TestLoadEthoscopeLightSchedule:
         first = _make_db(
             tmp_path / "a.db",
             experimental_info={
-                "lights_on": "09:00", "lights_off": "21:00",
-                "light_period_minutes": 1440, "light_cycle_anchor": "",
+                "lights_on": "09:00",
+                "lights_off": "21:00",
+                "light_period_minutes": 1440,
+                "light_cycle_anchor": "",
             },
             with_snapshots=False,
         )
         second = _make_db(
             tmp_path / "b.db",
             experimental_info={
-                "lights_on": "12:00", "lights_off": "00:00",
-                "light_period_minutes": 1440, "light_cycle_anchor": "",
+                "lights_on": "12:00",
+                "lights_off": "00:00",
+                "light_period_minutes": 1440,
+                "light_cycle_anchor": "",
             },
             with_snapshots=False,
         )
@@ -323,8 +327,10 @@ class TestLoadEthoscopeLightSchedule:
         db = _make_db(
             tmp_path / "one.db",
             experimental_info={
-                "lights_on": "09:00", "lights_off": "21:00",
-                "light_period_minutes": 1440, "light_cycle_anchor": "",
+                "lights_on": "09:00",
+                "lights_off": "21:00",
+                "light_period_minutes": 1440,
+                "light_cycle_anchor": "",
             },
             with_snapshots=False,
         )
@@ -341,9 +347,7 @@ class TestEstimateLightCycle:
         """Expected use, and the case that matters: nothing was recorded."""
         db = _make_db(tmp_path / "cycle.db", experimental_info=None)
 
-        result = estimate_light_cycle(
-            _metadata({"ETHOSCOPE_001": db}), progress=False
-        )
+        result = estimate_light_cycle(_metadata({"ETHOSCOPE_001": db}), progress=False)
 
         row = result.iloc[0]
         # snapshots land every 5 min, so the edge is placed to within that
@@ -356,13 +360,9 @@ class TestEstimateLightCycle:
 
     def test_constant_light_reports_no_cycle(self, tmp_path):
         """Edge case: LL. A midpoint threshold on noise would invent a cycle."""
-        db = _make_db(
-            tmp_path / "ll.db", experimental_info=None, constant_light=True
-        )
+        db = _make_db(tmp_path / "ll.db", experimental_info=None, constant_light=True)
 
-        result = estimate_light_cycle(
-            _metadata({"ETHOSCOPE_001": db}), progress=False
-        )
+        result = estimate_light_cycle(_metadata({"ETHOSCOPE_001": db}), progress=False)
 
         assert np.isnan(result.iloc[0]["lights_on_utc"])
         assert result.iloc[0]["n_transitions"] == 0
@@ -372,9 +372,7 @@ class TestEstimateLightCycle:
         """Failure case: truncated JPEGs are common at the tail of a killed run."""
         db = _make_db(tmp_path / "corrupt.db", experimental_info=None, corrupt_every=7)
 
-        result = estimate_light_cycle(
-            _metadata({"ETHOSCOPE_001": db}), progress=False
-        )
+        result = estimate_light_cycle(_metadata({"ETHOSCOPE_001": db}), progress=False)
 
         assert result.iloc[0]["photoperiod_h"] == pytest.approx(12.0, abs=0.2)
 
