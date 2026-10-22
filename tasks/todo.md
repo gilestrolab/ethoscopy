@@ -682,4 +682,43 @@ Evidence for docs: night pixel truth (0.03-0.07 per fly) and air-puff arousal
       not submitted (maintainer is Quentin Geissmann). The z_template_package submodule
       had to be initialised for R CMD build.
 - [ ] rethomics tutorial site (06-scopr.Rmd) and docs call sleep_annotation without rule.
-- [ ] ethoscope-lab Docker image still pins 2.4.0; bump needs an announcement (Giorgio).
+- [x] ethoscope-lab image 1.6 (ethoscopy 3.0.0, sleepr 0.4.0) built and pushed (fabda48).
+- [x] Deployed 1.6 on turing (2026-10-15 21:12, quiet-window swap): pulled (digest
+      5691f78bedad matches), Docker/.env bumped 1.5 → 1.6; live container verified
+      (ethoscopy 3.0.0, sleepr 0.4.0, mounts, hub 200 locally and on jupyter.lab.gilest.ro).
+- [ ] Announce to the lab: notebooks without `rule=` now stop (Giorgio).
+
+## 2026-10-22 — Answer Dawei's questions on the ETHOSCOPE_380 SD run (2026-10-19)
+
+Zip from Downloads: notebook, metadata, docx with three questions (missing tubes
+11/16/17; white gaps after curate_dead_animals; no SD effect).
+
+- [x] Q1: confirm the .db is now complete and all 20 ROIs load.
+- [x] Q2: explain the curate_dead_animals cuts (7, 12, 15) against raw tracking coverage.
+- [x] Q3: check stimulator settings and when the interactions fired.
+- [x] Write the reply for Giorgio to vet and forward.
+
+### Discovered During Work
+- [x] `load_ethoscope_light_schedule()` returns the *local* lights_on as reference_hour,
+      but `_rebase_time` works on the UTC start time: off by 1 h in BST.
+      Fixed: UTC offset from LIGHT_EVENTS edges (snapped to 15 min), else `timezone=`,
+      else unconverted + warning; clock-change warning; `utc_offset_h` column.
+      Dawei's 380 runs now give 8.0 (light_events). Docstrings + README say UTC.
+- [x] `load_ethoscope(cache=<missing dir>)` drops every ROI ("unable to load") instead
+      of loading without caching. Fixed: `_write_cache()` creates the dir, writes
+      atomically, warns once and returns the data if the write fails.
+- [ ] Cache *read* (`pd.read_pickle`) sits outside the try in read_single_roi_optimized:
+      a pre-existing corrupt pickle still aborts the load. Not touched.
+- [ ] Firmware: record the light controller's time zone in METADATA, so recordings
+      without LIGHT_EVENTS need no `timezone=` (ethoscope repo).
+- [ ] Left behind: empty `.db-wal`/`.db-shm` next to the three ETHOSCOPE_380 Oct .db files
+      (created by my mode=ro queries on the originals; rm was blocked, Giorgio to remove).
+
+### Review
+- Q1: loaded mid-transfer (load log: "malformed" on 11/16/17; data end 44.7 h of 48).
+  Finished file passes quick_check; reload gives 20 flies x 17,280 bins.
+- Q2: cuts reproduced exactly on the truncated data (7 @24.3, 12 @36.3, 15 @36.3);
+  full data: 7 @24.3, 15 @35.3; min_coverage=0.5 spares 12. 7 and 12 poorly tracked (31%, 20%).
+- Q3: trigger_type='activity'. 93% moving before stimuli vs 25%; night sleep 71.1 vs 70.9%.
+  Live 21 Oct run (inactivity): tubes 12/14/16 show no post-stimulus arousal (provisional).
+- Reply: scratchpad/dawei_reply.md.
