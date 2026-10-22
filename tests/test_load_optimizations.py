@@ -231,6 +231,52 @@ class TestReadSingleROIOptimized:
             # Results should be identical
             pd.testing.assert_frame_equal(result1, result2)
 
+    @pytest.mark.unit
+    def test_read_single_roi_optimized_creates_missing_cache_dir(
+        self, mock_database_file, sample_file_metadata, tmp_path
+    ):
+        """A cache directory that does not exist yet used to drop every ROI."""
+        db_path, conn = mock_database_file
+        roi_df = pd.read_sql_query("SELECT * FROM ROI_MAP", conn)
+        var_df = pd.read_sql_query("SELECT * FROM VAR_MAP", conn)
+        cache_dir = tmp_path / "new" / "cache"
+
+        result = read_single_roi_optimized(
+            sample_file_metadata,
+            conn,
+            roi_df,
+            var_df,
+            "2009-02-13 23:31:30",
+            cache=str(cache_dir),
+        )
+
+        assert isinstance(result, pd.DataFrame) and len(result) == 100
+        assert len(list(cache_dir.glob("*.pkl"))) == 1
+        assert not list(cache_dir.glob("*.tmp"))
+
+    @pytest.mark.unit
+    def test_read_single_roi_optimized_survives_unwritable_cache(
+        self, mock_database_file, sample_file_metadata, tmp_path
+    ):
+        """Failure case: the ROI is returned uncached, with a warning."""
+        db_path, conn = mock_database_file
+        roi_df = pd.read_sql_query("SELECT * FROM ROI_MAP", conn)
+        var_df = pd.read_sql_query("SELECT * FROM VAR_MAP", conn)
+        blocker = tmp_path / "blocker"
+        blocker.write_text("a file where the cache directory should go")
+
+        with pytest.warns(RuntimeWarning, match="Could not write to the cache"):
+            result = read_single_roi_optimized(
+                sample_file_metadata,
+                conn,
+                roi_df,
+                var_df,
+                "2009-02-13 23:31:30",
+                cache=str(blocker / "cache"),
+            )
+
+        assert isinstance(result, pd.DataFrame) and len(result) == 100
+
 
 class TestLoadEthoscopeOptimizations:
     """Test suite for load_ethoscope optimization features."""

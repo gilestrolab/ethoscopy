@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- `load_ethoscope(cache=...)` discarded every ROI when the cache directory did not
+  exist or could not be written to. The directory is now created as needed. If the
+  write still fails, the data load uncached and a single warning is raised. Cache
+  files are written atomically, so a reader sharing the cache never sees a partial
+  pickle.
+
 ## 3.0.0 (2026-10-07)
 
 **Breaking: `sleep_annotation` needs a sleep rule.** To reproduce earlier results, add

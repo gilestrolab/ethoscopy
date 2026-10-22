@@ -158,6 +158,35 @@ class TestReadSingleRoi:
         assert isinstance(result2, pd.DataFrame)
         pd.testing.assert_frame_equal(result1, result2)
 
+    @pytest.mark.unit
+    def test_read_single_roi_creates_missing_cache_dir(
+        self, linked_metadata_sample, tmp_path
+    ):
+        """A cache directory that does not exist yet is created, not fatal."""
+        file_info = linked_metadata_sample.iloc[0]
+        cache_dir = tmp_path / "not" / "yet" / "there"
+
+        result = read_single_roi(file_info, cache=str(cache_dir))
+
+        assert isinstance(result, pd.DataFrame) and len(result) > 0
+        assert len(list(cache_dir.glob("*.pkl"))) == 1
+        assert not list(cache_dir.glob("*.tmp"))
+
+    @pytest.mark.unit
+    def test_read_single_roi_survives_unwritable_cache(
+        self, linked_metadata_sample, tmp_path
+    ):
+        """Failure case: a cache that cannot be written costs the cache, not the ROI."""
+        file_info = linked_metadata_sample.iloc[0]
+        blocker = tmp_path / "blocker"
+        blocker.write_text("a file where the cache directory should go")
+
+        with pytest.warns(RuntimeWarning, match="Could not write to the cache"):
+            result = read_single_roi(file_info, cache=str(blocker / "cache"))
+
+        assert isinstance(result, pd.DataFrame) and len(result) > 0
+        assert blocker.is_file()
+
 
 class TestLoadEthoscope:
     """Test suite for load_ethoscope function."""

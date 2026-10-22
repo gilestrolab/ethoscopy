@@ -141,6 +141,42 @@ def _cache_path(cache, file, min_time, max_time, reference_hour):
     return Path(cache) / f"{key}.pkl"
 
 
+def _write_cache(data, path):
+    """
+    Store one ROI's frame in the cache, without letting the cache cost the ROI.
+
+    Reason: the write used to sit inside the readers' error handling, so a cache
+    directory that did not exist, or could not be written to, discarded every ROI
+    that had just been read correctly. The directory is now created on demand,
+    and if the write still fails the frame is returned uncached, with a warning.
+    The pickle is written under a temporary name and moved into place, because
+    the lab cache is shared: a reader must never pick up a half-written file.
+
+    Args:
+        data (pd.DataFrame): Frame to store
+        path (Path): Destination, as built by _cache_path()
+    """
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data.to_pickle(tmp)
+        os.replace(tmp, path)
+    except OSError as e:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        # Reason: no ROI-specific detail in the message, so the warnings filter
+        # reports a broken cache once rather than once per ROI.
+        warnings.warn(
+            "Could not write to the cache in {} ({}): loading without caching.".format(
+                path.parent, e.strerror or e
+            ),
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
+
 def _connect_db(path, degraded=False):
     """
     Open an ethoscope database read-only, tolerating WAL state and read-only mounts.
@@ -602,8 +638,8 @@ def load_ethoscope(
         max_time (int, optional): Maximum time to load data to (in hours). Default is infinity.
         reference_hour (int, optional): Hour at which lights on occurs or when timestamps should equal 0.
             None equals the start of the experiment. Default is None.
-        cache (str, optional): Local path to find and store cached versions of each ROI per database.
-            Directory structure mirrors ethoscope saved data. Cached files are in pickle format. Default is None.
+        cache (str, optional): Directory holding one pickle per ROI, created if it does not exist.
+            If it cannot be written to, data load uncached with a warning. Default is None.
         FUN (callable, optional): Function to apply individual curation to each ROI, typically using package
             generated functions (e.g., sleep_annotation). If None, data remains as found in the database. Default is None.
         verbose (bool, optional): If True, emits per-ROI warnings when loading fails. Default is True.
@@ -1454,7 +1490,8 @@ def read_single_roi(
         max_time (int, optional): Maximum time to load data to (in hours). Default is infinity.
         reference_hour (int, optional): Time in hours when light begins in the experiment, used to
             adjust timestamps. None means timestamps start from experiment beginning. Default is None.
-        cache (str, optional): Path for folder with saved caches or folder to save to. Default is None.
+        cache (str, optional): Directory of cached ROI pickles, created if it does not exist.
+            Default is None.
 
     Returns:
         Optional[pd.DataFrame]: DataFrame containing raw ethoscope data for the specified ROI,
@@ -1567,7 +1604,7 @@ def read_single_roi(
             data = data.drop(columns=["is_inferred"])
 
         if cache is not None:
-            data.to_pickle(path)
+            _write_cache(data, path)
 
         return data
 
@@ -1714,7 +1751,7 @@ def read_single_roi_optimized(
         data = _rebase_time(data, date, reference_hour)
 
         if cache is not None:
-            data.to_pickle(path)
+            _write_cache(data, path)
 
         return data
 
