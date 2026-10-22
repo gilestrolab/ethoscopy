@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Install ethoscopy from GitHub into the running ethoscope-lab container.
+#
+# Usage: update-ethoscopy [REF]
+#   REF        branch, tag or full commit sha to install (default: main)
+#   CONTAINER  container to update, as an environment variable (default: ethoscope-lab)
+#
+# Run it on the host after pushing a change to ethoscopy. Running sessions stay up;
+# users get the new code when they restart their kernel. Recreating the container
+# (a new image, or `docker compose up` after a config change) brings back the
+# image's PyPI version, so run this again afterwards.
+set -euo pipefail
+
+REPO=gilestrolab/ethoscopy
+REF=${1:-main}
+CONTAINER=${CONTAINER:-ethoscope-lab}
+
+die() { echo "update-ethoscopy: $*" >&2; exit 1; }
+
+case "$REF" in -h | --help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
+
+[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = true ] ||
+    die "container '$CONTAINER' is not running"
+
+# Resolve REF to a commit, so the install is exact and can be reported. For an
+# annotated tag the peeled entry (^{}) is the commit; the tag line is the tag object.
+if [[ "$REF" =~ ^[0-9a-f]{40}$ ]]; then
+    SHA=$REF
+else
+    SHA=$(git ls-remote "https://github.com/$REPO" \
+        "refs/heads/$REF" "refs/tags/$REF" "refs/tags/$REF^{}" |
+        awk '$2 ~ /^refs\/heads\// {h = $1} $2 ~ /\^\{\}$/ {p = $1} {a = $1}
+             END {print h ? h : (p ? p : a)}')
+    [ -n "$SHA" ] || die "no branch or tag '$REF' on github.com/$REPO"
+fi
+
+# The usual slip: changes committed here but not pushed yet.
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+LOCAL=$(git -C "$HERE" rev-parse -q --verify "refs/heads/$REF" 2>/dev/null || true)
+if [ -n "$LOCAL" ] && [ "$LOCAL" != "$SHA" ]; then
+    echo "warning: local $REF is at ${LOCAL:0:7} but GitHub has ${SHA:0:7};" \
+        "installing GitHub's (push first if that is not what you meant)" >&2
+fi
+
+URL="https://github.com/$REPO/archive/$SHA.tar.gz"
+in_container() { docker exec -u root "$CONTAINER" "$@"; }
+pip_install() {
+    in_container python3 -m pip install --quiet --disable-pip-version-check \
+        --root-user-action=ignore "$@"
+}
+
+echo "Installing ethoscopy $REF (${SHA:0:7}) into $CONTAINER..."
+
+# Reason: the version string stays the same between releases, so without
+# --force-reinstall pip reports "already satisfied" and installs nothing. --no-deps
+# keeps the image's numpy, pandas and the rest exactly as built. pip builds the new
+# version before removing the old one, so a failure leaves the previous install.
+pip_install --no-deps --force-reinstall "ethoscopy @ $URL" ||
+    die "pip install failed; $CONTAINER still has its previous ethoscopy"
+
+# Only if main has gained a dependency the image lacks: let pip add just that.
+if in_container python3 -m pip check 2>/dev/null | grep -q '^ethoscopy '; then
+    echo "ethoscopy $REF needs packages the image does not have; installing them..."
+    pip_install "ethoscopy @ $URL" || die "could not install ethoscopy's new dependencies"
+fi
+
+# The image ships the tutorial pickles inside the package directory, which users
+# cannot write to. pip leaves them in place (they are not in its RECORD); fetch any
+# that went missing anyway. Files already present are skipped.
+in_container python3 -c "
+from ethoscopy.misc.get_tutorials import download_tutorial_data, package_tutorial_data_dir
+download_tutorial_data(dest_dir=package_tutorial_data_dir(), verbose=False)
+" || echo "warning: tutorial data could not be checked; get_tutorial() may fail" >&2
+
+# Check as the users' own uid that the right commit imports.
+INSTALLED=$(docker exec "$CONTAINER" python3 -c "
+import json, importlib.metadata as md, ethoscopy
+print(json.loads(md.distribution('ethoscopy').read_text('direct_url.json'))['url'])
+") || die "ethoscopy no longer imports in $CONTAINER"
+[[ "$INSTALLED" == *"$SHA"* ]] || die "installed $INSTALLED, expected commit $SHA"
+
+echo "Done: $CONTAINER now has ethoscopy ${SHA:0:7} ($REF)."
+echo "Users must restart their kernels to load it."

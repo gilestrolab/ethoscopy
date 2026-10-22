@@ -47,6 +47,26 @@ re-paying it:
 Rule of thumb: reach for the GPU to make *analysis* faster, never to make the *image build*
 faster — there is nothing to accelerate there.
 
+## Installing the latest ethoscopy without a release
+
+The image pins the PyPI release of ethoscopy. To give lab users a fix that is on GitHub
+but not yet on PyPI, push it, then run this on the host:
+
+```bash
+Docker/update-ethoscopy            # GitHub main
+Docker/update-ethoscopy v3.0.0     # or any branch, tag or full commit sha
+```
+
+It installs that commit into the running `ethoscope-lab` container (set `CONTAINER=` for
+another one) without restarting it. Running sessions are not interrupted, and each user
+gets the new code when they restart their kernel. Only ethoscopy is replaced: the
+image's other packages are left as built, and a dependency is added only if the new
+ethoscopy needs one the image lacks. If the install fails, the previous version stays.
+It warns if your local branch has commits that are not on GitHub yet.
+
+Recreating the container (a new image, or `docker compose up` after a config change)
+brings back the image's PyPI version, so run the command again afterwards.
+
 ## Authentication and User Management
 
 This JupyterHub instance supports multiple authentication methods including:
