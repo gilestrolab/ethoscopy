@@ -207,7 +207,7 @@ def download_from_remote_dir(meta, remote_dir, local_dir, progress=True):
 
     Imports data from the ethoscope node platform to your local directory for later use. The ethoscope files
     must be saved on a remote FTP server as .db files. See the Ethoscope manual for node setup instructions:
-    https://www.notion.so/giorgiogilestro/Ethoscope-User-Manual-a9739373ae9f4840aa45b277f2f0e3a7
+    https://ethoscope.net/docs/ethoscope/
 
     Args:
         meta (str): Path to a CSV file containing columns with machine_name, date, and time (if multiple files on the same day)

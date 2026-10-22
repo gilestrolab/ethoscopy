@@ -1,7 +1,7 @@
 # Ethoscopelab docker instance
 
 Note: Most users will **not** need to recreate this image. These instructions are just provided as reference.
-The ethoscopelab docker instance lives on dockerhub at the following address: [https://hub.docker.com/r/ggilestro/ethoscope-lab](https://hub.docker.com/r/ggilestro/ethoscope-lab) and this is what regular users should download and run. Follow instructions there and on the [ethoscopy manual](https://bookstack.lab.gilest.ro/books/ethoscopy/page/getting-started).
+The ethoscopelab docker instance lives on dockerhub at the following address: [https://hub.docker.com/r/ggilestro/ethoscope-lab](https://hub.docker.com/r/ggilestro/ethoscope-lab) and this is what regular users should download and run. Follow instructions there and on the [ethoscopy manual](https://ethoscope.net/docs/ethoscopy/install/).
 
 
 ## Docker files that were used to create the ethoscope-lab docker instance

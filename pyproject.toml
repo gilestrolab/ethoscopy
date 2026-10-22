@@ -1,7 +1,7 @@
 [project]
 name = "ethoscopy"
 version = "3.0.0"
-description = "\"A python based toolkit to download and anlyse data from the Ethoscope hardware system.\""
+description = "A Python toolkit to download and analyse data from the ethoscope platform."
 authors = [{name = "Lblackhurst29",email = "lblackhurst29@gmail.com"}]
 readme = "README.md"
 dependencies = [
@@ -32,6 +32,12 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Information Analysis",
 ]
+
+[project.urls]
+Homepage = "https://ethoscope.net"
+Documentation = "https://ethoscope.net/docs/ethoscopy/"
+Source = "https://github.com/gilestrolab/ethoscopy"
+Issues = "https://github.com/gilestrolab/ethoscopy/issues"
 
 [project.optional-dependencies]
 dev = [

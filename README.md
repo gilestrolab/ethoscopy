@@ -8,9 +8,9 @@
 
 A data-analysis toolbox utilising Pandas, Seaborn, and Plotly to curate, clean, analyse, and visualise behavioural time series data. Whilst the toolbix was created around the data produced from an Ethoscope (a Drosophila monitoring system), if the users data follows the same structure for time series data all methods can be utilised.
 
-Head to the [tutorial](https://bookstack.lab.gilest.ro/books/ethoscopy) for an in-depth walk through. The Jupyter notebooks in [`tutorial_notebook/`](tutorial_notebook/) are the authoritative, runnable examples.
+Head to the [documentation](https://ethoscope.net/docs/ethoscopy/) for an in-depth walk through. The Jupyter notebooks in [`tutorial_notebook/`](tutorial_notebook/) are the authoritative, runnable examples.
 
-For more information on the Ethoscope system, click [here](https://www.notion.so/The-ethoscope-60952be38787404095aa99be37c42a27)
+For more information on the ethoscope platform, see [ethoscope.net](https://ethoscope.net).
     - If using in conjenction with Ethoscope data this software contains functions for loading the Ethoscope data into ethocopy from .db files both locally and in remote ftp servers.
 
 At its core ethoscopy is a subclass of the data manipulation tool Pandas. The dataframe object has been altered to contain a linked metadata dataframe which contains experimental information. This secondary dataframe can be used to filter the data containing dataframe, as well as a store of information per specimen during analysis.
