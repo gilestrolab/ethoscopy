@@ -722,3 +722,20 @@ Zip from Downloads: notebook, metadata, docx with three questions (missing tubes
 - Q3: trigger_type='activity'. 93% moving before stimuli vs 25%; night sleep 71.1 vs 70.9%.
   Live 21 Oct run (inactivity): tubes 12/14/16 show no post-stimulus arousal (provisional).
 - Reply: scratchpad/dawei_reply.md.
+
+## 2026-10-22 — Install ethoscopy main into ethoscope-lab without a release
+
+Giorgio rejected an in-container auto-updater (CI-gated overlay) as too complicated:
+he is the only one pushing, so a manual host command run after each push is enough.
+
+- [x] `Docker/update-ethoscopy [REF]`: resolves REF on GitHub, `docker exec -u root` pip
+      install of the archive (`--no-deps --force-reinstall`; deps only if `pip check`
+      flags ethoscopy), keeps the tutorial pickles, verifies the commit as uid 1000.
+- [x] Tested on a throwaway 1.6 container: main/tag/rerun, bad ref, 404 sha (previous
+      install kept), missing container, unpushed-commit warning.
+- [x] Live ethoscope-lab updated to main bd66fc0 (no restart; container up 6 days).
+- [x] Docker/README.md section.
+
+### Discovered During Work
+- [ ] GitHub CI is `disabled_inactivity` (last run 2026-07-01) and current main would fail
+      its unpinned `black --check src/ tests/` (test_load_diagnostics.py, test_hmm_response.py).
